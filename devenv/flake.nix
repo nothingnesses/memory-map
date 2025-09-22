@@ -82,6 +82,7 @@
                 ];
 
                 services = {
+                  minio."minio1".enable = true;
                   postgres = {
                     "pg1" = {
                       enable = true;
@@ -97,24 +98,38 @@
                   };
                 };
 
-                settings.processes.pgweb =
-                  let
-                    pgcfg = config.services.postgres.pg1;
-                  in
-                  {
-                    environment.PGWEB_DATABASE_URL = pgcfg.connectionURI { inherit dbName; };
-                    command = pkgs.pgweb;
-                    depends_on."pg1".condition = "process_healthy";
+                settings = {
+                  processes = {
+                    minio1-test = {
+                      command = pkgs.writeShellApplication {
+                        runtimeInputs = [ pkgs.curl ];
+                        text = ''
+                          curl http://127.0.0.1:9000/minio/health/live
+                        '';
+                        name = "minio1-test";
+                      };
+                      depends_on."minio1".condition = "process_healthy";
+                    };
+                    pgweb =
+                      let
+                        pgcfg = config.services.postgres.pg1;
+                      in
+                      {
+                        environment.PGWEB_DATABASE_URL = pgcfg.connectionURI { inherit dbName; };
+                        command = pkgs.pgweb;
+                        depends_on."pg1".condition = "process_healthy";
+                      };
+                    pg1-test = {
+                      command = pkgs.writeShellApplication {
+                        name = "pg1-test";
+                        runtimeInputs = [ config.services.postgres.pg1.package ];
+                        text = ''
+                          echo 'SELECT version();' | psql -h 127.0.0.1 ${dbName}
+                        '';
+                      };
+                      depends_on."pg1".condition = "process_healthy";
+                    };
                   };
-                settings.processes.test = {
-                  command = pkgs.writeShellApplication {
-                    name = "pg1-test";
-                    runtimeInputs = [ config.services.postgres.pg1.package ];
-                    text = ''
-                      echo 'SELECT version();' | psql -h 127.0.0.1 ${dbName}
-                    '';
-                  };
-                  depends_on."pg1".condition = "process_healthy";
                 };
               };
 
