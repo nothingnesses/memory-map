@@ -1,0 +1,5 @@
+target/
+*.code-workspace
+data/
+.env
+.direnv/

@@ -1,0 +1,15 @@
+[package]
+name = "mind-map-backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.4"
+config = "0.15.16"
+deadpool = "0.12.3"
+deadpool-postgres = { version = "0.14.1", features = ["rt_tokio_1", "serde"] }
+dotenvy = "0.15.7"
+refinery = { version = "0.8.16", features = ["tokio-postgres"] }
+serde = { version = "1.0.226", features = ["derive"] }
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-postgres = "0.7.13"
