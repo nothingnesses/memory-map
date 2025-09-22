@@ -9,6 +9,7 @@ config = "0.15.16"
 deadpool = "0.12.3"
 deadpool-postgres = { version = "0.14.1", features = ["rt_tokio_1", "serde"] }
 dotenvy = "0.15.7"
+minio = "0.3.0"
 refinery = { version = "0.8.16", features = ["tokio-postgres"] }
 serde = { version = "1.0.226", features = ["derive"] }
 tokio = { version = "1.47.1", features = ["full"] }
