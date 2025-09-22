@@ -1,9 +1,13 @@
+use async_graphql::http::GraphiQLSource;
+use axum::response::{self, IntoResponse};
+use axum::Router;
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
-use std::ops::DerefMut;
-use tokio_postgres::NoTls;use minio::s3::Client;
-use minio::s3::types::S3Api;
+use minio::s3::Client;
 use minio::s3::response::BucketExistsResponse;
+use minio::s3::types::S3Api;
+use std::ops::DerefMut;
+use tokio_postgres::NoTls;
 
 #[derive(Debug, serde::Deserialize)]
 struct Config {
@@ -21,12 +25,24 @@ impl Config {
 
 refinery::embed_migrations!("migrations");
 
+async fn graphiql() -> impl IntoResponse {
+	response::Html(GraphiQLSource::build().endpoint("/").finish())
+}
+
 #[tokio::main]
 async fn main() {
+	// Read and parse dotenv config
 	dotenv().ok();
 	let cfg = Config::from_env().unwrap();
+
+	// Connect to DB
 	let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
 	let mut conn = pool.get().await.unwrap();
 	let client = conn.deref_mut().deref_mut();
+
+	// Run DB migrations
 	migrations::runner().run_async(client).await.unwrap();
+
+	// Set up routes
+	todo!()
 }
