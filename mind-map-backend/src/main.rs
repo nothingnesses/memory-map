@@ -1,7 +1,9 @@
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
 use std::ops::DerefMut;
-use tokio_postgres::NoTls;
+use tokio_postgres::NoTls;use minio::s3::Client;
+use minio::s3::types::S3Api;
+use minio::s3::response::BucketExistsResponse;
 
 #[derive(Debug, serde::Deserialize)]
 struct Config {
@@ -17,6 +19,8 @@ impl Config {
 	}
 }
 
+refinery::embed_migrations!("migrations");
+
 #[tokio::main]
 async fn main() {
 	dotenv().ok();
@@ -24,6 +28,5 @@ async fn main() {
 	let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
 	let mut conn = pool.get().await.unwrap();
 	let client = conn.deref_mut().deref_mut();
-	refinery::embed_migrations!("migrations");
 	migrations::runner().run_async(client).await.unwrap();
 }

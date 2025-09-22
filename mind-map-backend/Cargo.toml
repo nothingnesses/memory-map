@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-graphql = "7.0.17"
 axum = "0.8.4"
 config = "0.15.16"
 deadpool = "0.12.3"
