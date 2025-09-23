@@ -1,8 +1,10 @@
 use async_graphql::http::GraphiQLSource;
+use async_graphql::{EmptyMutation, EmptySubscription, Schema};
 use axum::response::{self, IntoResponse};
 use axum::Router;
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
+use mind_map_backend::QueryRoot;
 use minio::s3::Client;
 use minio::s3::response::BucketExistsResponse;
 use minio::s3::types::S3Api;
@@ -42,6 +44,11 @@ async fn main() {
 
 	// Run DB migrations
 	migrations::runner().run_async(client).await.unwrap();
+
+	// Set up GraphQL
+	let schema = Schema::build(QueryRoot, EmptyMutation, EmptySubscription)
+		// .data(StarWars::new())
+		.finish();
 
 	// Set up routes
 	todo!()
