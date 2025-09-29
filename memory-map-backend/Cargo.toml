@@ -1,5 +1,5 @@
 [package]
-name = "mind-map-backend"
+name = "memory-map-backend"
 version = "0.1.0"
 edition = "2024"
 
@@ -14,6 +14,7 @@ dotenvy = "0.15.7"
 minio = "0.3.0"
 refinery = { version = "0.8.16", features = ["tokio-postgres"] }
 serde = { version = "1.0.226", features = ["derive"] }
+serde_json = "1.0.145"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-postgres = "0.7.13"
 tower = { version = "0.5.2", features = ["util"] }
