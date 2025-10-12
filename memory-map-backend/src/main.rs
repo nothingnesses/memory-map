@@ -40,11 +40,14 @@ async fn main() {
 
 	// Connect to DB
 	let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
-	let mut conn = pool.get().await.unwrap();
-	let client = conn.deref_mut().deref_mut();
 
-	// Run DB migrations
-	migrations::runner().run_async(client).await.unwrap();
+	{
+		let mut conn = pool.get().await.unwrap();
+		let client = conn.deref_mut().deref_mut();
+
+		// Run DB migrations
+		migrations::runner().run_async(client).await.unwrap();
+	}
 
 	// Set up GraphQL
 	let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
