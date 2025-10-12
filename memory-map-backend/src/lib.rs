@@ -1,6 +1,7 @@
 use async_graphql::{Context, Error as GraphQLError, ID, Object, SimpleObject};
-use deadpool::managed::{Manager as ManagedManager, Object, Pool, PoolError};
+use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
+use tokio_postgres::{Error as TPError, Row};
 
 pub struct SchemaData<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
@@ -22,28 +23,40 @@ impl<'a> ContextWrapper<'a> {
 	}
 }
 
+struct IDWrapper;
+
+impl IDWrapper {
+	pub fn from_i64(id: i64) -> ID {
+		ID(id.to_string())
+	}
+}
+
 impl Location {
+	pub fn from_row(row: Row) -> Result<Self, TPError> {
+		Ok(Location {
+			id: IDWrapper::from_i64(row.try_get("id")?),
+			latitude: row.try_get("latitude")?,
+			longitude: row.try_get("longitude")?,
+		})
+	}
+
 	pub async fn get(
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Self, GraphQLError> {
-		let row = ContextWrapper(ctx)
-			.get_client()
-			.await?
-			.query_one(
-				"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
-				FROM locations
-				WHERE id = $1",
-				&[&id],
-			)
-			.await
-			.map_err(|e| GraphQLError::from(e))?;
-
-		Ok(Location {
-			id: ID(row.get::<_, i64>(0).to_string()),
-			latitude: row.get("latitude"),
-			longitude: row.get("longitude"),
-		})
+		Ok(Location::from_row(
+			ContextWrapper(ctx)
+				.get_client()
+				.await?
+				.query_one(
+					"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
+			FROM locations
+			WHERE id = $1",
+					&[&id],
+				)
+				.await
+				.map_err(|e| GraphQLError::from(e))?,
+		)?)
 	}
 }
 
@@ -77,18 +90,18 @@ impl Mutation {
 		latitude: f64,
 		longitude: f64,
 	) -> Result<Location, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
-		let id: i64 = client
-			.query_one(
-				"INSERT INTO locations (location)
+		Ok(Location::from_row(
+			ContextWrapper(ctx)
+				.get_client()
+				.await?
+				.query_one(
+					"INSERT INTO locations (location)
 				VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
-				RETURNING id",
-				&[&longitude, &latitude],
-			)
-			.await
-			.map_err(|e| GraphQLError::from(e))?
-			.get(0);
-
-		Location::get(ctx, id).await
+				RETURNING id, ST_Y(location) AS latitude, ST_X(location) AS longitude",
+					&[&longitude, &latitude],
+				)
+				.await
+				.map_err(|e| GraphQLError::from(e))?,
+		)?)
 	}
 }
