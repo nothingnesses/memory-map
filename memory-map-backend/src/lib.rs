@@ -44,19 +44,15 @@ impl Location {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Self, GraphQLError> {
-		Ok(Location::from_row(
-			ContextWrapper(ctx)
-				.get_client()
-				.await?
-				.query_one(
-					"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
-			FROM locations
-			WHERE id = $1",
-					&[&id],
-				)
-				.await
-				.map_err(|e| GraphQLError::from(e))?,
-		)?)
+		let client = ContextWrapper(ctx).get_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
+				FROM locations
+				WHERE id = $1",
+			)
+			.await?;
+		Ok(Location::from_row(client.query_one(&statement, &[&id]).await?)?)
 	}
 }
 
@@ -76,7 +72,21 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<Location>, GraphQLError> {
-		todo!()
+		let client = ContextWrapper(ctx).get_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
+				FROM locations",
+			)
+			.await?;
+		client
+			.query(&statement, &[])
+			.await
+			.map_err(|e| GraphQLError::from(e))?
+			.into_iter()
+			.map(Location::from_row)
+			.collect::<Result<Vec<_>, _>>()
+			.map_err(|e| GraphQLError::from(e))
 	}
 }
 
@@ -87,21 +97,17 @@ impl Mutation {
 	async fn add_location(
 		&self,
 		ctx: &Context<'_>,
-		latitude: f64,
 		longitude: f64,
+		latitude: f64,
 	) -> Result<Location, GraphQLError> {
-		Ok(Location::from_row(
-			ContextWrapper(ctx)
-				.get_client()
-				.await?
-				.query_one(
-					"INSERT INTO locations (location)
-				VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
-				RETURNING id, ST_Y(location) AS latitude, ST_X(location) AS longitude",
-					&[&longitude, &latitude],
-				)
-				.await
-				.map_err(|e| GraphQLError::from(e))?,
-		)?)
+		let client = ContextWrapper(ctx).get_client().await?;
+		let statement = client
+			.prepare_cached(
+				"INSERT INTO locations (location)
+			VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
+			RETURNING id, ST_Y(location) AS latitude, ST_X(location) AS longitude",
+			)
+			.await?;
+		Ok(Location::from_row(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
 	}
 }
