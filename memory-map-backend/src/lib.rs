@@ -42,18 +42,10 @@ impl<'a> ContextWrapper<'a> {
 	}
 }
 
-struct IDWrapper;
-
-impl IDWrapper {
-	pub fn from_i64(id: i64) -> ID {
-		ID(id.to_string())
-	}
-}
-
 impl Location {
 	pub fn from_row(row: Row) -> Result<Self, TPError> {
 		Ok(Location {
-			id: IDWrapper::from_i64(row.try_get("id")?),
+			id: Row::try_get::<_, i64>(&row, "id")?.into(),
 			latitude: row.try_get("latitude")?,
 			longitude: row.try_get("longitude")?,
 		})
