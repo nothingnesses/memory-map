@@ -4,7 +4,7 @@ use axum::Router;
 use axum::routing::get;
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
-use memory_map_backend::{Config, Query, SchemaData, graphiql, migrations};
+use memory_map_backend::{graphiql, migrations, Config, Mutation, Query, SchemaData};
 use minio::s3::Client;
 use minio::s3::response::BucketExistsResponse;
 use minio::s3::types::S3Api;
@@ -31,7 +31,7 @@ async fn main() {
 
 	// Set up GraphQL
 	let schema =
-		Schema::build(Query, EmptyMutation, EmptySubscription).data(SchemaData { pool }).finish();
+		Schema::build(Query, Mutation, EmptySubscription).data(SchemaData { pool }).finish();
 
 	// let result = schema.execute("{ locations { id latitude longitude } }").await;
 

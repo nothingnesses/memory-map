@@ -109,7 +109,7 @@ impl Query {
 	}
 }
 
-struct Mutation;
+pub struct Mutation;
 
 #[Object]
 impl Mutation {
@@ -124,7 +124,7 @@ impl Mutation {
 			.prepare_cached(
 				"INSERT INTO locations (location)
 				VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
-				RETURNING id, ST_Y(location) AS latitude, ST_X(location) AS longitude",
+				RETURNING id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude",
 			)
 			.await?;
 		Ok(Location::from_row(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
