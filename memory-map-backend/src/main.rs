@@ -1,36 +1,16 @@
-use async_graphql::http::GraphiQLSource;
 use async_graphql::{EmptyMutation, EmptySubscription, Schema};
-use axum::response::{self, IntoResponse};
+use async_graphql_axum::GraphQL;
 use axum::Router;
-use deadpool::managed::{Manager, Object, Pool};
+use axum::routing::get;
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
-use memory_map_backend::{Query, SchemaData};
+use memory_map_backend::{Config, Query, SchemaData, graphiql, migrations};
 use minio::s3::Client;
 use minio::s3::response::BucketExistsResponse;
 use minio::s3::types::S3Api;
 use std::ops::DerefMut;
+use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
-
-#[derive(Debug, serde::Deserialize)]
-struct Config {
-	pg: deadpool_postgres::Config,
-}
-
-impl Config {
-	pub fn from_env() -> Result<Self, config::ConfigError> {
-		config::Config::builder()
-			.add_source(config::Environment::default().separator("__"))
-			.build()?
-			.try_deserialize()
-	}
-}
-
-refinery::embed_migrations!("migrations");
-
-async fn graphiql() -> impl IntoResponse {
-	response::Html(GraphiQLSource::build().endpoint("/").finish())
-}
 
 #[tokio::main]
 async fn main() {
@@ -50,13 +30,16 @@ async fn main() {
 	}
 
 	// Set up GraphQL
-	let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
-		.data(SchemaData {
-			pool: pool
-		})
-		.finish();
+	let schema =
+		Schema::build(Query, EmptyMutation, EmptySubscription).data(SchemaData { pool }).finish();
 
-	let result = schema.execute("{ locations { id latitude longitude } }").await;
+	// let result = schema.execute("{ locations { id latitude longitude } }").await;
 
-	println!("{}", serde_json::to_string(&result).unwrap());
+	// println!("{}", serde_json::to_string(&result).unwrap());
+
+	let app = Router::new().route("/", get(graphiql).post_service(GraphQL::new(schema)));
+
+	println!("GraphiQL IDE: http://localhost:8000");
+
+	axum::serve(TcpListener::bind("127.0.0.1:8000").await.unwrap(), app).await.unwrap();
 }

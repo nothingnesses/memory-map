@@ -1,7 +1,26 @@
-use async_graphql::{Context, Error as GraphQLError, ID, Object, SimpleObject};
+use async_graphql::{
+	Context, Error as GraphQLError, ID, Object, SimpleObject, http::GraphiQLSource,
+};
+use axum::response::{self, IntoResponse};
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use tokio_postgres::{Error as TPError, Row};
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Config {
+	pub pg: deadpool_postgres::Config,
+}
+
+impl Config {
+	pub fn from_env() -> Result<Self, config::ConfigError> {
+		config::Config::builder()
+			.add_source(config::Environment::default().separator("__"))
+			.build()?
+			.try_deserialize()
+	}
+}
+
+refinery::embed_migrations!("migrations");
 
 pub struct SchemaData<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
@@ -47,7 +66,7 @@ impl Location {
 		let client = ContextWrapper(ctx).get_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
+				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
 				FROM locations
 				WHERE id = $1",
 			)
@@ -75,7 +94,7 @@ impl Query {
 		let client = ContextWrapper(ctx).get_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, ST_Y(location) AS latitude, ST_X(location) AS longitude
+				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
 				FROM locations",
 			)
 			.await?;
@@ -104,10 +123,14 @@ impl Mutation {
 		let statement = client
 			.prepare_cached(
 				"INSERT INTO locations (location)
-			VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
-			RETURNING id, ST_Y(location) AS latitude, ST_X(location) AS longitude",
+				VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
+				RETURNING id, ST_Y(location) AS latitude, ST_X(location) AS longitude",
 			)
 			.await?;
 		Ok(Location::from_row(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
 	}
+}
+
+pub async fn graphiql() -> impl IntoResponse {
+	response::Html(GraphiQLSource::build().endpoint("/").finish())
 }
