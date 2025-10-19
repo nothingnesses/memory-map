@@ -26,13 +26,6 @@ pub struct SchemaData<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
 }
 
-#[derive(SimpleObject)]
-pub struct Location {
-	id: ID,
-	latitude: f64,
-	longitude: f64,
-}
-
 struct ContextWrapper<'a>(&'a Context<'a>);
 
 impl<'a> ContextWrapper<'a> {
@@ -42,16 +35,44 @@ impl<'a> ContextWrapper<'a> {
 	}
 }
 
-impl Location {
-	pub fn from_row(row: Row) -> Result<Self, TPError> {
+#[derive(SimpleObject)]
+pub struct Location {
+	id: ID,
+	latitude: f64,
+	longitude: f64,
+}
+
+impl TryFrom<Row> for Location {
+	type Error = TPError;
+
+	fn try_from(value: Row) -> Result<Self, Self::Error> {
 		Ok(Location {
-			id: Row::try_get::<_, i64>(&row, "id")?.into(),
-			latitude: row.try_get("latitude")?,
-			longitude: row.try_get("longitude")?,
+			id: Row::try_get::<_, i64>(&value, "id")?.into(),
+			latitude: value.try_get("latitude")?,
+			longitude: value.try_get("longitude")?,
 		})
 	}
+}
 
-	pub async fn get(
+impl Location {
+	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
+		let client = ContextWrapper(ctx).get_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+				FROM locations",
+			)
+			.await?;
+		Ok(client
+			.query(&statement, &[])
+			.await
+			.map_err(|e| GraphQLError::from(e))?
+			.into_iter()
+			.map(Self::try_from)
+			.collect::<Result<Vec<_>, _>>()?)
+	}
+
+	pub async fn where_id(
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Self, GraphQLError> {
@@ -63,7 +84,60 @@ impl Location {
 				WHERE id = $1",
 			)
 			.await?;
-		Ok(Location::from_row(client.query_one(&statement, &[&id]).await?)?)
+		Ok(Location::try_from(client.query_one(&statement, &[&id]).await?)?)
+	}
+}
+
+#[derive(SimpleObject)]
+pub struct S3Object {
+	id: ID,
+	name: String,
+	time_stamp: String,
+}
+
+impl TryFrom<Row> for S3Object {
+	type Error = TPError;
+
+	fn try_from(value: Row) -> Result<Self, Self::Error> {
+		Ok(S3Object {
+			id: Row::try_get::<_, i64>(&value, "id")?.into(),
+			name: value.try_get("name")?,
+			time_stamp: value.try_get("time_stamp")?,
+		})
+	}
+}
+
+impl S3Object {
+	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
+		let client = ContextWrapper(ctx).get_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+				FROM locations",
+			)
+			.await?;
+		Ok(client
+			.query(&statement, &[])
+			.await
+			.map_err(|e| GraphQLError::from(e))?
+			.into_iter()
+			.map(Self::try_from)
+			.collect::<Result<Vec<_>, _>>()?)
+	}
+
+	pub async fn where_id(
+		ctx: &Context<'_>,
+		id: i64,
+	) -> Result<Self, GraphQLError> {
+		let client = ContextWrapper(ctx).get_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT *
+				FROM locations
+				WHERE id = $1",
+			)
+			.await?;
+		Ok(S3Object::try_from(client.query_one(&statement, &[&id]).await?)?)
 	}
 }
 
@@ -76,28 +150,29 @@ impl Query {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Location, GraphQLError> {
-		Location::get(ctx, id).await
+		Location::where_id(ctx, id).await
 	}
 
 	async fn locations(
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<Location>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
-				FROM locations",
-			)
-			.await?;
-		client
-			.query(&statement, &[])
-			.await
-			.map_err(|e| GraphQLError::from(e))?
-			.into_iter()
-			.map(Location::from_row)
-			.collect::<Result<Vec<_>, _>>()
-			.map_err(|e| GraphQLError::from(e))
+		Location::all(ctx).await
+	}
+
+	async fn object(
+		&self,
+		ctx: &Context<'_>,
+		id: i64,
+	) -> Result<S3Object, GraphQLError> {
+		S3Object::where_id(ctx, id).await
+	}
+
+	async fn objects(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<Vec<S3Object>, GraphQLError> {
+		S3Object::all(ctx).await
 	}
 }
 
@@ -119,7 +194,7 @@ impl Mutation {
 				RETURNING id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude",
 			)
 			.await?;
-		Ok(Location::from_row(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
+		Ok(Location::try_from(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
 	}
 }
 

@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
+    nixpkgs-minio.url = "github:NixOS/nixpkgs/e6f23dc08d3624daab7094b701aa3954923c6bbb";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -41,6 +42,7 @@
             config,
             lib,
             final,
+            system,
             ...
           }:
           {
@@ -50,6 +52,19 @@
             # packages.bar = pkgs.callPackage ./bar/package.nix {
             #   foo = config.packages.foo;
             # };
+
+          _module.args.pkgs = import inputs.nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+            overlays = [
+              (final: _prev: {
+                minio = import inputs.nixpkgs-minio {
+                  inherit (final) system;
+                  config.allowUnfree = true;
+                };
+              })
+            ];
+          };
 
             overlayAttrs = {
               inherit (config.packages) rustToolchain;
@@ -82,7 +97,10 @@
                 ];
 
                 services = {
-                  minio."minio1".enable = true;
+                  minio."minio1" = {
+                    enable = true;
+                    package = pkgs.minio.minio;
+                  };
                   postgres = {
                     "pg1" = {
                       enable = true;
@@ -147,13 +165,15 @@
                 pkgs.pkg-config
                 pkgs.cargo-deny
                 pkgs.cargo-edit
-                pkgs.cargo-watch
+                pkgs.bacon
                 pkgs.rust-analyzer
               ];
 
               env = {
                 # Required by rust-analyzer
                 RUST_SRC_PATH = "${config.packages.rustToolchain}/lib/rustlib/src/rust/library";
+                # Required by minio-rs dependency
+                LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.openssl ];
               };
             };
           };

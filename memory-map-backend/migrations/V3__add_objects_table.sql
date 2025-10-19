@@ -1,0 +1,5 @@
+CREATE TABLE objects (
+	id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+	name TEXT NOT NULL UNIQUE,
+	time_stamp timestamp
+);
