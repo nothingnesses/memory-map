@@ -1,0 +1,7 @@
+[package]
+name = "memory-map-frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+leptos = { version = "0.8.11", features = ["csr"] }
