@@ -3,18 +3,19 @@ use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum::http::Method;
 use deadpool_postgres::Manager;
 use futures::future::join_all;
+use jiff::Timestamp;
 use tokio_postgres::Row;
 
 pub struct S3Object {
 	pub id: ID,
 	pub name: String,
 	pub path: String,
-	pub time_stamp: String,
+	pub made_on: Option<Timestamp>,
 	pub url: String,
 }
 
 impl S3Object {
-	async fn try_from(value: RowContext<'_>) -> Result<Self, GraphQLError> {
+	pub async fn try_from(value: RowContext<'_>) -> Result<Self, GraphQLError> {
 		let id = Row::try_get::<_, i64>(&value.0, "id")?;
 		let path: String = value.0.try_get("path")?;
 		let ctx = value.1;
@@ -26,7 +27,7 @@ impl S3Object {
 			id: id.into(),
 			name: value.0.try_get("name")?,
 			path: path.clone(),
-			time_stamp: value.0.try_get("time_stamp")?,
+			made_on: value.0.try_get("made_on")?,
 			url: minio_client
 				.get_presigned_object_url(bucket_name, &path, Method::GET)
 				.send()
@@ -40,7 +41,7 @@ impl S3Object {
 		let statement = client
 			.prepare_cached(
 				"SELECT *
-				FROM objects",
+				FROM objects;",
 			)
 			.await?;
 		join_all(
@@ -66,7 +67,7 @@ impl S3Object {
 			.prepare_cached(
 				"SELECT *
 				FROM objects
-				WHERE id = $1",
+				WHERE id = $1;",
 			)
 			.await?;
 		Self::try_from(RowContext(client.query_one(&statement, &[&id]).await?, ctx.clone())).await
@@ -87,8 +88,8 @@ impl S3Object {
 		self.path.to_string()
 	}
 
-	async fn time_stamp(&self) -> String {
-		self.time_stamp.to_string()
+	async fn made_on(&self) -> Option<String> {
+		self.made_on.map(|time_stamp| time_stamp.to_string())
 	}
 
 	async fn url(

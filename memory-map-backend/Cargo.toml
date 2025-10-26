@@ -13,12 +13,13 @@ deadpool-postgres = { version = "0.14", features = ["rt_tokio_1", "serde"] }
 dotenvy = "0.15"
 futures = "0.3"
 futures-util = "0.3"
+jiff = "0.2"
 minio = "0.3"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.47", features = ["full"] }
-tokio-postgres = "0.7"
+tokio-postgres = { version = "0.7", features = ["with-jiff-0_2"] }
 tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"

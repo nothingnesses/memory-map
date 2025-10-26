@@ -1,8 +1,9 @@
 use crate::graphql::{
 	ContextWrapper,
-	objects::{location::Location, s3object::S3Object},
+	objects::{RowContext, location::Location, s3object::S3Object},
 };
 use async_graphql::{Context, Error as GraphQLError, Object};
+use jiff::Timestamp;
 
 pub struct Mutation;
 
@@ -19,7 +20,7 @@ impl Mutation {
 			.prepare_cached(
 				"INSERT INTO locations (location)
 				VALUES (ST_SetSRID(ST_MakePoint($1, $2), 4326))
-				RETURNING id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude",
+				RETURNING id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;",
 			)
 			.await?;
 		Ok(Location::try_from(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
@@ -29,9 +30,21 @@ impl Mutation {
 		&self,
 		ctx: &Context<'_>,
 		name: String,
-		time_stamp: Option<String>,
+		made_on: Option<String>,
 	) -> Result<S3Object, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		todo!()
+		let parsed_made_on: Option<Timestamp> = match made_on {
+			Some(ts) => Some(ts.parse()?),
+			None => None,
+		};
+		let statement = client
+			.prepare_cached(
+				"INSERT INTO objects (name, made_on)
+				VALUES (1,2)
+				RETURNING id, name, path, made_on;",
+			)
+			.await?;
+		let row = client.query_one(&statement, &[&name, &parsed_made_on]).await?;
+		S3Object::try_from(RowContext(row, ctx.clone())).await
 	}
 }

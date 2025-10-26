@@ -27,7 +27,7 @@ impl Location {
 		let statement = client
 			.prepare_cached(
 				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
-				FROM locations",
+				FROM locations;",
 			)
 			.await?;
 		Ok(client
@@ -48,7 +48,7 @@ impl Location {
 			.prepare_cached(
 				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
 				FROM locations
-				WHERE id = $1",
+				WHERE id = $1;",
 			)
 			.await?;
 		Ok(Self::try_from(client.query_one(&statement, &[&id]).await?)?)
