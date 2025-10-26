@@ -9,7 +9,7 @@ pub struct Mutation;
 
 #[Object]
 impl Mutation {
-	async fn add_s3_object(
+	async fn merge_s3_object(
 		&self,
 		ctx: &Context<'_>,
 		name: String,
@@ -27,6 +27,7 @@ impl Mutation {
 			.prepare_cached(
 				"INSERT INTO objects (name, made_on, location)
 				VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326))
+				ON CONFLICT (name) DO UPDATE SET made_on = EXCLUDED.made_on, location = EXCLUDED.location
 				RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;",
 			)
 			.await?;
@@ -43,6 +44,7 @@ impl Mutation {
 			.prepare_cached(
 				"INSERT INTO objects (name, made_on, location)
 				VALUES ($1, $2, NULL)
+				ON CONFLICT (name) DO UPDATE SET made_on = EXCLUDED.made_on, location = EXCLUDED.location
 				RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;",
 			)
 			.await?;
