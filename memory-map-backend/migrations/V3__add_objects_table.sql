@@ -1,5 +1,6 @@
 CREATE TABLE objects (
 	id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
 	name TEXT NOT NULL UNIQUE,
+	path TEXT GENERATED ALWAYS AS (id || '/' || name) STORED,
 	time_stamp timestamp
 );

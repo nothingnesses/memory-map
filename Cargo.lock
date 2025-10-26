@@ -1402,6 +1402,7 @@ dependencies = [
  "deadpool",
  "deadpool-postgres",
  "dotenvy",
+ "futures",
  "futures-util",
  "minio",
  "refinery",

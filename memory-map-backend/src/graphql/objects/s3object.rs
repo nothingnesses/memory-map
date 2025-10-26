@@ -1,56 +1,108 @@
-use crate::graphql::ContextWrapper;
-use async_graphql::{Context, Error as GraphQLError, ID, SimpleObject};
-use tokio_postgres::{Error as TPError, Row};
+use crate::graphql::{ContextWrapper, SchemaData, objects::RowContext};
+use async_graphql::{Context, Error as GraphQLError, ID, Object};
+use axum::http::Method;
+use deadpool_postgres::Manager;
+use futures::future::join_all;
+use tokio_postgres::Row;
 
-#[derive(SimpleObject)]
 pub struct S3Object {
-	id: ID,
-	name: String,
-	time_stamp: String,
-}
-
-impl TryFrom<Row> for S3Object {
-	type Error = TPError;
-
-	fn try_from(value: Row) -> Result<Self, Self::Error> {
-		Ok(S3Object {
-			id: Row::try_get::<_, i64>(&value, "id")?.into(),
-			name: value.try_get("name")?,
-			time_stamp: value.try_get("time_stamp")?,
-		})
-	}
+	pub id: ID,
+	pub name: String,
+	pub path: String,
+	pub time_stamp: String,
+	pub url: String,
 }
 
 impl S3Object {
+	async fn try_from(value: RowContext<'_>) -> Result<Self, GraphQLError> {
+		let id = Row::try_get::<_, i64>(&value.0, "id")?;
+		let path: String = value.0.try_get("path")?;
+		let ctx = value.1;
+		let minio_client =
+			&ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?.minio_client;
+		let bucket_name =
+			&ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?.bucket_name;
+		Ok(S3Object {
+			id: id.into(),
+			name: value.0.try_get("name")?,
+			path: path.clone(),
+			time_stamp: value.0.try_get("time_stamp")?,
+			url: minio_client
+				.get_presigned_object_url(bucket_name, &path, Method::GET)
+				.send()
+				.await?
+				.url,
+		})
+	}
+
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
+		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
-				FROM locations",
+				"SELECT *
+				FROM objects",
 			)
 			.await?;
-		Ok(client
-			.query(&statement, &[])
-			.await
-			.map_err(|e| GraphQLError::from(e))?
-			.into_iter()
-			.map(Self::try_from)
-			.collect::<Result<Vec<_>, _>>()?)
+		join_all(
+			client
+				.query(&statement, &[])
+				.await
+				.map_err(GraphQLError::from)?
+				.into_iter()
+				.map(|row| Self::try_from(RowContext(row, ctx.clone())))
+				.collect::<Vec<_>>(),
+		)
+		.await
+		.into_iter()
+		.collect::<Result<Vec<_>, _>>()
 	}
 
 	pub async fn where_id(
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Self, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
+		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
 				"SELECT *
-				FROM locations
+				FROM objects
 				WHERE id = $1",
 			)
 			.await?;
-		Ok(S3Object::try_from(client.query_one(&statement, &[&id]).await?)?)
+		Self::try_from(RowContext(client.query_one(&statement, &[&id]).await?, ctx.clone())).await
+	}
+}
+
+#[Object]
+impl S3Object {
+	async fn id(&self) -> ID {
+		self.id.clone()
+	}
+
+	async fn name(&self) -> String {
+		self.name.to_string()
+	}
+
+	async fn path(&self) -> String {
+		self.path.to_string()
+	}
+
+	async fn time_stamp(&self) -> String {
+		self.time_stamp.to_string()
+	}
+
+	async fn url(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<String, GraphQLError> {
+		let minio_client =
+			&ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?.minio_client;
+		let bucket_name =
+			&ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?.bucket_name;
+		Ok(minio_client
+			.get_presigned_object_url(bucket_name, &self.path, Method::GET)
+			.send()
+			.await?
+			.url)
 	}
 }

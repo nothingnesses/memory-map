@@ -11,6 +11,7 @@ config = "0.15"
 deadpool = "0.12"
 deadpool-postgres = { version = "0.14", features = ["rt_tokio_1", "serde"] }
 dotenvy = "0.15"
+futures = "0.3"
 futures-util = "0.3"
 minio = "0.3"
 refinery = { version = "0.8", features = ["tokio-postgres"] }

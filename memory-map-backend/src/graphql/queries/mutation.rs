@@ -1,4 +1,7 @@
-use crate::graphql::{ContextWrapper, objects::location::Location};
+use crate::graphql::{
+	ContextWrapper,
+	objects::{location::Location, s3object::S3Object},
+};
 use async_graphql::{Context, Error as GraphQLError, Object};
 
 pub struct Mutation;
@@ -11,7 +14,7 @@ impl Mutation {
 		longitude: f64,
 		latitude: f64,
 	) -> Result<Location, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
+		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
 				"INSERT INTO locations (location)
@@ -20,5 +23,15 @@ impl Mutation {
 			)
 			.await?;
 		Ok(Location::try_from(client.query_one(&statement, &[&longitude, &latitude]).await?)?)
+	}
+
+	async fn add_s3_object(
+		&self,
+		ctx: &Context<'_>,
+		name: String,
+		time_stamp: Option<String>,
+	) -> Result<S3Object, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		todo!()
 	}
 }

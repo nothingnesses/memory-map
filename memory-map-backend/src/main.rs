@@ -44,26 +44,28 @@ async fn main() {
 
 	let static_provider = StaticProvider::new("minioadmin", "minioadmin", None);
 
-	let minio_client = ClientBuilder::new(base_url.clone())
-		.provider(Some(Box::new(static_provider)))
-		.build()
-		.unwrap();
+	let minio_client =
+		ClientBuilder::new(base_url).provider(Some(Box::new(static_provider))).build().unwrap();
 
-	let bucket = "memory-map";
+	let bucket_name = "memory-map";
 
-	let mut resp =
-		minio_client.list_objects(bucket).recursive(true).include_versions(true).to_stream().await;
+	let mut resp = minio_client
+		.list_objects(bucket_name)
+		.recursive(true)
+		.include_versions(true)
+		.to_stream()
+		.await;
 
 	while let Some(result) = resp.next().await {
 		match result {
 			Ok(resp) => {
 				for item in resp.contents {
 					println!("list_entry: {:?}", item);
-					println!("get_object: {:?}", minio_client.get_object(bucket, &item.name));
+					println!("get_object: {:?}", minio_client.get_object(bucket_name, &item.name));
 					println!(
 						"url: {:?}",
 						minio_client
-							.get_presigned_object_url(bucket, &item.name, Method::GET)
+							.get_presigned_object_url(bucket_name, &item.name, Method::GET)
 							.send()
 							.await
 							.unwrap()
@@ -76,8 +78,9 @@ async fn main() {
 	}
 
 	// Set up GraphQL
-	let schema =
-		Schema::build(Query, Mutation, EmptySubscription).data(SchemaData { pool }).finish();
+	let schema = Schema::build(Query, Mutation, EmptySubscription)
+		.data(SchemaData { bucket_name: bucket_name.to_string(), pool, minio_client })
+		.finish();
 
 	// let result = schema.execute("{ locations { id latitude longitude } }").await;
 

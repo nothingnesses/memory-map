@@ -4,9 +4,9 @@ use tokio_postgres::{Error as TPError, Row};
 
 #[derive(SimpleObject)]
 pub struct Location {
-	id: ID,
-	latitude: f64,
-	longitude: f64,
+	pub id: ID,
+	pub latitude: f64,
+	pub longitude: f64,
 }
 
 impl TryFrom<Row> for Location {
@@ -23,7 +23,7 @@ impl TryFrom<Row> for Location {
 
 impl Location {
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
+		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
 				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
@@ -33,7 +33,7 @@ impl Location {
 		Ok(client
 			.query(&statement, &[])
 			.await
-			.map_err(|e| GraphQLError::from(e))?
+			.map_err(GraphQLError::from)?
 			.into_iter()
 			.map(Self::try_from)
 			.collect::<Result<Vec<_>, _>>()?)
@@ -43,7 +43,7 @@ impl Location {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Self, GraphQLError> {
-		let client = ContextWrapper(ctx).get_client().await?;
+		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
 				"SELECT id, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
@@ -51,6 +51,6 @@ impl Location {
 				WHERE id = $1",
 			)
 			.await?;
-		Ok(Location::try_from(client.query_one(&statement, &[&id]).await?)?)
+		Ok(Self::try_from(client.query_one(&statement, &[&id]).await?)?)
 	}
 }
