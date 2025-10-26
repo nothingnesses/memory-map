@@ -1,5 +1,6 @@
 default:
     nix run ./devenv
 
-watch:
-    bacon run
+# Valid targets are: memory-map-backend memory-map-frontend
+watch target:
+    bacon run -- --bin {{target}}
