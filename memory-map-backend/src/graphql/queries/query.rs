@@ -1,26 +1,11 @@
-use crate::graphql::objects::{location::Location, s3object::S3Object};
+use crate::graphql::objects::s3object::S3Object;
 use async_graphql::{Context, Error as GraphQLError, Object};
 
 pub struct Query;
 
 #[Object]
 impl Query {
-	async fn location(
-		&self,
-		ctx: &Context<'_>,
-		id: i64,
-	) -> Result<Location, GraphQLError> {
-		Location::where_id(ctx, id).await
-	}
-
-	async fn locations(
-		&self,
-		ctx: &Context<'_>,
-	) -> Result<Vec<Location>, GraphQLError> {
-		Location::all(ctx).await
-	}
-
-	async fn object_by_id(
+	async fn s3_object_by_id(
 		&self,
 		ctx: &Context<'_>,
 		id: i64,
@@ -28,7 +13,7 @@ impl Query {
 		S3Object::where_id(ctx, id).await
 	}
 
-	async fn object_by_name(
+	async fn s3_object_by_name(
 		&self,
 		ctx: &Context<'_>,
 		name: String,
@@ -36,7 +21,7 @@ impl Query {
 		S3Object::where_name(ctx, name).await
 	}
 
-	async fn objects(
+	async fn s3_objects(
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<S3Object>, GraphQLError> {

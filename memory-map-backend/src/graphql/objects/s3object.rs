@@ -1,4 +1,7 @@
-use crate::graphql::{ContextWrapper, SchemaData, objects::RowContext};
+use crate::graphql::{
+	ContextWrapper, SchemaData,
+	objects::{RowContext, location::Location},
+};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum::http::Method;
 use deadpool_postgres::Manager;
@@ -11,6 +14,7 @@ pub struct S3Object {
 	pub name: String,
 	pub made_on: Option<Timestamp>,
 	pub url: String,
+	pub location: Option<Location>,
 }
 
 impl S3Object {
@@ -21,11 +25,13 @@ impl S3Object {
 			id: Row::try_get::<_, i64>(&value.0, "id")?.into(),
 			name: name.clone(),
 			made_on: value.0.try_get("made_on")?,
-			url: (&data.minio_client)
+			url: data
+				.minio_client
 				.get_presigned_object_url(&data.bucket_name, &name, Method::GET)
 				.send()
 				.await?
 				.url,
+			location: Location::try_from(value.0).ok(),
 		})
 	}
 
@@ -33,7 +39,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT *
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
 				FROM objects;",
 			)
 			.await?;
@@ -58,7 +64,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT *
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
 				FROM objects
 				WHERE id = $1;",
 			)
@@ -73,7 +79,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT *
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
 				FROM objects
 				WHERE name = $1;",
 			)
@@ -96,12 +102,17 @@ impl S3Object {
 		self.made_on.map(|made_on| made_on.to_string())
 	}
 
+	async fn location(&self) -> Option<Location> {
+		self.location.clone()
+	}
+
 	async fn url(
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = &ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
-		Ok((&data.minio_client)
+		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
+		Ok(data
+			.minio_client
 			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
 			.send()
 			.await?

@@ -1,5 +1,0 @@
-CREATE TABLE objects (
-	id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-	name TEXT NOT NULL UNIQUE,
-	made_on timestamptz
-);
