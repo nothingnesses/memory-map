@@ -20,12 +20,20 @@ impl Query {
 		Location::all(ctx).await
 	}
 
-	async fn object(
+	async fn object_by_id(
 		&self,
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<S3Object, GraphQLError> {
 		S3Object::where_id(ctx, id).await
+	}
+
+	async fn object_by_name(
+		&self,
+		ctx: &Context<'_>,
+		name: String,
+	) -> Result<S3Object, GraphQLError> {
+		S3Object::where_name(ctx, name).await
 	}
 
 	async fn objects(

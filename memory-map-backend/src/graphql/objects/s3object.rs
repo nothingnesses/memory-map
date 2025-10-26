@@ -72,6 +72,21 @@ impl S3Object {
 			.await?;
 		Self::try_from(RowContext(client.query_one(&statement, &[&id]).await?, ctx.clone())).await
 	}
+
+	pub async fn where_name(
+		ctx: &Context<'_>,
+		name: String,
+	) -> Result<Self, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT *
+				FROM objects
+				WHERE name = $1;",
+			)
+			.await?;
+		Self::try_from(RowContext(client.query_one(&statement, &[&name]).await?, ctx.clone())).await
+	}
 }
 
 #[Object]
