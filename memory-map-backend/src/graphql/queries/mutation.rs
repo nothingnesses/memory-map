@@ -41,7 +41,7 @@ impl Mutation {
 			.prepare_cached(
 				"INSERT INTO objects (name, made_on)
 				VALUES (1,2)
-				RETURNING id, name, path, made_on;",
+				RETURNING id, name, made_on;",
 			)
 			.await?;
 		let row = client.query_one(&statement, &[&name, &parsed_made_on]).await?;
