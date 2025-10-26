@@ -93,7 +93,7 @@ impl S3Object {
 	}
 
 	async fn made_on(&self) -> Option<String> {
-		self.made_on.map(|time_stamp| time_stamp.to_string())
+		self.made_on.map(|made_on| made_on.to_string())
 	}
 
 	async fn url(
