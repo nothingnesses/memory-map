@@ -167,6 +167,7 @@
                 pkgs.cargo-edit
                 pkgs.bacon
                 pkgs.rust-analyzer
+                pkgs.trunk
               ];
 
               env = {
