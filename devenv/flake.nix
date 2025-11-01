@@ -168,6 +168,7 @@
                 pkgs.rust-analyzer
                 # For Leptos
                 pkgs.trunk
+                pkgs.leptosfmt
               ];
 
               env = {
