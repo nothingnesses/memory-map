@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     nixpkgs-minio.url = "github:NixOS/nixpkgs/e6f23dc08d3624daab7094b701aa3954923c6bbb";
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -57,8 +58,15 @@
               inherit system;
               config.allowUnfree = true;
               overlays = [
+                # https://github.com/hercules-ci/flake-parts/discussions/217#discussioncomment-10475578
                 (final: _prev: {
                   minio = import inputs.nixpkgs-minio {
+                    inherit (final) system;
+                    config.allowUnfree = true;
+                  };
+                })
+                (final: _prev: {
+                  cargo-generate = import inputs.nixpkgs-unstable {
                     inherit (final) system;
                     config.allowUnfree = true;
                   };
@@ -166,6 +174,7 @@
                 pkgs.cargo-edit
                 pkgs.bacon
                 pkgs.rust-analyzer
+                pkgs.cargo-generate.cargo-generate
                 # For Leptos
                 pkgs.trunk
                 pkgs.leptosfmt
