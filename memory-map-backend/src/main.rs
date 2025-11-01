@@ -1,11 +1,9 @@
 use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
 use axum::Router;
-use axum::http::Method;
 use axum::routing::get;
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
-use futures_util::StreamExt;
 use memory_map_backend::graphql::SchemaData;
 use memory_map_backend::graphql::queries::mutation::Mutation;
 use memory_map_backend::graphql::queries::query::Query;
@@ -13,7 +11,6 @@ use memory_map_backend::{Config, graphiql, migrations};
 use minio::s3::ClientBuilder;
 use minio::s3::creds::StaticProvider;
 use minio::s3::http::BaseUrl;
-use minio::s3::types::ToStream;
 use std::ops::DerefMut;
 use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
@@ -49,42 +46,10 @@ async fn main() {
 
 	let bucket_name = "memory-map";
 
-	let mut resp = minio_client
-		.list_objects(bucket_name)
-		.recursive(true)
-		.include_versions(true)
-		.to_stream()
-		.await;
-
-	while let Some(result) = resp.next().await {
-		match result {
-			Ok(resp) => {
-				for item in resp.contents {
-					println!("list_entry: {:?}", item);
-					println!("get_object: {:?}", minio_client.get_object(bucket_name, &item.name));
-					println!(
-						"url: {:?}",
-						minio_client
-							.get_presigned_object_url(bucket_name, &item.name, Method::GET)
-							.send()
-							.await
-							.unwrap()
-							.url
-					);
-				}
-			}
-			Err(e) => println!("Error: {:?}", e),
-		}
-	}
-
 	// Set up GraphQL
 	let schema = Schema::build(Query, Mutation, EmptySubscription)
 		.data(SchemaData { bucket_name: bucket_name.to_string(), pool, minio_client })
 		.finish();
-
-	// let result = schema.execute("{ locations { id latitude longitude } }").await;
-
-	// println!("{}", serde_json::to_string(&result).unwrap());
 
 	let app = Router::new().route("/", get(graphiql).post_service(GraphQL::new(schema)));
 

@@ -53,18 +53,18 @@
             #   foo = config.packages.foo;
             # };
 
-          _module.args.pkgs = import inputs.nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-            overlays = [
-              (final: _prev: {
-                minio = import inputs.nixpkgs-minio {
-                  inherit (final) system;
-                  config.allowUnfree = true;
-                };
-              })
-            ];
-          };
+            _module.args.pkgs = import inputs.nixpkgs {
+              inherit system;
+              config.allowUnfree = true;
+              overlays = [
+                (final: _prev: {
+                  minio = import inputs.nixpkgs-minio {
+                    inherit (final) system;
+                    config.allowUnfree = true;
+                  };
+                })
+              ];
+            };
 
             overlayAttrs = {
               inherit (config.packages) rustToolchain;
@@ -72,16 +72,15 @@
 
             packages.rustToolchain =
               with inputs.fenix.packages.${pkgs.stdenv.hostPlatform.system};
-              combine (
-                with stable;
-                [
-                  clippy
-                  rustc
-                  cargo
-                  rustfmt
-                  rust-src
-                ]
-              );
+              combine [
+                stable.clippy
+                stable.rustc
+                stable.cargo
+                stable.rustfmt
+                stable.rust-src
+                # For Leptos
+                targets.wasm32-unknown-unknown.stable.rust-std
+              ];
 
             # `process-compose.foo` will add a flake package output called "foo".
             # Therefore, this will add a default package that you can build using
@@ -167,6 +166,7 @@
                 pkgs.cargo-edit
                 pkgs.bacon
                 pkgs.rust-analyzer
+                # For Leptos
                 pkgs.trunk
               ];
 

@@ -23,7 +23,8 @@ impl Mutation {
 		location: Option<Location>,
 	) -> Result<S3Object, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let parsed_made_on: Option<Timestamp> = made_on.map(|ts| ts.parse()).transpose()?;
+		let parsed_made_on: Option<Timestamp> =
+			made_on.map(|timestamp| timestamp.parse()).transpose()?;
 		let location_geometry = location.map(|location| {
 			format!("SRID=4326;POINT({} {})", location.longitude, location.latitude)
 		});
