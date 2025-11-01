@@ -11,6 +11,7 @@
         // "component",
         "server"
       ]
-    }
+    },
+    "rust-analyzer.cargo.features": "all"
   }
 }
