@@ -2,6 +2,7 @@ binop_separator = "Back"
 brace_style = "PreferSameLine"
 combine_control_expr = false
 condense_wildcard_suffixes = true
+edition = "2024"
 empty_item_single_line = false
 format_code_in_doc_comments = true
 fn_params_layout = "Vertical"
