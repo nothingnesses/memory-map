@@ -15,7 +15,7 @@ pub struct Mutation;
 
 #[Object]
 impl Mutation {
-	async fn merge_s3_object(
+	async fn upsert_s3_object(
 		&self,
 		ctx: &Context<'_>,
 		name: String,
