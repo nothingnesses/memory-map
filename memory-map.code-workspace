@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "rust-analyzer.procMacro.ignored": {
+      "leptos_macro": [
+        // optional:
+        // "component",
+        "server"
+      ]
+    }
+  }
+}
