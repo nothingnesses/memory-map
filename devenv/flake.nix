@@ -66,7 +66,7 @@
                   };
                 })
                 (final: _prev: {
-                  cargo-generate = import inputs.nixpkgs-unstable {
+                  unstable = import inputs.nixpkgs-unstable {
                     inherit (final) system;
                     config.allowUnfree = true;
                   };
@@ -174,7 +174,7 @@
                 pkgs.cargo-edit
                 pkgs.bacon
                 pkgs.rust-analyzer
-                pkgs.cargo-generate.cargo-generate
+                pkgs.unstable.cargo-generate
                 # For Leptos
                 pkgs.trunk
                 pkgs.leptosfmt
