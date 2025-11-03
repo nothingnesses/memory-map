@@ -1,3 +1,6 @@
+// Use .scss and @use to import other stylesheets, instead of .css and @import, [because trunk doesn't yet handle native CSS @imports](https://trunkrs.dev/assets/#css)
+@use "uno";
+
 /* --------------------- Open Props --------------------------- */
 
 /* the props */
