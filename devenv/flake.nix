@@ -180,6 +180,8 @@
                 # Stable didn't yet have cargo-generate, so we're using unstable here
                 pkgs.unstable.cargo-generate
                 pkgs.just
+                pkgs.pnpm
+                pkgs.nodejs-slim
                 # For Leptos
                 pkgs.leptosfmt
                 pkgs.trunk
