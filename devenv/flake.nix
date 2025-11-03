@@ -3,6 +3,9 @@
 
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
+    # We're using this version as newer versions removed useful features
+    # https://www.reddit.com/r/selfhosted/comments/1kva3pw/avoid_minio_developers_introduce_trojan_horse/
+    # @todo Look into https://github.com/OpenMaxIO/openmaxio-object-browser or https://github.com/rustfs/rustfs
     nixpkgs-minio.url = "github:NixOS/nixpkgs/e6f23dc08d3624daab7094b701aa3954923c6bbb";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     fenix = {
@@ -163,8 +166,8 @@
                 config.process-compose."default".services.outputs.devShell
               ];
 
-              nativeBuildInputs = [ pkgs.just ];
-
+              # Alias for `nativeBuildInputs`
+              # https://discourse.nixos.org/t/difference-between-buildinputs-and-packages-in-mkshell/60598/10
               packages = [
                 pkgs.bashInteractive
                 config.packages.rustToolchain
@@ -174,10 +177,18 @@
                 pkgs.cargo-edit
                 pkgs.bacon
                 pkgs.rust-analyzer
+                # Stable didn't yet have cargo-generate, so we're using unstable here
                 pkgs.unstable.cargo-generate
+                pkgs.just
                 # For Leptos
-                pkgs.trunk
                 pkgs.leptosfmt
+                pkgs.trunk
+                # https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
+                pkgs.dart-sass
+                # Stable had 0.2.100 and we needed 0.2.104, so we're using unstable here
+                pkgs.unstable.wasm-bindgen-cli
+                # pkgs.binaryen
+                # pkgs.tailwindcss
               ];
 
               env = {

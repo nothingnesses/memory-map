@@ -1,9 +1,11 @@
+# Run PostgreSQL and Minio.
 default:
     nix run ./devenv
 
-# Valid targets are: backend frontend
-watch target:
-    bacon run -- --bin {{target}}
+# Run backend.
+watch:
+    bacon run -- --bin backend
 
+# Run frontend. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
 serve:
-    cd frontend; trunk serve --open
+    cd frontend; trunk serve --skip-version-check --offline --open
