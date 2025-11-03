@@ -1,0 +1,12 @@
+query S3ObjectsQuery {
+	s3Objects {
+		id
+		location {
+			latitude
+			longitude
+		}
+		name
+		madeOn
+		url
+	}
+}

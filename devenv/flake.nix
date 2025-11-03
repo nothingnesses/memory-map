@@ -182,6 +182,7 @@
                 pkgs.just
                 pkgs.pnpm
                 pkgs.nodejs-slim
+                pkgs.graphql-client
                 # For Leptos
                 pkgs.leptosfmt
                 pkgs.trunk

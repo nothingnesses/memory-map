@@ -1,5 +1,31 @@
-use crate::components::counter_btn::Button;
-use leptos::prelude::*;
+use crate::components::counter_btn::Button as CounterButton;
+use graphql_client::{GraphQLQuery, Response};
+use leptos::{logging::debug_log, prelude::*, task::spawn_local};
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema.json",
+	query_path = "graphql/s3Objects.graphql",
+	response_derives = "Debug"
+)]
+pub struct S3ObjectsQuery;
+
+// https://github.com/leptos-rs/leptos/discussions/198#discussioncomment-4582094
+async fn s3_objects_query_request(
+	variables: s3_objects_query::Variables
+) -> Result<String, String> {
+	let request_body = S3ObjectsQuery::build_query(variables);
+	let client = reqwest::Client::new();
+	let res = client
+		.post("http://localhost:8000/")
+		.json(&request_body)
+		.send()
+		.await
+		.map_err(|e| e.to_string())?;
+	let response_body: Response<s3_objects_query::ResponseData> =
+		res.json().await.map_err(|e| e.to_string())?;
+	Ok(format!("{:?}", response_body))
+}
 
 /// Default Home Page
 #[component]
@@ -42,8 +68,20 @@ pub fn Home() -> impl IntoView {
 				<h1>"Welcome to Leptos"</h1>
 
 				<div class="buttons">
-					<Button />
-					<Button increment=5 />
+					<CounterButton />
+					<CounterButton increment=5 />
+
+					<button on:click=move |_| {
+						spawn_local(async move {
+							let res = s3_objects_query_request(s3_objects_query::Variables {}).await;
+							match res {
+									Ok(a) => debug_log!("{:?}", a),
+									Err(e) => debug_log!("{:?}", e),
+							}
+						});
+					}>
+						"Make GraphQL Request"
+					</button>
 				</div>
 
 			</div>
