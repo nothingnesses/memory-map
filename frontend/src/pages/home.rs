@@ -13,18 +13,15 @@ pub struct S3ObjectsQuery;
 // https://github.com/leptos-rs/leptos/discussions/198#discussioncomment-4582094
 async fn s3_objects_query_request(
 	variables: s3_objects_query::Variables
-) -> Result<String, String> {
+) -> Result<String, reqwest::Error> {
 	let request_body = S3ObjectsQuery::build_query(variables);
-	let client = reqwest::Client::new();
-	let res = client
+	reqwest::Client::new()
 		.post("http://localhost:8000/")
 		.json(&request_body)
 		.send()
+		.await?
+		.json()
 		.await
-		.map_err(|e| e.to_string())?;
-	let response_body: Response<s3_objects_query::ResponseData> =
-		res.json().await.map_err(|e| e.to_string())?;
-	Ok(format!("{:?}", response_body))
 }
 
 /// Default Home Page
