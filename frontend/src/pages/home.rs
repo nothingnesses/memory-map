@@ -1,6 +1,10 @@
-use crate::components::counter_btn::Button as CounterButton;
-use graphql_client::{GraphQLQuery, Response};
-use leptos::{logging::debug_log, prelude::*, task::spawn_local};
+use crate::{components::counter_btn::Button as CounterButton, post_graphql};
+use graphql_client::GraphQLQuery;
+use leptos::{
+	logging::{debug_error, debug_log},
+	prelude::*,
+	task::spawn_local,
+};
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -9,20 +13,6 @@ use leptos::{logging::debug_log, prelude::*, task::spawn_local};
 	response_derives = "Debug"
 )]
 pub struct S3ObjectsQuery;
-
-// https://github.com/leptos-rs/leptos/discussions/198#discussioncomment-4582094
-async fn s3_objects_query_request(
-	variables: s3_objects_query::Variables
-) -> Result<String, reqwest::Error> {
-	let request_body = S3ObjectsQuery::build_query(variables);
-	reqwest::Client::new()
-		.post("http://localhost:8000/")
-		.json(&request_body)
-		.send()
-		.await?
-		.json()
-		.await
-}
 
 /// Default Home Page
 #[component]
@@ -70,8 +60,11 @@ pub fn Home() -> impl IntoView {
 
 					<button on:click=move |_| {
 						spawn_local(async move {
-							let res = s3_objects_query_request(s3_objects_query::Variables {}).await;
-							debug_log!("{:?}", res)
+							let response = post_graphql::<S3ObjectsQuery, _>(&reqwest::Client::new(), "http://localhost:8000/", s3_objects_query::Variables {}).await;
+							match response {
+								Ok(response) => debug_log!("{:?}", response),
+								Err(error) => debug_error!("{:?}", error),
+							}
 						});
 					}>
 						"Make GraphQL Request"

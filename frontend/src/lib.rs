@@ -32,3 +32,17 @@ pub fn App() -> impl IntoView {
 		</Router>
 	}
 }
+
+/// [Copied from here](https://docs.rs/graphql_client/0.14.0/src/graphql_client/reqwest.rs.html#8-17),
+/// since we can't initialise a `reqwest::Client` to use with the original version,
+/// since `graphql_client` didn't `pub use` their version of `reqwest` for us to `use`.
+pub async fn post_graphql<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
+	client: &reqwest::Client,
+	url: U,
+	variables: Q::Variables,
+) -> Result<graphql_client::Response<Q::ResponseData>, reqwest::Error> {
+	let body = Q::build_query(variables);
+	let reqwest_response = client.post(url).json(&body).send().await?;
+
+	reqwest_response.json().await
+}
