@@ -74,10 +74,7 @@ pub fn Home() -> impl IntoView {
 					<button on:click=move |_| {
 						spawn_local(async move {
 							let res = s3_objects_query_request(s3_objects_query::Variables {}).await;
-							match res {
-									Ok(a) => debug_log!("{:?}", a),
-									Err(e) => debug_log!("{:?}", e),
-							}
+							debug_log!("{:?}", res)
 						});
 					}>
 						"Make GraphQL Request"

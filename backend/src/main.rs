@@ -14,6 +14,7 @@ use minio::s3::http::BaseUrl;
 use std::ops::DerefMut;
 use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
+use tower_http::cors::CorsLayer;
 
 #[tokio::main]
 async fn main() {
@@ -51,7 +52,9 @@ async fn main() {
 		.data(SchemaData { bucket_name: bucket_name.to_string(), pool, minio_client })
 		.finish();
 
-	let app = Router::new().route("/", get(graphiql).post_service(GraphQL::new(schema)));
+	let app = Router::new()
+		.route("/", get(graphiql).post_service(GraphQL::new(schema)))
+		.layer(CorsLayer::permissive());
 
 	println!("GraphiQL IDE: http://localhost:8000");
 
