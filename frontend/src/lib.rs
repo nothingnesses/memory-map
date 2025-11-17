@@ -1,7 +1,7 @@
+use graphql_client::GraphQLQuery;
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{components::*, path};
-use graphql_client::GraphQLQuery;
 
 // Modules
 mod components;
@@ -38,7 +38,7 @@ pub fn App() -> impl IntoView {
 #[graphql(
 	schema_path = "graphql/schema.json",
 	query_path = "graphql/s3Objects.graphql",
-	response_derives = "Debug"
+	response_derives = "Clone,Debug"
 )]
 pub struct S3ObjectsQuery;
 
@@ -54,4 +54,29 @@ pub async fn post_graphql<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
 	let reqwest_response = client.post(url).json(&body).send().await?;
 
 	reqwest_response.json().await
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct LocationStrings {
+	pub latitude: String,
+	pub longitude: String,
+}
+
+pub fn dump_errors(errors: ArcRwSignal<Errors>) -> impl IntoView {
+	view! {
+		<h1>"Uh oh! Something went wrong!"</h1>
+
+		<p>"Errors: "</p>
+		// Render a list of errors as strings - good for development purposes
+		<ul>
+			{move || {
+				errors
+					.get()
+					.into_iter()
+					.map(|(_, e)| view! { <li>{e.to_string()}</li> })
+					.collect_view()
+			}}
+
+		</ul>
+	}
 }
