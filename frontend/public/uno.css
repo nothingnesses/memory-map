@@ -416,3 +416,5 @@ input:where([type='button'], [type='reset'], [type='submit']),
 @media (min-width: 96rem){
 .container{max-width:96rem;}
 }
+/* layer: default */
+.w-full{width:100%;}

@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{components::*, path};
+use graphql_client::GraphQLQuery;
 
 // Modules
 mod components;
@@ -32,6 +33,14 @@ pub fn App() -> impl IntoView {
 		</Router>
 	}
 }
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema.json",
+	query_path = "graphql/s3Objects.graphql",
+	response_derives = "Debug"
+)]
+pub struct S3ObjectsQuery;
 
 /// [Copied from here](https://docs.rs/graphql_client/0.14.0/src/graphql_client/reqwest.rs.html#8-17),
 /// since we can't initialise a `reqwest::Client` to use with the original version,
