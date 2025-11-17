@@ -17,25 +17,37 @@ pub struct S3ObjectsQuery;
 /// Default Home Page
 #[component]
 pub fn Home() -> impl IntoView {
-	view! {
-		<ErrorBoundary fallback=|errors| {
-			view! {
-				<h1>"Uh oh! Something went wrong!"</h1>
+	let dump_errors = |errors: ArcRwSignal<Errors>| {
+		view! {
+			<h1>"Uh oh! Something went wrong!"</h1>
 
-				<p>"Errors: "</p>
-				// Render a list of errors as strings - good for development purposes
-				<ul>
-					{move || {
-						errors
-							.get()
-							.into_iter()
-							.map(|(_, e)| view! { <li>{e.to_string()}</li> })
-							.collect_view()
-					}}
+			<p>"Errors: "</p>
+			// Render a list of errors as strings - good for development purposes
+			<ul>
+				{move || {
+					errors
+						.get()
+						.into_iter()
+						.map(|(_, e)| view! { <li>{e.to_string()}</li> })
+						.collect_view()
+				}}
 
-				</ul>
+			</ul>
+		}
+	};
+
+	let make_graphql_request = move |_| {
+		spawn_local(async move {
+			let response = post_graphql::<S3ObjectsQuery, _>(&reqwest::Client::new(), "http://localhost:8000/", s3_objects_query::Variables {}).await;
+			match response {
+				Ok(response) => debug_log!("{:?}", response),
+				Err(error) => debug_error!("{:?}", error),
 			}
-		}>
+		});
+	};
+
+	view! {
+		<ErrorBoundary fallback=dump_errors>
 
 			<div class="container">
 
@@ -58,15 +70,7 @@ pub fn Home() -> impl IntoView {
 					<CounterButton />
 					<CounterButton increment=5 />
 
-					<button on:click=move |_| {
-						spawn_local(async move {
-							let response = post_graphql::<S3ObjectsQuery, _>(&reqwest::Client::new(), "http://localhost:8000/", s3_objects_query::Variables {}).await;
-							match response {
-								Ok(response) => debug_log!("{:?}", response),
-								Err(error) => debug_error!("{:?}", error),
-							}
-						});
-					}>
+					<button on:click=make_graphql_request>
 						"Make GraphQL Request"
 					</button>
 				</div>
