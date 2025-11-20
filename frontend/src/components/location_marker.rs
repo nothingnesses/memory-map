@@ -1,12 +1,27 @@
 use crate::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
-use leptos::prelude::*;
+use leptos::{either::either, prelude::*};
 use leptos_leaflet::prelude::*;
+use mime::Mime;
 
 fn render_s3_objects(s3_objects: Vec<S3Object>) -> impl IntoView {
 	s3_objects
-		.iter()
+		.into_iter()
 		.map(|s3_object| {
-			view! { <div>{s3_object.id.clone()}</div> }
+			let mime_type = s3_object
+				.content_type
+				.parse::<Mime>()
+				.map(|m| m.type_().as_str().to_string())
+				.unwrap_or_default();
+			either!(
+				mime_type.as_str(),
+				"image" => view! {
+					<img src=s3_object.url />
+				},
+				"video" => view! {
+					<video src=s3_object.url controls=true />
+				},
+				_ => view! { },
+			)
 		})
 		.collect_view()
 }

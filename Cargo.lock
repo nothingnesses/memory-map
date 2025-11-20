@@ -1033,6 +1033,7 @@ dependencies = [
  "leptos_meta",
  "leptos_router",
  "log",
+ "mime",
  "reqwest",
  "serde",
  "tokio",
