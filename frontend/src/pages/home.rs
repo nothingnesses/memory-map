@@ -1,12 +1,5 @@
-use crate::{
-	LocationStrings, S3ObjectsQuery, components::counter_btn::Button as CounterButton, dump_errors,
-	post_graphql, s3_objects_query,
-};
-use leptos::{
-	logging::{debug_error, debug_log},
-	prelude::*,
-	task::spawn_local,
-};
+use crate::{LocationStrings, S3ObjectsQuery, dump_errors, post_graphql, s3_objects_query};
+use leptos::{logging::debug_error, prelude::*};
 use leptos_leaflet::prelude::*;
 use std::collections;
 
@@ -90,48 +83,9 @@ fn LocationMarkers() -> impl IntoView {
 /// Default Home Page
 #[component]
 pub fn Home() -> impl IntoView {
-	let make_graphql_request = move |_| {
-		spawn_local(async move {
-			let response = post_graphql::<S3ObjectsQuery, _>(
-				&reqwest::Client::new(),
-				"http://localhost:8000/",
-				s3_objects_query::Variables {},
-			)
-			.await;
-			match response {
-				Ok(response) => debug_log!("{:?}", response),
-				Err(error) => debug_error!("{:?}", error),
-			}
-		});
-	};
-
 	view! {
 		<ErrorBoundary fallback=dump_errors>
-
 			<div class="container">
-
-				<picture>
-					<source
-						srcset="https://raw.githubusercontent.com/leptos-rs/leptos/main/docs/logos/Leptos_logo_pref_dark_RGB.svg"
-						media="(prefers-color-scheme: dark)"
-					/>
-					<img
-						src="https://raw.githubusercontent.com/leptos-rs/leptos/main/docs/logos/Leptos_logo_RGB.svg"
-						alt="Leptos Logo"
-						height="200"
-						width="400"
-					/>
-				</picture>
-
-				<h1>"Welcome to Leptos"</h1>
-
-				<div class="buttons">
-					<CounterButton />
-					<CounterButton increment=5 />
-
-					<button on:click=make_graphql_request>"Make GraphQL Request"</button>
-				</div>
-
 				<MapContainer
 					class="w-full"
 					style="height: 400px"
@@ -145,7 +99,6 @@ pub fn Home() -> impl IntoView {
 					/>
 					<LocationMarkers />
 				</MapContainer>
-
 			</div>
 		</ErrorBoundary>
 	}

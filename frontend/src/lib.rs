@@ -1,3 +1,4 @@
+use crate::pages::home::Home;
 use graphql_client::GraphQLQuery;
 use leptos::prelude::*;
 use leptos_meta::*;
@@ -6,9 +7,6 @@ use leptos_router::{components::*, path};
 // Modules
 mod components;
 mod pages;
-
-// Top-Level pages
-use crate::pages::home::Home;
 
 /// An app router which renders the homepage and handles 404's
 #[component]
