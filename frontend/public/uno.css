@@ -417,4 +417,8 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .container{max-width:96rem;}
 }
 /* layer: default */
+.grid{display:grid;}
+.w-dvw{width:100dvw;}
 .w-full{width:100%;}
+.relative{position:relative;}
+.h-dvh{height:100dvh;}
