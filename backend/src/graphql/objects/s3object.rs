@@ -7,30 +7,23 @@ use axum::http::Method;
 use deadpool_postgres::Manager;
 use futures::future::join_all;
 use jiff::Timestamp;
+use minio::s3::types::S3Api;
 use tokio_postgres::Row;
 
 pub struct S3Object {
 	pub id: ID,
 	pub name: String,
 	pub made_on: Option<Timestamp>,
-	pub url: String,
 	pub location: Option<Location>,
 }
 
 impl S3Object {
 	pub async fn try_from(value: RowContext<'_>) -> Result<Self, GraphQLError> {
 		let name: String = value.0.try_get("name")?;
-		let data = value.1.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
 		Ok(S3Object {
 			id: Row::try_get::<_, i64>(&value.0, "id")?.into(),
 			name: name.clone(),
 			made_on: value.0.try_get("made_on")?,
-			url: data
-				.minio_client
-				.get_presigned_object_url(&data.bucket_name, &name, Method::GET)
-				.send()
-				.await?
-				.url,
 			location: Location::try_from(value.0).ok(),
 		})
 	}
@@ -117,5 +110,21 @@ impl S3Object {
 			.send()
 			.await?
 			.url)
+	}
+
+	async fn content_type(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<String, GraphQLError> {
+		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
+		data.minio_client
+			.get_object(&data.bucket_name, &self.name)
+			.send()
+			.await?
+			.headers
+			.get("Content-Type")
+			.and_then(|content_type| content_type.to_str().ok())
+			.map(|s| s.to_string())
+			.ok_or_else(|| "Invalid Content-Type".into())
 	}
 }
