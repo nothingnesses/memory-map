@@ -2,5 +2,8 @@
 	"devDependencies": {
 		"@unocss/preset-wind4": "^66.5.4",
 		"unocss": "^66.5.4"
+	},
+	"dependencies": {
+		"leaflet": "^1.9.4"
 	}
 }

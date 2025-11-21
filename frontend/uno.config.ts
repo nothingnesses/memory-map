@@ -6,7 +6,7 @@ export default defineConfig({
 		entry: [
 			{
 				patterns: ["index.html", "src/**/*.rs"],
-				outFile: "public/uno.css",
+				outFile: "style/uno.css",
 			},
 		],
 	},

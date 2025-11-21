@@ -1,2 +1,3 @@
 // Use .scss and @use to import other stylesheets, instead of .css and @import, [because trunk doesn't yet handle native CSS @imports](https://trunkrs.dev/assets/#css)
+@use "../node_modules/leaflet/dist/leaflet";
 @use "uno";

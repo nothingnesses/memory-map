@@ -6,7 +6,7 @@
 		<link
 			data-trunk
 			rel="scss"
-			href="public/styles.scss"
+			href="style/main.scss"
 		/>
 
 		<!-- Include favicon in dist output: see https://trunkrs.dev/assets/#icon -->
@@ -25,10 +25,11 @@
 		/>
 
 		<link
-			rel="stylesheet"
-			href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+			data-trunk
+			rel="copy-dir"
+			href="node_modules/leaflet/dist/images"
 		/>
-		<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+		<script data-trunk src="node_modules/leaflet/dist/leaflet.js"></script>
 	</head>
 
 	<body></body>
