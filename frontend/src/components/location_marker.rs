@@ -1,4 +1,4 @@
-use crate::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
+use crate::{components::gallery::Gallery, s3_objects_query::S3ObjectsQueryS3Objects as S3Object};
 use leptos::{either::either, prelude::*};
 use leptos_leaflet::prelude::*;
 use mime::Mime;
@@ -37,6 +37,7 @@ pub fn LocationMarker(
 		<Marker position=position!(latitude, longitude) draggable=true>
 			<Popup>
 				<div class="grid">
+					{move || view! { <Gallery></Gallery> }}
 					{move || render_s3_objects(s3_objects.get().clone())}
 					{move || format!("{latitude}, {longitude}")}
 				</div>
