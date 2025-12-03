@@ -418,7 +418,10 @@ input:where([type='button'], [type='reset'], [type='submit']),
 }
 /* layer: default */
 .grid{display:grid;}
+.grid-flow-col{grid-auto-flow:column;}
+.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
 .w-dvw{width:100dvw;}
 .w-full{width:100%;}
+.justify-between{justify-content:space-between;}
 .relative{position:relative;}
 .h-dvh{height:100dvh;}

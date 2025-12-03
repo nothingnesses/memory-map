@@ -2,20 +2,26 @@ use leptos::prelude::*;
 use thaw::*;
 
 #[component]
-pub fn Gallery() -> impl IntoView {
+pub fn Gallery(
+	#[prop(into, default = Box::new(move || "Open Gallery".into_any()))]
+	open_button_content: Children,
+	#[prop(into, default = Box::new(move || "Gallery".into_any()))] dialog_title_content: Children,
+) -> impl IntoView {
 	let open = RwSignal::new(false);
 	view! {
-		<Button on_click=move |_| open.set(true)>"Open Dialog"</Button>
-		<Dialog open>
-			<DialogSurface>
-				<DialogBody>
-					<DialogTitle>"Dialog title"</DialogTitle>
-					<DialogContent>"Dialog body"</DialogContent>
-					<DialogActions>
-						<Button appearance=ButtonAppearance::Primary>"Do Something"</Button>
-					</DialogActions>
-				</DialogBody>
-			</DialogSurface>
-		</Dialog>
+		<ConfigProvider>
+			<Button on_click=move |_| { open.set(true) }>{open_button_content()}</Button>
+			<Dialog open>
+				<DialogSurface>
+					<DialogBody class="grid-cols-1">
+						<div class="relative w-full grid grid-flow-col justify-between">
+							<DialogTitle>{dialog_title_content()}</DialogTitle>
+							<Button on_click=move |_| { open.set(false) }>"Close"</Button>
+						</div>
+						<DialogContent>"Dialog body"</DialogContent>
+					</DialogBody>
+				</DialogSurface>
+			</Dialog>
+		</ConfigProvider>
 	}
 }
