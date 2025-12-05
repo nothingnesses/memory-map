@@ -1,23 +1,9 @@
 use crate::{
-	LocationStrings, S3ObjectsQuery,
-	components::location_marker::LocationMarker,
-	post_graphql,
-	s3_objects_query::{S3ObjectsQueryS3Objects as S3Object, Variables},
+	LocationStrings, components::location_marker::LocationMarker, dump_errors, fetch_s3_objects,
+	s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::{logging::debug_error, prelude::*};
 use std::collections::HashMap;
-
-async fn fetch_s3_objects() -> Result<Vec<S3Object>, Error> {
-	Ok(post_graphql::<S3ObjectsQuery, _>(
-		&reqwest::Client::new(),
-		"http://localhost:8000/",
-		Variables {},
-	)
-	.await?
-	.data
-	.ok_or("Empty response".to_string())
-	.map(|response| response.s3_objects)?)
-}
 
 fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 	s3_objects
@@ -38,13 +24,14 @@ fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 		.into_iter()
 		.map(|(location, s3_objects)| {
 			location.as_ref().map(|location_strings| {
+				// @todo Add error handling here.
 				match (
 					location_strings.latitude.parse::<f64>(),
 					location_strings.longitude.parse::<f64>(),
 				) {
-					(Ok(latitude), Ok(longitude)) => Some(
-						view! { <LocationMarker latitude=latitude longitude=longitude s3_objects=s3_objects /> },
-					),
+					(Ok(latitude), Ok(longitude)) => {
+						Some(view! { <LocationMarker latitude longitude s3_objects /> })
+					}
 					_ => None,
 				}
 			})
@@ -55,11 +42,11 @@ fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 /// Location markers to add to the map.
 #[component]
 pub fn LocationMarkers() -> impl IntoView {
-	let s3_objects_resource = LocalResource::new(move || fetch_s3_objects());
+	let s3_objects_resource = LocalResource::new(fetch_s3_objects);
 	view! {
 		<ErrorBoundary fallback=|errors| {
 			debug_error!("Failed to load markers: {:?}", errors.get());
-			view! {}
+			return dump_errors(errors);
 		}>
 			<Suspense fallback=move || {
 				view! { <p>"Loading map data..."</p> }

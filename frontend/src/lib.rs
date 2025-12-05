@@ -1,8 +1,12 @@
-use crate::pages::home::Home;
+use crate::{
+	pages::home::Home,
+	s3_objects_query::{S3ObjectsQueryS3Objects as S3Object, Variables},
+};
 use graphql_client::GraphQLQuery;
-use leptos::prelude::*;
+use leptos::{either::either, prelude::*};
 use leptos_meta::*;
 use leptos_router::{components::*, path};
+use mime::Mime;
 
 // Modules
 mod components;
@@ -77,4 +81,39 @@ pub fn dump_errors(errors: ArcRwSignal<Errors>) -> impl IntoView {
 
 		</ul>
 	}
+}
+
+pub async fn fetch_s3_objects() -> Result<Vec<S3Object>, Error> {
+	Ok(post_graphql::<S3ObjectsQuery, _>(
+		&reqwest::Client::new(),
+		"http://localhost:8000/",
+		Variables {},
+	)
+	.await?
+	.data
+	.ok_or("Empty response".to_string())
+	.map(|response| response.s3_objects)?)
+}
+
+pub fn render_s3_objects(s3_objects: Vec<S3Object>) -> impl IntoView {
+	s3_objects
+		.into_iter()
+		.map(|s3_object| {
+			let mime_type = s3_object
+				.content_type
+				.parse::<Mime>()
+				.map(|m| m.type_().as_str().to_string())
+				.unwrap_or_default();
+			either!(
+				mime_type.as_str(),
+				"image" => view! {
+					<img src=s3_object.url />
+				},
+				"video" => view! {
+					<video src=s3_object.url controls=true />
+				},
+				_ => view! { },
+			)
+		})
+		.collect_view()
 }
