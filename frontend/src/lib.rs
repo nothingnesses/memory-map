@@ -3,10 +3,9 @@ use crate::{
 	s3_objects_query::{S3ObjectsQueryS3Objects as S3Object, Variables},
 };
 use graphql_client::GraphQLQuery;
-use leptos::{either::either, prelude::*};
+use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{components::*, path};
-use mime::Mime;
 use std::ops::{Add, Rem, Sub};
 
 // Modules
@@ -94,24 +93,6 @@ pub async fn fetch_s3_objects() -> Result<Vec<S3Object>, Error> {
 	.data
 	.ok_or("Empty response".to_string())
 	.map(|response| response.s3_objects)?)
-}
-
-pub fn render_s3_object(s3_object: S3Object) -> impl IntoView {
-	let mime_type = s3_object
-		.content_type
-		.parse::<Mime>()
-		.map(|m| m.type_().as_str().to_string())
-		.unwrap_or_default();
-	either!(
-		mime_type.as_str(),
-		"image" => view! {
-			<img src=s3_object.url />
-		},
-		"video" => view! {
-			<video src=s3_object.url controls=true />
-		},
-		_ => (),
-	)
 }
 
 pub trait ModularAdd {

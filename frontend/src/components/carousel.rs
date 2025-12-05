@@ -1,5 +1,6 @@
 use crate::{
-	CallbackAnyView, ModularAdd, ModularSubtract, render_s3_object,
+	CallbackAnyView, ModularAdd, ModularSubtract,
+	components::s3_object::S3Object as S3ObjectComponent,
 	s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::prelude::*;
@@ -30,7 +31,9 @@ pub fn Carousel(
 					<Button on_click=move |_| {
 						open.set(true);
 						index.set(s3_object_index.get());
-					}>{render_s3_object(s3_object)}</Button>
+					}>
+						<S3ObjectComponent s3_object=Signal::derive(move || s3_object.clone()) />
+					</Button>
 				</ForEnumerate>
 			</div>
 			<Dialog open>
@@ -42,20 +45,32 @@ pub fn Carousel(
 							}>{close_button_content.run(())}</Button>
 						</div>
 						<DialogContent>
-							<div>
-								{move || render_s3_object(s3_objects.get()[index.get()].clone())}
+							<div class="relative">
+								<S3ObjectComponent s3_object=Signal::derive(move || {
+									s3_objects.get()[index.get()].clone()
+								}) />
 								<Show when=move || { show_navigation_buttons.get() }>
-									<div>
-										<Button on_click=move |_| {
-											index
-												.set(
-													index.get().modular_subtract(1, s3_objects.get().len()),
-												);
-										}>{previous_button_content.run(())}</Button>
-										<Button on_click=move |_| {
-											index
-												.set(index.get().modular_add(1, s3_objects.get().len()));
-										}>{next_button_content.run(())}</Button>
+									<div class="absolute inset-0 w-full h-full grid grid-flow-col justify-between items-center">
+										<Button
+											class="w-fit"
+											on_click=move |_| {
+												index
+													.set(
+														index.get().modular_subtract(1, s3_objects.get().len()),
+													);
+											}
+										>
+											{previous_button_content.run(())}
+										</Button>
+										<Button
+											class="w-fit"
+											on_click=move |_| {
+												index
+													.set(index.get().modular_add(1, s3_objects.get().len()));
+											}
+										>
+											{next_button_content.run(())}
+										</Button>
 									</div>
 								</Show>
 							</div>

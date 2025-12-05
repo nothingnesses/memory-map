@@ -422,9 +422,14 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .grid{display:grid;}
 .grid-flow-col{grid-auto-flow:column;}
 .grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
+.h-full{height:100%;}
 .w-dvw{width:100dvw;}
+.w-fit{width:fit-content;}
 .w-full{width:100%;}
+.items-center{align-items:center;}
+.inset-0{inset:calc(var(--spacing) * 0);}
 .justify-between{justify-content:space-between;}
+.absolute{position:absolute;}
 .relative{position:relative;}
 .h-dvh{height:100dvh;}
 @media (min-width: 48rem){
