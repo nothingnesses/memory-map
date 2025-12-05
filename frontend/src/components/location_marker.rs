@@ -15,11 +15,13 @@ pub fn LocationMarker(
 					<h2>{latitude}," "{longitude}</h2>
 					<Gallery
 						s3_objects
-						dialog_title_content=view! { { latitude },
-							" "
-							{longitude}
-						}
-							.into_any()
+						dialog_title_content=Callback::new(move |_| {
+							view! { { latitude },
+								" "
+								{longitude}
+							}
+								.into_any()
+						})
 					></Gallery>
 				</div>
 			</Popup>

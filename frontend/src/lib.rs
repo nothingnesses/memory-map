@@ -161,3 +161,5 @@ where
 		}
 	}
 }
+
+pub type CallbackAnyView = Callback<(), AnyView>;

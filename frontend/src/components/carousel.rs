@@ -1,5 +1,5 @@
 use crate::{
-	ModularAdd, ModularSubtract, render_s3_object,
+	CallbackAnyView, ModularAdd, ModularSubtract, render_s3_object,
 	s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::prelude::*;
@@ -8,9 +8,13 @@ use thaw::*;
 #[component]
 pub fn Carousel(
 	#[prop(into)] s3_objects: Signal<Vec<S3Object>>,
-	#[prop(into, default = "Close".into_any())] close_button_content: AnyView,
-	#[prop(into, default = "Previous".into_any())] previous_button_content: AnyView,
-	#[prop(into, default = "Next".into_any())] next_button_content: AnyView,
+	#[prop(into, default = Callback::new(|_| "Close".into_any()))]
+	close_button_content: CallbackAnyView,
+	#[prop(into, default = Callback::new(|_| "Previous".into_any()))]
+	previous_button_content: CallbackAnyView,
+	#[prop(into, default = Callback::new(|_| "Next".into_any()))]
+	next_button_content: CallbackAnyView,
+	#[prop(into, default = Signal::derive(|| true))] show_navigation_buttons: Signal<bool>,
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
@@ -30,29 +34,30 @@ pub fn Carousel(
 				</ForEnumerate>
 			</div>
 			<Dialog open>
-				<DialogSurface class="surface">
-					<DialogBody class="body grid-cols-1">
+				<DialogSurface>
+					<DialogBody class="grid-cols-1">
 						<div class="relative w-full grid grid-flow-col justify-between">
-							// <DialogTitle>{dialog_title_content()}</DialogTitle>
 							<Button on_click=move |_| {
 								open.set(false)
-							}>{close_button_content}</Button>
+							}>{close_button_content.run(())}</Button>
 						</div>
 						<DialogContent>
 							<div>
 								{move || render_s3_object(s3_objects.get()[index.get()].clone())}
-								<div>
-									<Button on_click=move |_| {
-										index
-											.set(
-												index.get().modular_subtract(1, s3_objects.get().len()),
-											);
-									}>{previous_button_content}</Button>
-									<Button on_click=move |_| {
-										index
-											.set(index.get().modular_add(1, s3_objects.get().len()));
-									}>{next_button_content}</Button>
-								</div>
+								<Show when=move || { show_navigation_buttons.get() }>
+									<div>
+										<Button on_click=move |_| {
+											index
+												.set(
+													index.get().modular_subtract(1, s3_objects.get().len()),
+												);
+										}>{previous_button_content.run(())}</Button>
+										<Button on_click=move |_| {
+											index
+												.set(index.get().modular_add(1, s3_objects.get().len()));
+										}>{next_button_content.run(())}</Button>
+									</div>
+								</Show>
 							</div>
 						</DialogContent>
 					</DialogBody>
