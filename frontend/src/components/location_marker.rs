@@ -8,13 +8,19 @@ pub fn LocationMarker(
 	#[prop(into)] longitude: Signal<f64>,
 	#[prop(into)] s3_objects: Signal<Vec<S3Object>>,
 ) -> impl IntoView {
-	let (latitude, longitude) = (latitude.get(), longitude.get());
 	view! {
-		<Marker position=position!(latitude, longitude) draggable=true>
+		<Marker position=position!(latitude.get(), longitude.get()) draggable=true>
 			<Popup>
-				<div class="grid">
-					{move || view! { <Gallery s3_objects></Gallery> }}
-					{move || format!("{latitude}, {longitude}")}
+				<div class="grid gap-4">
+					<h2>{latitude}," "{longitude}</h2>
+					<Gallery
+						s3_objects
+						dialog_title_content=view! { { latitude },
+							" "
+							{longitude}
+						}
+							.into_any()
+					></Gallery>
 				</div>
 			</Popup>
 		</Marker>

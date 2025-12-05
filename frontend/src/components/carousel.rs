@@ -6,7 +6,12 @@ use leptos::prelude::*;
 use thaw::*;
 
 #[component]
-pub fn Carousel(#[prop(into)] s3_objects: Signal<Vec<S3Object>>) -> impl IntoView {
+pub fn Carousel(
+	#[prop(into)] s3_objects: Signal<Vec<S3Object>>,
+	#[prop(into, default = "Close".into_any())] close_button_content: AnyView,
+	#[prop(into, default = "Previous".into_any())] previous_button_content: AnyView,
+	#[prop(into, default = "Next".into_any())] next_button_content: AnyView,
+) -> impl IntoView {
 	let open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
 	view! {
@@ -29,7 +34,9 @@ pub fn Carousel(#[prop(into)] s3_objects: Signal<Vec<S3Object>>) -> impl IntoVie
 					<DialogBody class="body grid-cols-1">
 						<div class="relative w-full grid grid-flow-col justify-between">
 							// <DialogTitle>{dialog_title_content()}</DialogTitle>
-							<Button on_click=move |_| { open.set(false) }>"Close"</Button>
+							<Button on_click=move |_| {
+								open.set(false)
+							}>{close_button_content}</Button>
 						</div>
 						<DialogContent>
 							<div>
@@ -40,11 +47,11 @@ pub fn Carousel(#[prop(into)] s3_objects: Signal<Vec<S3Object>>) -> impl IntoVie
 											.set(
 												index.get().modular_subtract(1, s3_objects.get().len()),
 											);
-									}>"Previous"</Button>
+									}>{previous_button_content}</Button>
 									<Button on_click=move |_| {
 										index
 											.set(index.get().modular_add(1, s3_objects.get().len()));
-									}>"Next"</Button>
+									}>{next_button_content}</Button>
 								</div>
 							</div>
 						</DialogContent>
