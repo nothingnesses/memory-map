@@ -16,8 +16,8 @@ pub fn Gallery(
 		<ConfigProvider>
 			<Button on_click=move |_| { open.set(true) }>{open_button_content()}</Button>
 			<Dialog open>
-				<DialogSurface>
-					<DialogBody class="grid-cols-1">
+				<DialogSurface class="surface">
+					<DialogBody class="body grid-cols-1">
 						<div class="relative w-full grid grid-flow-col justify-between">
 							<DialogTitle>{dialog_title_content()}</DialogTitle>
 							<Button on_click=move |_| { open.set(false) }>"Close"</Button>

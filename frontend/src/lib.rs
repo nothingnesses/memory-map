@@ -7,6 +7,7 @@ use leptos::{either::either, prelude::*};
 use leptos_meta::*;
 use leptos_router::{components::*, path};
 use mime::Mime;
+use std::ops::{Add, Rem, Sub};
 
 // Modules
 mod components;
@@ -95,25 +96,68 @@ pub async fn fetch_s3_objects() -> Result<Vec<S3Object>, Error> {
 	.map(|response| response.s3_objects)?)
 }
 
-pub fn render_s3_objects(s3_objects: Vec<S3Object>) -> impl IntoView {
-	s3_objects
-		.into_iter()
-		.map(|s3_object| {
-			let mime_type = s3_object
-				.content_type
-				.parse::<Mime>()
-				.map(|m| m.type_().as_str().to_string())
-				.unwrap_or_default();
-			either!(
-				mime_type.as_str(),
-				"image" => view! {
-					<img src=s3_object.url />
-				},
-				"video" => view! {
-					<video src=s3_object.url controls=true />
-				},
-				_ => view! { },
-			)
-		})
-		.collect_view()
+pub fn render_s3_object(s3_object: S3Object) -> impl IntoView {
+	let mime_type = s3_object
+		.content_type
+		.parse::<Mime>()
+		.map(|m| m.type_().as_str().to_string())
+		.unwrap_or_default();
+	either!(
+		mime_type.as_str(),
+		"image" => view! {
+			<img src=s3_object.url />
+		},
+		"video" => view! {
+			<video src=s3_object.url controls=true />
+		},
+		_ => (),
+	)
+}
+
+pub trait ModularAdd {
+	fn modular_add(
+		self,
+		addend: Self,
+		maximum: Self,
+	) -> Self;
+}
+
+impl<T> ModularAdd for T
+where
+	T: Copy + PartialOrd + Add<Output = T> + Rem<Output = T>,
+{
+	fn modular_add(
+		self,
+		addend: Self,
+		maximum: Self,
+	) -> Self {
+		(self + addend) % maximum
+	}
+}
+
+pub trait ModularSubtract {
+	fn modular_subtract(
+		self,
+		subtrahend: Self,
+		maximum: Self,
+	) -> Self;
+}
+
+impl<T> ModularSubtract for T
+where
+	T: Copy + PartialOrd + Sub<Output = T> + Rem<Output = T>,
+{
+	fn modular_subtract(
+		self,
+		subtrahend: Self,
+		maximum: Self,
+	) -> Self {
+		let effective_subtrahend = subtrahend % maximum;
+
+		if effective_subtrahend > self {
+			maximum - (effective_subtrahend - self)
+		} else {
+			self - effective_subtrahend
+		}
+	}
 }
