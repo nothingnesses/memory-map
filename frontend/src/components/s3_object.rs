@@ -18,7 +18,7 @@ pub fn S3Object(
 			<img class=move || class.get() src=move || s3_object.get().url />
 		},
 		"video" => view! {
-			<video class=move || class.get() src=move || s3_object.get().url controls=true />
+			<video class=move || class.get() src=move || s3_object.get().url controls autoplay />
 		},
 		_ => (),
 	)

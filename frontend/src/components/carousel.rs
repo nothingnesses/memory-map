@@ -53,6 +53,7 @@ pub fn Carousel(
 								>
 									{close_button_content.run(())}
 								</Button>
+								// @todo Maybe this should be a component that emits index updates
 								<Show when=move || { show_navigation_buttons.get() }>
 									<div class="absolute inset-0 w-full h-full grid grid-flow-col justify-between items-center">
 										<Button
