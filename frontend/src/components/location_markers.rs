@@ -24,7 +24,7 @@ fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 		.into_iter()
 		.map(|(location, s3_objects)| {
 			location.as_ref().map(|location_strings| {
-				// @todo Add error handling here.
+				// This should just work, since the location strings were serialised from actual f64 values.
 				match (
 					location_strings.latitude.parse::<f64>(),
 					location_strings.longitude.parse::<f64>(),

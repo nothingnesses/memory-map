@@ -1,5 +1,5 @@
 use crate::{
-	pages::home::Home,
+	pages::{admin::Admin, home::Home},
 	s3_objects_query::{S3ObjectsQueryS3Objects as S3Object, Variables},
 };
 use graphql_client::GraphQLQuery;
@@ -22,16 +22,25 @@ pub fn App() -> impl IntoView {
 		<Html attr:lang="en" attr:dir="ltr" attr:data-theme="light" />
 
 		// sets the document title
-		<Title text="Welcome to Leptos CSR" />
+		<Title text="Memory Map" />
 
 		// injects metadata in the <head> of the page
 		<Meta charset="UTF-8" />
 		<Meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
 		<Router>
-			<Routes fallback=|| view! { NotFound }>
-				<Route path=path!("/") view=Home />
-			</Routes>
+			<header>
+				<nav class="relative container mx-auto grid gap-4 grid-flow-col justify-start">
+					<A href="/">"Map"</A>
+					<A href="/admin">"Admin"</A>
+				</nav>
+			</header>
+			<main>
+				<Routes fallback=|| view! { NotFound }>
+					<Route path=path!("/") view=Home />
+					<Route path=path!("/admin") view=Admin />
+				</Routes>
+			</main>
 		</Router>
 	}
 }

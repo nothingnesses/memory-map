@@ -8,7 +8,7 @@ pub fn Home() -> impl IntoView {
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<div class="relative w-dvw">
-				<div class="container">
+				<div class="container mx-auto">
 					<MapContainer
 						class="w-full h-dvh"
 						center=Position::new(51.505, -0.09)
