@@ -1,6 +1,8 @@
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
+--default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
+--default-transition-duration: 150ms;
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);
@@ -418,26 +420,33 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .container{max-width:96rem;}
 }
 /* layer: default */
+.opacity-0{opacity:0%;}
+.group:hover .group-hover\:opacity-100{opacity:100%;}
 .gap-4{gap:calc(var(--spacing) * 4);}
 .grid{display:grid;}
 .grid-flow-col{grid-auto-flow:column;}
 .grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
+.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
 .h-full{height:100%;}
+.max-w-full{max-width:100%;}
+.max-w-screen{max-width:100vw;}
 .w-dvw{width:100dvw;}
 .w-fit{width:fit-content;}
 .w-full{width:100%;}
+.transition-all{transition-property:all;transition-timing-function:var(--un-ease, var(--default-transition-timingFunction));transition-duration:var(--un-duration, var(--default-transition-duration));}
 .items-center{align-items:center;}
 .inset-0{inset:calc(var(--spacing) * 0);}
+.right-0{right:calc(var(--spacing) * 0);}
+.top-0{top:calc(var(--spacing) * 0);}
 .justify-between{justify-content:space-between;}
+.justify-items-center{justify-items:center;}
 .absolute{position:absolute;}
 .relative{position:relative;}
+.z-1{z-index:1;}
 .h-dvh{height:100dvh;}
 @media (min-width: 48rem){
-.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
-}
-@media (min-width: 64rem){
-.lg\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.md\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr));}
 }
 @media (min-width: 80rem){
-.xl\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.xl\:grid-cols-8{grid-template-columns:repeat(8,minmax(0,1fr));}
 }

@@ -21,7 +21,7 @@ pub fn Carousel(
 	let index: RwSignal<usize> = RwSignal::new(0);
 	view! {
 		<ConfigProvider>
-			<div class="relative grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			<div class="relative grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
 				<ForEnumerate
 					each=move || s3_objects.get()
 					key=|s3_object| s3_object.id.clone()
@@ -37,22 +37,26 @@ pub fn Carousel(
 				</ForEnumerate>
 			</div>
 			<Dialog open>
-				<DialogSurface>
-					<DialogBody class="grid-cols-1">
-						<div class="relative w-full grid grid-flow-col justify-between">
-							<Button on_click=move |_| {
-								open.set(false)
-							}>{close_button_content.run(())}</Button>
-						</div>
+				<DialogSurface class="max-w-screen w-full">
+					<DialogBody>
 						<DialogContent>
-							<div class="relative">
-								<S3ObjectComponent s3_object=Signal::derive(move || {
-									s3_objects.get()[index.get()].clone()
-								}) />
+							<div class="relative grid justify-items-center group">
+								<S3ObjectComponent
+									class="relative z-1 max-w-full"
+									s3_object=Signal::derive(move || {
+										s3_objects.get()[index.get()].clone()
+									})
+								/>
+								<Button
+									class="absolute top-0 right-0 z-1 opacity-0 group-hover:opacity-100 transition-all"
+									on_click=move |_| { open.set(false) }
+								>
+									{close_button_content.run(())}
+								</Button>
 								<Show when=move || { show_navigation_buttons.get() }>
 									<div class="absolute inset-0 w-full h-full grid grid-flow-col justify-between items-center">
 										<Button
-											class="w-fit"
+											class="relative z-1 w-fit opacity-0 group-hover:opacity-100 transition-all"
 											on_click=move |_| {
 												index
 													.set(
@@ -63,7 +67,7 @@ pub fn Carousel(
 											{previous_button_content.run(())}
 										</Button>
 										<Button
-											class="w-fit"
+											class="relative z-1 w-fit opacity-0 group-hover:opacity-100 transition-all"
 											on_click=move |_| {
 												index
 													.set(index.get().modular_add(1, s3_objects.get().len()));
