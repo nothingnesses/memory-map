@@ -428,8 +428,8 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
 .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
 .h-full{height:100%;}
+.max-w-dvw{max-width:100dvw;}
 .max-w-full{max-width:100%;}
-.max-w-screen{max-width:100vw;}
 .w-dvw{width:100dvw;}
 .w-fit{width:fit-content;}
 .w-full{width:100%;}
@@ -444,6 +444,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .relative{position:relative;}
 .z-1{z-index:1;}
 .h-dvh{height:100dvh;}
+.max-h-dvh{max-height:100dvh;}
 @media (min-width: 48rem){
 .md\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr));}
 }

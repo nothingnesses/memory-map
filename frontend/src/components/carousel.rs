@@ -37,7 +37,7 @@ pub fn Carousel(
 				</ForEnumerate>
 			</div>
 			<Dialog open>
-				<DialogSurface class="max-w-screen w-full">
+				<DialogSurface class="max-w-dvw max-h-dvh w-full">
 					<DialogBody>
 						<DialogContent>
 							<div class="relative grid justify-items-center group">
