@@ -21,7 +21,7 @@ pub fn Carousel(
 	let index: RwSignal<usize> = RwSignal::new(0);
 	view! {
 		<ConfigProvider>
-			<div class="relative grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
+			<div class="relative grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
 				<ForEnumerate
 					each=move || s3_objects.get()
 					key=|s3_object| s3_object.id.clone()
