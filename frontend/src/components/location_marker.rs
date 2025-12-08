@@ -9,7 +9,7 @@ pub fn LocationMarker(
 	#[prop(into)] s3_objects: Signal<Vec<S3Object>>,
 ) -> impl IntoView {
 	view! {
-		<Marker position=position!(latitude.get(), longitude.get()) draggable=true>
+		<Marker position=position!(latitude.get(), longitude.get())>
 			<Popup>
 				<div class="grid gap-4">
 					<h2>{latitude}," "{longitude}</h2>
