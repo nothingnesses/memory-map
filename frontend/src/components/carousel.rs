@@ -20,7 +20,7 @@ pub fn Carousel(
 	let open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
 	view! {
-		<ConfigProvider>
+		<ConfigProvider class="grid place-items-center">
 			<div class="relative grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
 				<ForEnumerate
 					each=move || s3_objects.get()
@@ -36,19 +36,19 @@ pub fn Carousel(
 					</Button>
 				</ForEnumerate>
 			</div>
-			<Dialog open>
-				<DialogSurface class="max-w-dvw max-h-dvh w-full">
-					<DialogBody>
-						<DialogContent>
-							<div class="relative grid justify-items-center group">
-								<S3ObjectComponent
-									class="relative z-1 max-w-full"
-									s3_object=Signal::derive(move || {
-										s3_objects.get()[index.get()].clone()
-									})
-								/>
+			<Dialog class="grid" open>
+				<DialogSurface class="place-self-center max-w-dvw max-h-dvh p-0 bg-transparent m-0">
+					<DialogBody class="grid place-content-center">
+						<DialogContent class="w-fit h-full">
+							<S3ObjectComponent
+								class="relative z-1 object-scale-down w-fit h-full max-w-dvw"
+								s3_object=Signal::derive(move || {
+									s3_objects.get()[index.get()].clone()
+								})
+							/>
+							<div class="absolute inset-0 h-full w-full">
 								<Button
-									class="absolute top-0 right-0 z-1 opacity-0 group-hover:opacity-100 transition-all"
+									class="absolute top-0 right-0 z-1 transition-all"
 									on_click=move |_| { open.set(false) }
 								>
 									{close_button_content.run(())}
@@ -57,7 +57,7 @@ pub fn Carousel(
 								<Show when=move || { show_navigation_buttons.get() }>
 									<div class="absolute inset-0 w-full h-full grid grid-flow-col justify-between items-center">
 										<Button
-											class="relative z-1 w-fit opacity-0 group-hover:opacity-100 transition-all"
+											class="relative z-1 w-fit transition-all"
 											on_click=move |_| {
 												index
 													.set(
@@ -68,7 +68,7 @@ pub fn Carousel(
 											{previous_button_content.run(())}
 										</Button>
 										<Button
-											class="relative z-1 w-fit opacity-0 group-hover:opacity-100 transition-all"
+											class="relative z-1 w-fit transition-all"
 											on_click=move |_| {
 												index
 													.set(index.get().modular_add(1, s3_objects.get().len()));
