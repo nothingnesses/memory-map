@@ -17,6 +17,7 @@ leptos_meta = { version = "0.8" }
 leptos_router = { version = "0.8" }
 log = "0.4"
 mime = "0.3"
+minio = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
 serde = "1.0"
 # @todo Bump this once out of beta.

@@ -1,9 +1,24 @@
-use crate::{components::s3_object_table_rows::S3ObjectTableRows, dump_errors, graphql_queries::s3_objects::S3ObjectsQuery};
+use crate::{
+	components::s3_object_table_rows::S3ObjectTableRows, dump_errors,
+	graphql_queries::s3_objects::S3ObjectsQuery,
+};
+use leptos::logging::debug_log;
 use leptos::prelude::*;
+use minio::s3::ClientBuilder;
+use minio::s3::creds::StaticProvider;
+use minio::s3::http::BaseUrl;
 use thaw::*;
 
 #[component]
 pub fn Admin() -> impl IntoView {
+	let base_url = "http://localhost:9000/".parse::<BaseUrl>().unwrap();
+	debug_log!("Trying to connect to MinIO at: `{:?}`", base_url);
+
+	let static_provider = StaticProvider::new("minioadmin", "minioadmin", None);
+
+	let minio_client =
+		ClientBuilder::new(base_url).provider(Some(Box::new(static_provider))).build().unwrap();
+
 	let s3_objects_resource = LocalResource::new(S3ObjectsQuery::run);
 	view! {
 		<ErrorBoundary fallback=dump_errors>
