@@ -1,6 +1,6 @@
 use crate::graphql::{
 	ContextWrapper,
-	objects::{RowContext, location::Location, s3object::S3Object},
+	objects::{RowContext, location::Location, s3_object::S3Object},
 };
 use async_graphql::{Context, Error as GraphQLError, Object};
 use jiff::Timestamp;

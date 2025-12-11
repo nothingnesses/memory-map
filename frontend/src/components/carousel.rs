@@ -1,7 +1,7 @@
 use crate::{
 	CallbackAnyView, ModularAdd, ModularSubtract,
 	components::s3_object::S3Object as S3ObjectComponent,
-	s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::prelude::*;
 use thaw::*;

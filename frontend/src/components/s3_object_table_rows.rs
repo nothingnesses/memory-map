@@ -1,4 +1,4 @@
-use crate::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
+use crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
 use leptos::{logging::debug_log, prelude::*};
 use leptos_router::components::*;
 use thaw::*;

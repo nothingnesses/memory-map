@@ -1,8 +1,4 @@
-use crate::{
-	pages::{admin::Admin, home::Home},
-	s3_objects_query::{S3ObjectsQueryS3Objects as S3Object, Variables},
-};
-use graphql_client::GraphQLQuery;
+use crate::pages::{admin::Admin, home::Home};
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{components::*, path};
@@ -10,6 +6,7 @@ use std::ops::{Add, Rem, Sub};
 
 // Modules
 mod components;
+pub mod graphql_queries;
 mod pages;
 
 /// An app router which renders the homepage and handles 404's
@@ -44,14 +41,6 @@ pub fn App() -> impl IntoView {
 		</Router>
 	}
 }
-
-#[derive(GraphQLQuery)]
-#[graphql(
-	schema_path = "graphql/schema.json",
-	query_path = "graphql/s3Objects.graphql",
-	response_derives = "Clone,Debug"
-)]
-pub struct S3ObjectsQuery;
 
 /// [Copied from here](https://docs.rs/graphql_client/0.14.0/src/graphql_client/reqwest.rs.html#8-17),
 /// since we can't initialise a `reqwest::Client` to use with the original version,
@@ -90,18 +79,6 @@ pub fn dump_errors(errors: ArcRwSignal<Errors>) -> impl IntoView {
 
 		</ul>
 	}
-}
-
-pub async fn fetch_s3_objects() -> Result<Vec<S3Object>, Error> {
-	Ok(post_graphql::<S3ObjectsQuery, _>(
-		&reqwest::Client::new(),
-		"http://localhost:8000/",
-		Variables {},
-	)
-	.await?
-	.data
-	.ok_or("Empty response".to_string())
-	.map(|response| response.s3_objects)?)
 }
 
 pub trait ModularAdd {

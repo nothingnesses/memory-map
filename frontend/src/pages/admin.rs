@@ -1,10 +1,10 @@
-use crate::{components::s3_object_table_rows::S3ObjectTableRows, dump_errors, fetch_s3_objects};
+use crate::{components::s3_object_table_rows::S3ObjectTableRows, dump_errors, graphql_queries::s3_objects::S3ObjectsQuery};
 use leptos::prelude::*;
 use thaw::*;
 
 #[component]
 pub fn Admin() -> impl IntoView {
-	let s3_objects_resource = LocalResource::new(fetch_s3_objects);
+	let s3_objects_resource = LocalResource::new(S3ObjectsQuery::run);
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<div class="relative w-dvw">
@@ -21,7 +21,9 @@ pub fn Admin() -> impl IntoView {
 										<TableHeaderCell resizable=true>"Made On"</TableHeaderCell>
 										<TableHeaderCell resizable=true>"Location"</TableHeaderCell>
 										<TableHeaderCell resizable=true>"Link"</TableHeaderCell>
-										<TableHeaderCell resizable=true>"Content Type"</TableHeaderCell>
+										<TableHeaderCell resizable=true>
+											"Content Type"
+										</TableHeaderCell>
 										<TableHeaderCell resizable=true>"Actions"</TableHeaderCell>
 									</TableRow>
 								</TableHeader>
@@ -39,6 +41,9 @@ pub fn Admin() -> impl IntoView {
 								</TableBody>
 							</Table>
 						</ConfigProvider>
+					</section>
+					<section>
+						<h2>"Add new entries"</h2>
 					</section>
 				</div>
 			</div>

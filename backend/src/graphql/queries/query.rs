@@ -1,4 +1,4 @@
-use crate::graphql::objects::s3object::S3Object;
+use crate::graphql::objects::s3_object::S3Object;
 use async_graphql::{Context, Error as GraphQLError, Object};
 
 pub struct Query;

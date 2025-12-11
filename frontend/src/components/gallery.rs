@@ -1,6 +1,6 @@
 use crate::{
 	CallbackAnyView, components::carousel::Carousel,
-	s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::prelude::*;
 use thaw::*;
