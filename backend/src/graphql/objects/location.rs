@@ -3,7 +3,7 @@ use tokio_postgres::Row;
 
 use crate::{parse_latitude, parse_longitude};
 
-#[derive(SimpleObject, InputObject, Clone)]
+#[derive(SimpleObject, InputObject, Clone, Debug)]
 #[graphql(concrete(name = "Location", input_name = "LocationInput", params()))]
 pub struct Location {
 	pub latitude: f64,

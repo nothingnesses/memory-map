@@ -1,6 +1,6 @@
-use crate::graphql::{
-	ContextWrapper, SchemaData,
-	objects::{RowContext, location::Location},
+use crate::{
+	ContextWrapper, SharedState,
+	graphql::objects::{RowContext, location::Location},
 };
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum::http::Method;
@@ -8,8 +8,10 @@ use deadpool_postgres::Manager;
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::types::S3Api;
+use std::sync::Arc;
 use tokio_postgres::Row;
 
+#[derive(Debug)]
 pub struct S3Object {
 	pub id: ID,
 	pub name: String,
@@ -103,11 +105,10 @@ impl S3Object {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
+		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
 		Ok(data
-			.axum_state
 			.minio_client
-			.get_presigned_object_url(&data.axum_state.bucket_name, &self.name, Method::GET)
+			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
 			.send()
 			.await?
 			.url)
@@ -117,10 +118,9 @@ impl S3Object {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
-		data.axum_state
-			.minio_client
-			.get_object(&data.axum_state.bucket_name, &self.name)
+		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
+		data.minio_client
+			.get_object(&data.bucket_name, &self.name)
 			.send()
 			.await?
 			.headers

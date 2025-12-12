@@ -3,7 +3,7 @@ use crate::{
 	components::location_marker::LocationMarker,
 	dump_errors,
 	graphql_queries::s3_objects::{
-		S3ObjectsQuery, s3_objects_query::S3ObjectsQueryS3Objects as S3Object
+		S3ObjectsQuery, s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 	},
 };
 use leptos::{logging::debug_error, prelude::*};

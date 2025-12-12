@@ -1,7 +1,11 @@
 use async_graphql::http::GraphiQLSource;
 use axum::response::{self, IntoResponse};
+use std::fmt;
 pub mod controllers;
 pub mod graphql;
+use async_graphql::{Context, Error as GraphQLError};
+use deadpool::managed::{Manager as ManagedManager, Object, Pool};
+use deadpool_postgres::Manager;
 use minio::s3;
 
 pub const ONE_GB: usize = 1_073_741_824;
@@ -22,9 +26,33 @@ impl Config {
 
 refinery::embed_migrations!("migrations");
 
-pub struct AxumState {
+pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
+	pub pool: Pool<M, W>,
 	pub minio_client: s3::Client,
 	pub bucket_name: String,
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		f.debug_struct("SharedState")
+			.field("pool", &"Pool")
+			.field("minio_client", &self.minio_client)
+			.field("bucket_name", &self.bucket_name)
+			.finish()
+	}
+}
+
+pub struct ContextWrapper<'a>(&'a Context<'a>);
+
+impl<'a> ContextWrapper<'a> {
+	pub async fn get_db_client(&self) -> Result<Object<Manager>, GraphQLError> {
+		let pool: &Pool<Manager> =
+			&self.0.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?.pool;
+		Ok(pool.get().await?)
+	}
 }
 
 pub async fn graphiql() -> impl IntoResponse {

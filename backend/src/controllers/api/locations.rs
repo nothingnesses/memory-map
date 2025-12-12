@@ -1,11 +1,13 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
-use crate::AxumState;
+use crate::SharedState;
 use axum::body::Bytes;
 use axum::extract::{Multipart, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_macros::debug_handler;
+use deadpool::managed::Object;
+use deadpool_postgres::Manager;
 use minio::s3::segmented_bytes::SegmentedBytes;
 use minio::s3::types::S3Api;
 use std::sync::Arc;
@@ -19,7 +21,7 @@ struct FileData {
 
 #[debug_handler]
 pub async fn post(
-	State(state): State<Arc<AxumState>>,
+	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
 	mut multipart: Multipart,
 ) -> impl IntoResponse {
 	let mut latitude: Option<f64> = None;

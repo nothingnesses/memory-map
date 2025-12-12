@@ -4,10 +4,9 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use backend::controllers::api::locations::post as post_locations;
-use backend::graphql::SchemaData;
 use backend::graphql::queries::mutation::Mutation;
 use backend::graphql::queries::query::Query;
-use backend::{AxumState, Config, ONE_GB, graphiql, migrations};
+use backend::{Config, ONE_GB, SharedState, graphiql, migrations};
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
 use minio::s3::ClientBuilder;
@@ -51,12 +50,11 @@ async fn main() {
 
 	let bucket_name = "memory-map".to_string();
 
-	let axum_state = Arc::new(AxumState { minio_client, bucket_name });
+	let shared_state = Arc::new(SharedState { pool, minio_client, bucket_name });
 
 	// Set up GraphQL
-	let schema = Schema::build(Query, Mutation, EmptySubscription)
-		.data(SchemaData { pool, axum_state: axum_state.clone() })
-		.finish();
+	let schema =
+		Schema::build(Query, Mutation, EmptySubscription).data(shared_state.clone()).finish();
 
 	let permissive_cors = CorsLayer::permissive();
 
@@ -66,7 +64,7 @@ async fn main() {
 			"/api/locations/",
 			post(post_locations)
 				.route_layer(DefaultBodyLimit::max(ONE_GB))
-				.with_state(axum_state.clone()),
+				.with_state(shared_state.clone()),
 		)
 		.route_layer(permissive_cors);
 
