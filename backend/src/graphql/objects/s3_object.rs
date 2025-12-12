@@ -1,7 +1,4 @@
-use crate::{
-	ContextWrapper, SharedState,
-	graphql::objects::{RowContext, location::Location},
-};
+use crate::{ContextWrapper, SharedState, graphql::objects::location::Location};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum::http::Method;
 use deadpool_postgres::Manager;
@@ -20,13 +17,13 @@ pub struct S3Object {
 }
 
 impl S3Object {
-	pub async fn try_from(value: RowContext<'_>) -> Result<Self, GraphQLError> {
-		let name: String = value.0.try_get("name")?;
+	pub async fn try_from(row: Row) -> Result<Self, GraphQLError> {
+		let name: String = row.try_get("name")?;
 		Ok(S3Object {
-			id: Row::try_get::<_, i64>(&value.0, "id")?.into(),
+			id: Row::try_get::<_, i64>(&row, "id")?.into(),
 			name: name.clone(),
-			made_on: value.0.try_get("made_on")?,
-			location: Location::try_from(value.0).ok(),
+			made_on: row.try_get("made_on")?,
+			location: Location::try_from(row).ok(),
 		})
 	}
 
@@ -44,7 +41,7 @@ impl S3Object {
 				.await
 				.map_err(GraphQLError::from)?
 				.into_iter()
-				.map(|row| Self::try_from(RowContext(row, ctx.clone())))
+				.map(|row| Self::try_from(row))
 				.collect::<Vec<_>>(),
 		)
 		.await
@@ -64,7 +61,7 @@ impl S3Object {
 				WHERE id = $1;",
 			)
 			.await?;
-		Self::try_from(RowContext(client.query_one(&statement, &[&id]).await?, ctx.clone())).await
+		Self::try_from(client.query_one(&statement, &[&id]).await?).await
 	}
 
 	pub async fn where_name(
@@ -79,7 +76,7 @@ impl S3Object {
 				WHERE name = $1;",
 			)
 			.await?;
-		Self::try_from(RowContext(client.query_one(&statement, &[&name]).await?, ctx.clone())).await
+		Self::try_from(client.query_one(&statement, &[&name]).await?).await
 	}
 }
 

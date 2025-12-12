@@ -1,8 +1,9 @@
 use crate::{
 	ContextWrapper,
-	graphql::objects::{RowContext, location::Location, s3_object::S3Object},
+	graphql::objects::{location::Location, s3_object::S3Object},
 };
 use async_graphql::{Context, Error as GraphQLError, Object};
+use deadpool_postgres::Client;
 use jiff::Timestamp;
 use tracing;
 
@@ -14,16 +15,13 @@ RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location
 
 pub struct Mutation;
 
-#[Object]
 impl Mutation {
-	async fn upsert_s3_object(
-		&self,
-		ctx: &Context<'_>,
+	pub async fn upsert_s3_object_impl(
+		client: &Client,
 		name: String,
 		made_on: Option<String>,
 		location: Option<Location>,
 	) -> Result<S3Object, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
 		let parsed_made_on: Option<Timestamp> = match made_on {
 			Some(timestamp_string) => match timestamp_string.parse() {
 				Ok(timestamp_string) => Some(timestamp_string),
@@ -49,7 +47,7 @@ impl Mutation {
 			parsed_made_on.as_ref().map(|ts| ts.to_string()),
 			location_geometry
 		);
-		S3Object::try_from(RowContext(
+		S3Object::try_from(
 			client
 				.query_one(
 					&client.prepare_cached(UPSERT_OBJECT_QUERY).await?,
@@ -60,8 +58,21 @@ impl Mutation {
 					tracing::error!("Database query failed: {}", e);
 					GraphQLError::new(format!("Database error: {}", e))
 				})?,
-			ctx.clone(),
-		))
+		)
 		.await
+	}
+}
+
+#[Object]
+impl Mutation {
+	async fn upsert_s3_object(
+		&self,
+		ctx: &Context<'_>,
+		name: String,
+		made_on: Option<String>,
+		location: Option<Location>,
+	) -> Result<S3Object, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		Self::upsert_s3_object_impl(&client, name, made_on, location).await
 	}
 }

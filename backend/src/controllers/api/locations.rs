@@ -1,6 +1,8 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
 use crate::SharedState;
+use crate::graphql::objects::location::Location;
+use crate::graphql::queries::mutation::Mutation;
 use axum::body::Bytes;
 use axum::extract::{Multipart, State};
 use axum::http::StatusCode;
@@ -73,6 +75,15 @@ pub async fn post(
 			.put_object(&state.bucket_name, &file.filename, SegmentedBytes::from(file.bytes))
 			.send()
 			.await;
+
+		let client = state.pool.get().await.unwrap();
+		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
+			Some(Location { latitude, longitude })
+		} else {
+			None
+		};
+
+		let _ = Mutation::upsert_s3_object_impl(&client, file.filename, None, location).await;
 	}
 
 	StatusCode::OK
