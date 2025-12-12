@@ -19,6 +19,7 @@ pub fn S3ObjectsTable(
 				<Table>
 					<TableHeader>
 						<TableRow>
+							<TableHeaderCell resizable=true>"Select"</TableHeaderCell>
 							<TableHeaderCell resizable=true>"ID"</TableHeaderCell>
 							<TableHeaderCell resizable=true>"Name"</TableHeaderCell>
 							<TableHeaderCell resizable=true>"Made On"</TableHeaderCell>
