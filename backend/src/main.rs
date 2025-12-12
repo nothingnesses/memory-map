@@ -53,10 +53,14 @@ async fn main() {
 		.data(SchemaData { bucket_name: bucket_name.to_string(), pool, minio_client })
 		.finish();
 
+	let permissive_cors = CorsLayer::permissive();
+
 	let app = Router::new()
-		.route("/", get(graphiql).post_service(GraphQL::new(schema)))
-		.route("/api/locations/", post(post_locations))
-		.route_layer(CorsLayer::permissive());
+		.route(
+			"/",
+			get(graphiql).post_service(GraphQL::new(schema)).route_layer(permissive_cors.clone()),
+		)
+		.route("/api/locations/", post(post_locations).route_layer(permissive_cors));
 
 	println!("GraphiQL IDE: http://localhost:8000");
 
