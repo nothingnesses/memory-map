@@ -1,17 +1,27 @@
-use axum::extract::Multipart;
+// @todo Use minio::s3::Client::upload_part to do multipart upload
+
+use crate::AxumState;
+use axum::body::Bytes;
+use axum::extract::{Multipart, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_macros::debug_handler;
+use minio::s3::segmented_bytes::SegmentedBytes;
+use minio::s3::types::S3Api;
+use std::sync::Arc;
 
 #[derive(Debug)]
 struct FileData {
 	filename: String,
 	content_type: String,
-	bytes: Vec<u8>,
+	bytes: Bytes,
 }
 
 #[debug_handler]
-pub async fn post(mut multipart: Multipart) -> impl IntoResponse {
+pub async fn post(
+	State(state): State<Arc<AxumState>>,
+	mut multipart: Multipart,
+) -> impl IntoResponse {
 	let mut latitude: Option<f64> = None;
 	let mut longitude: Option<f64> = None;
 	let mut files: Vec<FileData> = Vec::new();
@@ -38,7 +48,7 @@ pub async fn post(mut multipart: Multipart) -> impl IntoResponse {
 				let filename = field.file_name().unwrap_or_default().to_string();
 				let content_type = field.content_type().unwrap_or_default().to_string();
 				if let Ok(bytes) = field.bytes().await {
-					files.push(FileData { filename, content_type, bytes: bytes.to_vec() });
+					files.push(FileData { filename, content_type, bytes });
 				}
 			}
 			_ => {}
@@ -49,13 +59,18 @@ pub async fn post(mut multipart: Multipart) -> impl IntoResponse {
 	tracing::debug!("Latitude: {:?}", latitude);
 	tracing::debug!("Longitude: {:?}", longitude);
 	tracing::debug!("Files: {} uploaded", files.len());
-	for file in &files {
+	for file in files {
 		tracing::debug!(
 			" - Name: {}, Type: {}, Size: {} bytes",
 			file.filename,
 			file.content_type,
 			file.bytes.len()
 		);
+		let _ = state
+			.minio_client
+			.put_object(&state.bucket_name, &file.filename, SegmentedBytes::from(file.bytes))
+			.send()
+			.await;
 	}
 
 	StatusCode::OK

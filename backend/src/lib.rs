@@ -1,7 +1,10 @@
 use async_graphql::http::GraphiQLSource;
 use axum::response::{self, IntoResponse};
-pub mod graphql;
 pub mod controllers;
+pub mod graphql;
+use minio::s3;
+
+pub const ONE_GB: usize = 1_073_741_824;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
@@ -18,6 +21,11 @@ impl Config {
 }
 
 refinery::embed_migrations!("migrations");
+
+pub struct AxumState {
+	pub minio_client: s3::Client,
+	pub bucket_name: String,
+}
 
 pub async fn graphiql() -> impl IntoResponse {
 	response::Html(GraphiQLSource::build().endpoint("/").finish())

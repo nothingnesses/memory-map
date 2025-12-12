@@ -1,15 +1,15 @@
+use crate::AxumState;
 use async_graphql::{Context, Error as GraphQLError};
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
-use minio::s3;
+use std::sync::Arc;
 
 pub mod objects;
 pub mod queries;
 
 pub struct SchemaData<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
-	pub minio_client: s3::Client,
-	pub bucket_name: String,
+	pub axum_state: Arc<AxumState>,
 }
 
 struct ContextWrapper<'a>(&'a Context<'a>);

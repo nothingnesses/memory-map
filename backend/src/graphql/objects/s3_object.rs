@@ -105,8 +105,9 @@ impl S3Object {
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
 		Ok(data
+			.axum_state
 			.minio_client
-			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
+			.get_presigned_object_url(&data.axum_state.bucket_name, &self.name, Method::GET)
 			.send()
 			.await?
 			.url)
@@ -117,8 +118,9 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
-		data.minio_client
-			.get_object(&data.bucket_name, &self.name)
+		data.axum_state
+			.minio_client
+			.get_object(&data.axum_state.bucket_name, &self.name)
 			.send()
 			.await?
 			.headers
