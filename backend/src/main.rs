@@ -1,7 +1,8 @@
 use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
+use backend::controllers::api::locations::post as post_locations;
 use backend::graphql::SchemaData;
 use backend::graphql::queries::mutation::Mutation;
 use backend::graphql::queries::query::Query;
@@ -54,7 +55,8 @@ async fn main() {
 
 	let app = Router::new()
 		.route("/", get(graphiql).post_service(GraphQL::new(schema)))
-		.layer(CorsLayer::permissive());
+		.route("/api/locations/", post(post_locations))
+		.route_layer(CorsLayer::permissive());
 
 	println!("GraphiQL IDE: http://localhost:8000");
 

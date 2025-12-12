@@ -1,6 +1,7 @@
 use async_graphql::http::GraphiQLSource;
 use axum::response::{self, IntoResponse};
 pub mod graphql;
+pub mod controllers;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
