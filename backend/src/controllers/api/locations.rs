@@ -10,8 +10,6 @@ use axum::response::IntoResponse;
 use axum_macros::debug_handler;
 use deadpool::managed::Object;
 use deadpool_postgres::Manager;
-use minio::s3::segmented_bytes::SegmentedBytes;
-use minio::s3::types::S3Api;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -70,9 +68,11 @@ pub async fn post(
 			file.content_type,
 			file.bytes.len()
 		);
+
 		let _ = state
 			.minio_client
-			.put_object(&state.bucket_name, &file.filename, SegmentedBytes::from(file.bytes))
+			.put_object_content(&state.bucket_name, &file.filename, file.bytes)
+			.content_type(file.content_type)
 			.send()
 			.await;
 
