@@ -53,6 +53,21 @@ impl<'a> ContextWrapper<'a> {
 			&self.0.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?.pool;
 		Ok(pool.get().await?)
 	}
+
+	pub fn get_minio_client(&self) -> Result<&s3::Client, GraphQLError> {
+		Ok(&self
+			.0
+			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
+			.minio_client)
+	}
+
+	pub fn get_bucket_name(&self) -> Result<&str, GraphQLError> {
+		Ok(&self
+			.0
+			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
+			.bucket_name
+			.as_str())
+	}
 }
 
 pub async fn graphiql() -> impl IntoResponse {
