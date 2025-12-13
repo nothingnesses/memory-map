@@ -83,7 +83,7 @@ pub async fn post(
 			None
 		};
 
-		let _ = Mutation::upsert_s3_object_impl(&client, file.filename, None, location).await;
+		let _ = Mutation::upsert_s3_object_worker(&client, file.filename, None, location).await;
 	}
 
 	StatusCode::OK
