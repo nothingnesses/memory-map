@@ -8,7 +8,7 @@ watch:
 
 # Run frontend. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
 serve:
-    cd frontend; pnpm i; trunk serve --skip-version-check --offline --open
+    cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; trunk serve --skip-version-check --offline --open
 
 # Regenerate frontend/graphql/schema.json
 regenerate-schema:
