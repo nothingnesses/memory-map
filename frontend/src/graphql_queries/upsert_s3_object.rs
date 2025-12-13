@@ -16,6 +16,7 @@ use leptos::error::Error;
 pub struct UpsertS3ObjectQuery;
 
 impl UpsertS3ObjectQuery {
+	// @todo Add better error-handling
 	pub async fn run(variables: Variables) -> Result<S3Object, Error> {
 		Ok(post_graphql::<UpsertS3ObjectQuery, _>(
 			&reqwest::Client::new(),

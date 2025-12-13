@@ -26,10 +26,12 @@ impl Mutation {
 		bucket_name: &str,
 		ids: &[i64],
 	) -> Result<Vec<S3Object>, GraphQLError> {
+		tracing::debug!("IDs to delete: {:?}", ids);
 		let statement = db_client.prepare_cached(DELETE_OBJECTS_QUERY).await.map_err(|e| {
 			tracing::error!("Failed to prepare query: {}", e);
 			GraphQLError::new(format!("Database error: {}", e))
 		})?;
+		tracing::debug!("Delete DB query: {:?}", statement);
 
 		let rows = db_client.query(&statement, &[&ids]).await.map_err(|e| {
 			tracing::error!("Database query failed: {}", e);
@@ -43,6 +45,8 @@ impl Mutation {
 
 		let objects_to_delete: Vec<ObjectToDelete> =
 			objects.iter().map(|object| ObjectToDelete::from(&object.name)).collect();
+
+		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
 
 		if !objects_to_delete.is_empty() {
 			minio_client

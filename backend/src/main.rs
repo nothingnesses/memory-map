@@ -2,8 +2,11 @@ use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use backend::controllers::api::locations::post as post_locations;
+use backend::controllers::api::s3_objects::{
+	delete as delete_s3_object, delete_many as delete_s3_objects,
+};
 use backend::graphql::queries::mutation::Mutation;
 use backend::graphql::queries::query::Query;
 use backend::{Config, ONE_GB, SharedState, graphiql, migrations};
@@ -66,6 +69,8 @@ async fn main() {
 				.route_layer(DefaultBodyLimit::max(ONE_GB))
 				.with_state(shared_state.clone()),
 		)
+		.route("/api/s3-objects/{id}", delete(delete_s3_object).with_state(shared_state.clone()))
+		.route("/api/delete-s3-objects/", post(delete_s3_objects).with_state(shared_state.clone()))
 		.route_layer(permissive_cors);
 
 	println!("GraphiQL IDE: http://localhost:8000");

@@ -16,6 +16,7 @@ use leptos::error::Error;
 pub struct S3ObjectsQuery;
 
 impl S3ObjectsQuery {
+	// @todo Add better error-handling
 	pub async fn run() -> Result<Vec<S3Object>, Error> {
 		Ok(post_graphql::<S3ObjectsQuery, _>(
 			&reqwest::Client::new(),

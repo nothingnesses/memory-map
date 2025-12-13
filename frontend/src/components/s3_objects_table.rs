@@ -1,21 +1,117 @@
 // @todo Add better error-handling to prevent errors from prevent table from displaying. Errors should just be logged in console.
 
 use crate::{
-	components::s3_object_table_rows::S3ObjectTableRows, dump_errors,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
+	CallbackAnyView, components::s3_object_table_rows::S3ObjectTableRows, dump_errors,
+	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
-use leptos::prelude::*;
+use leptos::{
+	logging::{debug_error, debug_log},
+	prelude::*,
+	task::spawn_local,
+	web_sys::{self, Request, RequestInit},
+};
+use std::collections::HashSet;
 use thaw::*;
+use wasm_bindgen_futures::{
+	JsFuture,
+	wasm_bindgen::{JsCast, JsValue},
+};
+
+#[derive(serde::Serialize)]
+struct DeleteRequest {
+	s3_objects: Vec<i64>,
+}
+
+fn delete_objects(objects: Vec<S3Object>) {
+	spawn_local(async move {
+		let ids: Vec<i64> = objects.iter().filter_map(|o| o.id.parse::<i64>().ok()).collect();
+
+		let payload = DeleteRequest { s3_objects: ids };
+		let json = match serde_json::to_string(&payload) {
+			Ok(j) => j,
+			Err(e) => {
+				debug_error!("Failed to serialize payload: {:?}", e);
+				return;
+			}
+		};
+
+		debug_log!("Delete request JSON: {json}");
+
+		let options = RequestInit::new();
+		options.set_method("POST");
+		let headers = web_sys::Headers::new().unwrap();
+		headers.append("Content-Type", "application/json").unwrap();
+		options.set_headers(&headers);
+		options.set_body(&JsValue::from_str(&json));
+
+		let request = Request::new_with_str_and_init(
+			"http://localhost:8000/api/delete-s3-objects/",
+			&options,
+		)
+		.unwrap();
+
+		debug_log!("Delete request: {:?}", request);
+
+		match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
+			Ok(resp_value) => {
+				let resp: web_sys::Response = resp_value.unchecked_into();
+				debug_log!("Response status: {} {}", resp.status(), resp.status_text());
+				if resp.ok() {
+					debug_log!("Deleted objects: {json}");
+					let _ = web_sys::window().unwrap().location().reload();
+				} else {
+					debug_error!("Failed to delete objects. Status: {}", resp.status());
+				}
+			}
+			Err(e) => {
+				debug_error!("Failed to delete objects (network error): {:?}", e);
+			}
+		}
+	});
+}
 
 #[component]
 pub fn S3ObjectsTable(
-	#[prop(into)] s3_objects_resource: Signal<
-		LocalResource<Result<Vec<S3ObjectsQueryS3Objects>, Error>>,
-	>
+	#[prop(into)] s3_objects_resource: Signal<LocalResource<Result<Vec<S3Object>, Error>>>,
+	#[prop(into, default = Callback::new(|_| "Close".into_any()))]
+	close_button_content: CallbackAnyView,
 ) -> impl IntoView {
+	let open_delete = RwSignal::new(false);
+	let selected_objects = RwSignal::new(vec![]);
+	let selected_ids = RwSignal::new(HashSet::<String>::new());
+
+	let open_delete_object_dialog = move |s3_object: S3Object| {
+		selected_objects.set(vec![s3_object]);
+		open_delete.set(true);
+	};
+
+	let open_delete_selected_dialog = move |_| {
+		let ids = selected_ids.get();
+		if let Some(Ok(objects)) = s3_objects_resource.get().get() {
+			let to_delete: Vec<S3Object> =
+				objects.into_iter().filter(|o| ids.contains(&o.id)).collect();
+
+			if !to_delete.is_empty() {
+				selected_objects.set(to_delete);
+				open_delete.set(true);
+			}
+		}
+	};
+
+	let toggle_id = move |id: String| {
+		selected_ids.update(|ids| {
+			if ids.contains(&id) {
+				ids.remove(&id);
+			} else {
+				ids.insert(id);
+			}
+		});
+	};
+
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<ConfigProvider>
+				<Button on_click=open_delete_selected_dialog>"Delete selected"</Button>
 				<Table>
 					<TableHeader>
 						<TableRow>
@@ -35,11 +131,60 @@ pub fn S3ObjectsTable(
 								.get()
 								.get()
 								.map(|data| {
-									Ok::<_, Error>(view! { <S3ObjectTableRows s3_objects=data? /> })
+									Ok::<
+										_,
+										Error,
+									>(
+										view! {
+											<S3ObjectTableRows
+												s3_objects=data?
+												selected_ids=selected_ids
+												on_toggle=Callback::new(toggle_id)
+												on_delete=Callback::new(open_delete_object_dialog)
+											/>
+										},
+									)
 								})
 						}}
 					</TableBody>
 				</Table>
+				<Dialog open=open_delete>
+					<DialogSurface>
+						<DialogBody>
+							<DialogContent>
+								<div class="relative grid justify-items-center group">
+									<Button on_click=move |_| {
+										open_delete.set(false);
+									}>{close_button_content.run(())}</Button>
+									<div>
+										<h2>
+											"Are you sure you want to delete "
+											{move || {
+												selected_objects
+													.get()
+													.iter()
+													.map(|s3_object: &S3Object| {
+														format!("\"{}\"", s3_object.name)
+													})
+													.collect::<Vec<_>>()
+													.join(", ")
+											}}"?"
+										</h2>
+										<div>
+											<Button on_click=move |_| {
+												delete_objects(selected_objects.get());
+												open_delete.set(false);
+											}>"Yes"</Button>
+											<Button on_click=move |_| {
+												open_delete.set(false);
+											}>"No"</Button>
+										</div>
+									</div>
+								</div>
+							</DialogContent>
+						</DialogBody>
+					</DialogSurface>
+				</Dialog>
 			</ConfigProvider>
 		</ErrorBoundary>
 	}
