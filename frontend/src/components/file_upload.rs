@@ -1,10 +1,10 @@
 use crate::dump_errors;
-use leptos::wasm_bindgen::JsCast;
-use leptos::web_sys::{FormData, HtmlFormElement, Request, RequestInit, SubmitEvent};
 use leptos::{
 	logging::{debug_error, debug_log},
 	prelude::*,
 	task::spawn_local,
+	wasm_bindgen::JsCast,
+	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent},
 };
 use leptos_router::components::Form;
 use thaw::*;
@@ -28,8 +28,7 @@ pub fn FileUpload() -> impl IntoView {
 				Request::new_with_str_and_init("http://localhost:8000/api/locations/", &options)
 					.unwrap();
 
-			let _ = JsFuture::from(leptos::web_sys::window().unwrap().fetch_with_request(&request))
-				.await;
+			let _ = JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await;
 		});
 	};
 	view! {

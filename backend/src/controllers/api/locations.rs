@@ -19,6 +19,7 @@ struct FileData {
 	bytes: Bytes,
 }
 
+// @todo Modify to return both status code and location and filenames added.
 #[debug_handler]
 pub async fn post(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
