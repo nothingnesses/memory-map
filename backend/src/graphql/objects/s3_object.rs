@@ -1,15 +1,14 @@
-use crate::graphql::{
-	ContextWrapper, SchemaData,
-	objects::{RowContext, location::Location},
-};
+use crate::{ContextWrapper, SharedState, graphql::objects::location::Location};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum::http::Method;
 use deadpool_postgres::Manager;
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::types::S3Api;
+use std::sync::Arc;
 use tokio_postgres::Row;
 
+#[derive(Debug)]
 pub struct S3Object {
 	pub id: ID,
 	pub name: String,
@@ -18,13 +17,13 @@ pub struct S3Object {
 }
 
 impl S3Object {
-	pub async fn try_from(value: RowContext<'_>) -> Result<Self, GraphQLError> {
-		let name: String = value.0.try_get("name")?;
+	pub async fn try_from(row: Row) -> Result<Self, GraphQLError> {
+		let name: String = row.try_get("name")?;
 		Ok(S3Object {
-			id: Row::try_get::<_, i64>(&value.0, "id")?.into(),
+			id: Row::try_get::<_, i64>(&row, "id")?.into(),
 			name: name.clone(),
-			made_on: value.0.try_get("made_on")?,
-			location: Location::try_from(value.0).ok(),
+			made_on: row.try_get("made_on")?,
+			location: Location::try_from(row).ok(),
 		})
 	}
 
@@ -42,7 +41,7 @@ impl S3Object {
 				.await
 				.map_err(GraphQLError::from)?
 				.into_iter()
-				.map(|row| Self::try_from(RowContext(row, ctx.clone())))
+				.map(|row| Self::try_from(row))
 				.collect::<Vec<_>>(),
 		)
 		.await
@@ -62,7 +61,7 @@ impl S3Object {
 				WHERE id = $1;",
 			)
 			.await?;
-		Self::try_from(RowContext(client.query_one(&statement, &[&id]).await?, ctx.clone())).await
+		Self::try_from(client.query_one(&statement, &[&id]).await?).await
 	}
 
 	pub async fn where_name(
@@ -77,7 +76,7 @@ impl S3Object {
 				WHERE name = $1;",
 			)
 			.await?;
-		Self::try_from(RowContext(client.query_one(&statement, &[&name]).await?, ctx.clone())).await
+		Self::try_from(client.query_one(&statement, &[&name]).await?).await
 	}
 }
 
@@ -103,7 +102,7 @@ impl S3Object {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
+		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
 		Ok(data
 			.minio_client
 			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
@@ -116,7 +115,7 @@ impl S3Object {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<SchemaData<Manager, deadpool_postgres::Client>>()?;
+		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
 		data.minio_client
 			.get_object(&data.bucket_name, &self.name)
 			.send()

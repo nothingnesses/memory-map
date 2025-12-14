@@ -446,6 +446,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .z-1{z-index:1;}
 .h-dvh{height:100dvh;}
 .max-h-dvh{max-height:100dvh;}
+.table{display:table;}
 @media (min-width: 40rem){
 .sm\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
 }

@@ -1,6 +1,10 @@
 use crate::{
-	LocationStrings, components::location_marker::LocationMarker, dump_errors, fetch_s3_objects,
-	s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	LocationStrings,
+	components::location_marker::LocationMarker,
+	dump_errors,
+	graphql_queries::s3_objects::{
+		S3ObjectsQuery, s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	},
 };
 use leptos::{logging::debug_error, prelude::*};
 use std::collections::HashMap;
@@ -42,7 +46,7 @@ fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 /// Location markers to add to the map.
 #[component]
 pub fn LocationMarkers() -> impl IntoView {
-	let s3_objects_resource = LocalResource::new(fetch_s3_objects);
+	let s3_objects_resource = LocalResource::new(S3ObjectsQuery::run);
 	view! {
 		<ErrorBoundary fallback=|errors| {
 			debug_error!("Failed to load markers: {:?}", errors.get());

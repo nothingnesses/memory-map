@@ -1,0 +1,14 @@
+mutation UpsertS3ObjectQuery(
+	$name: String!
+	$made_on: String
+	$location: LocationInput
+) {
+	upsertS3Object(name: $name, madeOn: $made_on, location: $location) {
+		name
+		madeOn
+		location {
+			latitude
+			longitude
+		}
+	}
+}
