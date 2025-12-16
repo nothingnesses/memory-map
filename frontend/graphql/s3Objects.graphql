@@ -7,7 +7,5 @@ query S3ObjectsQuery {
 		}
 		name
 		madeOn
-		url
-		contentType
 	}
 }

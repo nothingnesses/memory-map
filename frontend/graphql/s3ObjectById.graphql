@@ -1,0 +1,6 @@
+query S3ObjectByIdQuery($id: Int!) {
+	s3ObjectById(id: $id) {
+		url
+		contentType
+	}
+}
