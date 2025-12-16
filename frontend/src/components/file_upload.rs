@@ -40,11 +40,11 @@ pub fn FileUpload() -> impl IntoView {
 				<div class="relative grid">
 					<label>
 						<div>"Set latitude"</div>
-						<input type="number" name="latitude" min="-90" max="90" />
+						<input type="number" name="latitude" min="-90" max="90" step="any" />
 					</label>
 					<label>
 						<div>"Set longitude"</div>
-						<input type="number" name="longitude" min="-180" max="180" />
+						<input type="number" name="longitude" min="-180" max="180" step="any" />
 					</label>
 					<label>
 						<div>"Select files to upload"</div>
