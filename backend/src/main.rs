@@ -1,22 +1,25 @@
 use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
-use axum::Router;
-use axum::extract::DefaultBodyLimit;
-use axum::routing::{delete, get, post};
-use backend::controllers::api::locations::post as post_locations;
-use backend::controllers::api::s3_objects::{
-	delete as delete_s3_object, delete_many as delete_s3_objects,
+use axum::{
+	Router,
+	extract::DefaultBodyLimit,
+	routing::{delete, get, post},
 };
-use backend::graphql::queries::mutation::Mutation;
-use backend::graphql::queries::query::Query;
-use backend::{Config, ONE_GB, SharedState, graphiql, migrations};
+use axum_response_cache::CacheLayer;
+use backend::{
+	BODY_MAX_SIZE_LIMIT_BYTES, CACHE_MAX_AGE_SECONDS, Config, SharedState,
+	controllers::api::{
+		locations::post as post_locations,
+		s3_objects::{delete as delete_s3_object, delete_many as delete_s3_objects},
+	},
+	graphiql,
+	graphql::queries::{mutation::Mutation, query::Query},
+	migrations,
+};
 use deadpool_postgres::Runtime;
 use dotenvy::dotenv;
-use minio::s3::ClientBuilder;
-use minio::s3::creds::StaticProvider;
-use minio::s3::http::BaseUrl;
-use std::ops::DerefMut;
-use std::sync::Arc;
+use minio::s3::{ClientBuilder, creds::StaticProvider, http::BaseUrl};
+use std::{ops::DerefMut, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
@@ -61,12 +64,15 @@ async fn main() {
 
 	let permissive_cors = CorsLayer::permissive();
 
+	let cache_layer = CacheLayer::with_lifespan(Duration::from_secs(CACHE_MAX_AGE_SECONDS))
+		.body_limit(BODY_MAX_SIZE_LIMIT_BYTES);
+
 	let app = Router::new()
-		.route("/", get(graphiql).post_service(GraphQL::new(schema)))
+		.route("/", get(graphiql).post_service(GraphQL::new(schema)).layer(cache_layer))
 		.route(
 			"/api/locations/",
 			post(post_locations)
-				.route_layer(DefaultBodyLimit::max(ONE_GB))
+				.route_layer(DefaultBodyLimit::max(BODY_MAX_SIZE_LIMIT_BYTES))
 				.with_state(shared_state.clone()),
 		)
 		.route("/api/s3-objects/{id}", delete(delete_s3_object).with_state(shared_state.clone()))
