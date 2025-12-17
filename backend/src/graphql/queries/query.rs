@@ -3,7 +3,7 @@ use async_graphql::{Context, Error as GraphQLError, Object};
 
 pub struct Query;
 
-#[Object]
+#[Object(cache_control(max_age = 600, private))]
 impl Query {
 	async fn s3_object_by_id(
 		&self,
