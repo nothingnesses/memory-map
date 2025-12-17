@@ -8,8 +8,6 @@ use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
 
-pub const ONE_GB: usize = 1_073_741_824;
-
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
@@ -23,6 +21,10 @@ impl Config {
 			.try_deserialize()
 	}
 }
+
+pub const CACHE_MAX_AGE_SECONDS: u64 = 600;
+// 1GB.
+pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
 refinery::embed_migrations!("migrations");
 
