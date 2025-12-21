@@ -2,12 +2,15 @@ use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
 use axum::{
 	Router,
-	extract::DefaultBodyLimit,
+	body::Body,
+	extract::{DefaultBodyLimit, State},
+	http::{HeaderMap, HeaderValue, Request, StatusCode},
+	middleware::{self, Next},
+	response::IntoResponse,
 	routing::{delete, get, post},
 };
-use axum_response_cache::CacheLayer;
 use backend::{
-	BODY_MAX_SIZE_LIMIT_BYTES, CACHE_MAX_AGE_SECONDS, Config, SharedState,
+	BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState,
 	controllers::api::{
 		locations::post as post_locations,
 		s3_objects::{delete as delete_s3_object, delete_many as delete_s3_objects},
@@ -16,14 +19,44 @@ use backend::{
 	graphql::queries::{mutation::Mutation, query::Query},
 	migrations,
 };
-use deadpool_postgres::Runtime;
+use deadpool::managed::Object;
+use deadpool_postgres::{Manager, Runtime};
 use dotenvy::dotenv;
 use minio::s3::{ClientBuilder, creds::StaticProvider, http::BaseUrl};
-use std::{ops::DerefMut, sync::Arc, time::Duration};
+use std::{
+	ops::DerefMut,
+	sync::{
+		Arc,
+		atomic::{AtomicU64, Ordering},
+	},
+	time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
+
+async fn etag_middleware(
+	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
+	headers: HeaderMap,
+	request: Request<Body>,
+	next: Next,
+) -> impl IntoResponse {
+	let last_modified = state.last_modified.load(Ordering::Relaxed);
+	let etag = format!("\"{}\"", last_modified);
+
+	if let Some(if_none_match) = headers.get("if-none-match") {
+		if if_none_match.to_str().unwrap_or("") == etag {
+			return StatusCode::NOT_MODIFIED.into_response();
+		}
+	}
+
+	let mut response = next.run(request).await;
+	response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
+	response.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-cache"));
+
+	response
+}
 
 #[tokio::main]
 async fn main() {
@@ -56,7 +89,10 @@ async fn main() {
 
 	let bucket_name = "memory-map".to_string();
 
-	let shared_state = Arc::new(SharedState { pool, minio_client, bucket_name });
+	let last_modified =
+		AtomicU64::new(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
+
+	let shared_state = Arc::new(SharedState { pool, minio_client, bucket_name, last_modified });
 
 	// Set up GraphQL
 	let schema =
@@ -64,11 +100,13 @@ async fn main() {
 
 	let permissive_cors = CorsLayer::permissive();
 
-	let cache_layer = CacheLayer::with_lifespan(Duration::from_secs(CACHE_MAX_AGE_SECONDS))
-		.body_limit(BODY_MAX_SIZE_LIMIT_BYTES);
-
 	let app = Router::new()
-		.route("/", get(graphiql).post_service(GraphQL::new(schema)).layer(cache_layer))
+		.route(
+			"/",
+			get(graphiql)
+				.post_service(GraphQL::new(schema))
+				.layer(middleware::from_fn_with_state(shared_state.clone(), etag_middleware)),
+		)
 		.route(
 			"/api/locations/",
 			post(post_locations)

@@ -1,12 +1,13 @@
 use crate::{
-	ContextWrapper,
+	ContextWrapper, SharedState,
 	graphql::objects::{location::Location, s3_object::S3Object},
 };
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
-use deadpool_postgres::Client;
+use deadpool_postgres::{Client, Manager};
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
+use std::sync::Arc;
 use tracing;
 
 const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
@@ -116,10 +117,10 @@ impl Mutation {
 		ctx: &Context<'_>,
 		ids: Vec<ID>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
-		let ctx = ContextWrapper(ctx);
-		let bucket_name = ctx.get_bucket_name()?;
-		let minio_client = ctx.get_minio_client()?;
-		let client = ctx.get_db_client().await?;
+		let wrapper = ContextWrapper(ctx);
+		let bucket_name = wrapper.get_bucket_name()?;
+		let minio_client = wrapper.get_minio_client()?;
+		let client = wrapper.get_db_client().await?;
 		let ids: Vec<i64> = ids
 			.into_iter()
 			.map(|id| {
@@ -128,7 +129,13 @@ impl Mutation {
 			})
 			.collect::<Result<Vec<i64>, _>>()?;
 
-		Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids).await
+		let result =
+			Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids).await?;
+
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		state.update_last_modified();
+
+		Ok(result)
 	}
 
 	async fn upsert_s3_object(
@@ -139,6 +146,11 @@ impl Mutation {
 		location: Option<Location>,
 	) -> Result<S3Object, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		Self::upsert_s3_object_worker(&client, name, made_on, location).await
+		let result = Self::upsert_s3_object_worker(&client, name, made_on, location).await?;
+
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		state.update_last_modified();
+
+		Ok(result)
 	}
 }

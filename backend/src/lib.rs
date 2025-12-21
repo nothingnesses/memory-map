@@ -7,6 +7,8 @@ use async_graphql::{Context, Error as GraphQLError};
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
+use std::sync::atomic::AtomicU64;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
@@ -22,7 +24,6 @@ impl Config {
 	}
 }
 
-pub const CACHE_MAX_AGE_SECONDS: u64 = 600;
 // 1GB.
 pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
@@ -32,6 +33,14 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
 	pub minio_client: s3::Client,
 	pub bucket_name: String,
+	pub last_modified: AtomicU64,
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
+	pub fn update_last_modified(&self) {
+		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
+	}
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
@@ -43,6 +52,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 			.field("pool", &"Pool")
 			.field("minio_client", &self.minio_client)
 			.field("bucket_name", &self.bucket_name)
+			.field("last_modified", &self.last_modified)
 			.finish()
 	}
 }

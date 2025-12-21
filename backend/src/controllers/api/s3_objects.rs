@@ -18,7 +18,7 @@ pub struct DeleteS3ObjectsRequest {
 #[debug_handler]
 pub async fn delete(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
-	Path(id): Path<i64>
+	Path(id): Path<i64>,
 ) -> impl IntoResponse {
 	let client = match state.pool.get().await {
 		Ok(client) => client,
@@ -36,7 +36,10 @@ pub async fn delete(
 	)
 	.await
 	{
-		Ok(_) => StatusCode::OK,
+		Ok(_) => {
+			state.update_last_modified();
+			StatusCode::OK
+		}
 		Err(e) => {
 			tracing::error!("Failed to delete object: {:?}", e);
 			StatusCode::INTERNAL_SERVER_ERROR
@@ -66,7 +69,10 @@ pub async fn delete_many(
 	)
 	.await
 	{
-		Ok(_) => StatusCode::OK,
+		Ok(_) => {
+			state.update_last_modified();
+			StatusCode::OK
+		}
 		Err(e) => {
 			tracing::error!("Failed to delete objects: {:?}", e);
 			StatusCode::INTERNAL_SERVER_ERROR
