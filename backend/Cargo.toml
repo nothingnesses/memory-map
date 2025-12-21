@@ -8,7 +8,6 @@ async-graphql = "7.0"
 async-graphql-axum = "7.0"
 axum = { version = "0.8", features = ["multipart"] }
 axum-macros = "0.5"
-axum-response-cache = "0.4"
 config = "0.15"
 deadpool = "0.12"
 deadpool-postgres = { version = "0.14", features = ["rt_tokio_1", "serde"] }
