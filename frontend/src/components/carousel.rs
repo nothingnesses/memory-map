@@ -32,6 +32,7 @@ pub fn Carousel(
 	))]
 	next_button_content: CallbackAnyView,
 	#[prop(into, default = Signal::derive(|| true))] show_navigation_buttons: Signal<bool>,
+	#[prop(into, default = Signal::derive(|| 2000))] button_timeout_duration: Signal<u64>,
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
@@ -43,7 +44,38 @@ pub fn Carousel(
 		index.set(index.get().modular_add(1, s3_objects.get().len()));
 		debug_log!("called `next_slide`");
 	};
-	let handle = window_event_listener(ev::keydown, move |ev| {
+	let show_buttons = RwSignal::new(true);
+	let timer_handle: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
+
+	let reset_timer = move || {
+		show_buttons.set(true);
+		debug_log!("buttons should be displayed");
+		if let Some(handle) = timer_handle.get_untracked() {
+			handle.clear();
+		}
+		let handle = set_timeout_with_handle(
+			move || {
+				show_buttons.set(false);
+				debug_log!("buttons should be hidden");
+			},
+			std::time::Duration::from_millis(button_timeout_duration.get()),
+		)
+		.ok();
+		timer_handle.set(handle);
+	};
+
+	let is_mobile = move || {
+		window()
+			.match_media("(max-width: 1024px), (pointer: coarse)")
+			.ok()
+			.flatten()
+			.map(|m| m.matches())
+			.unwrap_or(false)
+	};
+
+	let buttons_visible = move || is_mobile() || show_buttons.get();
+
+	let keydown_handle = window_event_listener(ev::keydown, move |ev| {
 		let key = ev.key();
 		debug_log!("{:?}", key.as_str());
 		match key.as_str() {
@@ -52,7 +84,26 @@ pub fn Carousel(
 			_ => {}
 		};
 	});
-	on_cleanup(move || handle.remove());
+
+	let mouse_move_handle = window_event_listener(ev::mousemove, move |_| {
+		if open.get() {
+			reset_timer();
+		}
+	});
+
+	Effect::new(move |_| {
+		if open.get() {
+			reset_timer();
+		}
+	});
+
+	on_cleanup(move || {
+		keydown_handle.remove();
+		mouse_move_handle.remove();
+		if let Some(handle) = timer_handle.get_untracked() {
+			handle.clear();
+		}
+	});
 	view! {
 		<ConfigProvider>
 			<div class="relative grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
@@ -74,7 +125,10 @@ pub fn Carousel(
 				<DialogSurface class="dialog-surface border-none rounded-none m-unset p-unset bg-transparent">
 					<div class="dialog-content relative w-dvw h-dvh grid place-items-center">
 						// Buttons
-						<div class="buttons absolute w-dvw h-dvh">
+						<div
+							class="buttons absolute w-dvw h-dvh transition-opacity duration-500"
+							class=(["opacity-0", "pointer-events-none"], move || !buttons_visible())
+						>
 							// @todo Maybe this should be a component that emits index updates
 							<Show when=move || { show_navigation_buttons.get() }>
 								<div class="navigation-buttons absolute w-full h-full grid justify-between items-center grid-flow-col">
@@ -107,9 +161,12 @@ pub fn Carousel(
 							on_click=move |_| { open.set(false) }
 						></Button>
 						// Content
-						<FullSizeS3Object class="full-size-s3-object absolute w-fit h-auto" s3_object=Signal::derive(move || {
-							s3_objects.get()[index.get()].clone()
-						}) />
+						<FullSizeS3Object
+							class="full-size-s3-object absolute w-fit h-auto"
+							s3_object=Signal::derive(move || {
+								s3_objects.get()[index.get()].clone()
+							})
+						/>
 					</div>
 				</DialogSurface>
 			</Dialog>

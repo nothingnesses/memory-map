@@ -31,6 +31,7 @@ tokio = { version = "1.48", features = [
   "time",
 ] }
 wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Document", "MediaQueryList", "Window"] }
 
 # utils
 # strum = { version = "0.25", features = ["derive", "strum_macros"] }
@@ -40,7 +41,7 @@ wasm-bindgen-futures = "0.4"
 # Locked to =0.2.104 since that's the latest available on nixpkgs
 wasm-bindgen = "=0.2.104"
 wasm-bindgen-test = "0.3"
-web-sys = { version = "0.3", features = ["Document", "Window"] }
+web-sys = { version = "0.3", features = ["Document", "MediaQueryList", "Window"] }
 
 [profile.release]
 opt-level = "z"
