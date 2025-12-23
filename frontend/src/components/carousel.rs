@@ -6,7 +6,9 @@ use crate::{
 };
 use leptos::{ev, logging::debug_log, prelude::*};
 use lucide_leptos::{ChevronLeft, ChevronRight, X};
+use std::time;
 use thaw::*;
+use web_sys::js_sys;
 
 #[component]
 pub fn Carousel(
@@ -33,6 +35,7 @@ pub fn Carousel(
 	next_button_content: CallbackAnyView,
 	#[prop(into, default = Signal::derive(|| true))] show_navigation_buttons: Signal<bool>,
 	#[prop(into, default = Signal::derive(|| 2000))] button_timeout_duration: Signal<u64>,
+	#[prop(into, default = Signal::derive(|| 1024))] mobile_width: Signal<u64>,
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
@@ -46,34 +49,82 @@ pub fn Carousel(
 	};
 	let show_buttons = RwSignal::new(true);
 	let timer_handle: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
+	let last_activity = RwSignal::new(js_sys::Date::now());
+	let trigger_check = RwSignal::new(());
 
-	let reset_timer = move || {
-		show_buttons.set(true);
-		debug_log!("buttons should be displayed");
-		if let Some(handle) = timer_handle.get_untracked() {
-			handle.clear();
-		}
-		let handle = set_timeout_with_handle(
-			move || {
-				show_buttons.set(false);
-				debug_log!("buttons should be hidden");
-			},
-			std::time::Duration::from_millis(button_timeout_duration.get()),
-		)
-		.ok();
-		timer_handle.set(handle);
-	};
-
-	let is_mobile = move || {
-		window()
-			.match_media("(max-width: 1024px), (pointer: coarse)")
+	let is_mobile = RwSignal::new(false);
+	let check_mobile = move || {
+		let mobile = window()
+			.match_media(
+				format!("(max-width: {}px), (pointer: coarse)", mobile_width.get()).as_str(),
+			)
 			.ok()
 			.flatten()
 			.map(|m| m.matches())
-			.unwrap_or(false)
+			.unwrap_or(false);
+		if is_mobile.get_untracked() != mobile {
+			is_mobile.set(mobile);
+		}
 	};
 
-	let buttons_visible = move || is_mobile() || show_buttons.get();
+	// Initial check
+	check_mobile();
+
+	let resize_handle = window_event_listener(ev::resize, move |_| {
+		check_mobile();
+	});
+
+	let reset_timer = move || {
+		last_activity.set(js_sys::Date::now());
+		if !show_buttons.get_untracked() {
+			show_buttons.set(true);
+			debug_log!("buttons should be displayed");
+		}
+	};
+
+	Effect::new(move |_| {
+		trigger_check.track();
+		if !is_mobile.get_untracked() && timer_handle.get_untracked().is_none() {
+			let handle = set_timeout_with_handle(
+				move || {
+					let now = js_sys::Date::now();
+					let elapsed = now - last_activity.get_untracked();
+					let timeout = button_timeout_duration.get_untracked() as f64;
+
+					if elapsed >= timeout {
+						show_buttons.set(false);
+						timer_handle.set(None);
+						debug_log!("buttons should be hidden");
+					} else {
+						// Reschedule for remaining time
+						let remaining = timeout - elapsed;
+						let handle = set_timeout_with_handle(
+							move || {
+								timer_handle.set(None);
+								trigger_check.set(());
+							},
+							time::Duration::from_millis(remaining as u64),
+						)
+						.ok();
+						timer_handle.set(handle);
+					}
+				},
+				time::Duration::from_millis(button_timeout_duration.get_untracked()),
+			)
+			.ok();
+			timer_handle.set(handle);
+		}
+	});
+
+	// Trigger initial timer if open
+	Effect::new(move |_| {
+		if open.get() && !is_mobile.get_untracked() {
+			reset_timer();
+			trigger_check.set(());
+		}
+	});
+
+	let buttons_visible = move || is_mobile.get() || show_buttons.get();
 
 	let keydown_handle = window_event_listener(ev::keydown, move |ev| {
 		let key = ev.key();
@@ -86,20 +137,18 @@ pub fn Carousel(
 	});
 
 	let mouse_move_handle = window_event_listener(ev::mousemove, move |_| {
-		if open.get() {
+		if open.get() && !is_mobile.get_untracked() {
 			reset_timer();
-		}
-	});
-
-	Effect::new(move |_| {
-		if open.get() {
-			reset_timer();
+			if timer_handle.get_untracked().is_none() {
+				trigger_check.set(());
+			}
 		}
 	});
 
 	on_cleanup(move || {
 		keydown_handle.remove();
 		mouse_move_handle.remove();
+		resize_handle.remove();
 		if let Some(handle) = timer_handle.get_untracked() {
 			handle.clear();
 		}
