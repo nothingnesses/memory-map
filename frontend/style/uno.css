@@ -446,12 +446,16 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
 .h-auto{height:auto;}
 .h-full{height:100%;}
+.max-h-full{max-height:100%;}
 .max-w-dvw{max-width:100dvw;}
+.max-w-full{max-width:100%;}
+.max-w-none{max-width:none;}
 .min-w-unset{min-width:unset;}
 .w-100px{width:100px;}
 .w-dvw{width:100dvw;}
 .w-fit{width:fit-content;}
 .w-full{width:100%;}
+.block{display:block;}
 .\[\&_\.thaw-dialog-surface\\_\\_backdrop\]\:hidden .thaw-dialog-surface__backdrop{display:none;}
 .items-center{align-items:center;}
 .right-0{right:calc(var(--spacing) * 0);}
@@ -463,6 +467,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .relative{position:relative;}
 .z-0{z-index:0;}
 .z-1{z-index:1;}
+.overflow-auto{overflow:auto;}
 .bg-none{background-image:none;}
 .object-scale-down{object-fit:scale-down;}
 .h-dvh{height:100dvh;}

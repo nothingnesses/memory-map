@@ -1,5 +1,6 @@
 use crate::{
 	CallbackAnyView, ModularAdd, ModularSubtract,
+	components::full_size_s3_object::FullSizeS3Object,
 	components::s3_object::S3Object as S3ObjectComponent,
 	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
@@ -73,7 +74,7 @@ pub fn Carousel(
 				<DialogSurface class="dialog-surface border-none rounded-none m-unset p-unset bg-transparent">
 					<div class="dialog-content relative w-dvw h-dvh grid place-items-center">
 						// Buttons
-						<div class="absolute w-dvw h-dvh">
+						<div class="buttons absolute w-dvw h-dvh">
 							// @todo Maybe this should be a component that emits index updates
 							<Show when=move || { show_navigation_buttons.get() }>
 								<div class="navigation-buttons absolute w-full h-full grid justify-between items-center grid-flow-col">
@@ -106,12 +107,9 @@ pub fn Carousel(
 							on_click=move |_| { open.set(false) }
 						></Button>
 						// Content
-						<S3ObjectComponent
-							class="s3-object-component absolute w-fit h-auto max-w-dvw max-h-dvh object-scale-down"
-							s3_object=Signal::derive(move || {
-								s3_objects.get()[index.get()].clone()
-							})
-						/>
+						<FullSizeS3Object class="full-size-s3-object absolute w-fit h-auto" s3_object=Signal::derive(move || {
+							s3_objects.get()[index.get()].clone()
+						}) />
 					</div>
 				</DialogSurface>
 			</Dialog>
