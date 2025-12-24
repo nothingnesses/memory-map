@@ -38,6 +38,9 @@ use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
 
+// 1 minute.
+const CACHE_TTL_MILLIS: u64 = 60_000;
+
 async fn caching_middleware(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
 	_headers: HeaderMap,
@@ -52,7 +55,9 @@ async fn caching_middleware(
 		Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
 	};
 
-	// Return early if it's a mutation
+	// Return early if it's a mutation.
+	// Mutations change state and should not be cached. Caching them would prevent
+	// the server from executing the mutation on subsequent requests.
 	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
 		if let Some(query) = json.get("query").and_then(|q| q.as_str()) {
 			if query.trim().to_lowercase().starts_with("mutation") {
@@ -69,18 +74,23 @@ async fn caching_middleware(
 
 	// 3. Check cache
 	if let Ok(cache) = state.response_cache.read() {
-		if let Some(cached_response) = cache.get(&hash) {
-			tracing::info!("Cache hit for hash: {}", hash);
-			let mut response = axum::response::Response::new(Body::from(cached_response.clone()));
-			response
-				.headers_mut()
-				.insert("Content-Type", HeaderValue::from_static("application/json"));
+		if let Some((cached_response, created_at)) = cache.get(&hash) {
+			let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+			// Check if the cached entry is still valid based on TTL.
+			if now - created_at < CACHE_TTL_MILLIS {
+				tracing::info!("Cache hit for hash: {}", hash);
+				let mut response =
+					axum::response::Response::new(Body::from(cached_response.clone()));
+				response
+					.headers_mut()
+					.insert("Content-Type", HeaderValue::from_static("application/json"));
 
-			let last_modified = state.last_modified.load(Ordering::Relaxed);
-			let etag = format!("\"{}\"", last_modified);
-			response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
+				let last_modified = state.last_modified.load(Ordering::Relaxed);
+				let etag = format!("\"{}\"", last_modified);
+				response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
 
-			return response;
+				return response;
+			}
 		}
 	}
 
@@ -96,7 +106,8 @@ async fn caching_middleware(
 	};
 
 	if let Ok(mut cache) = state.response_cache.write() {
-		cache.insert(hash, bytes.clone());
+		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+		cache.insert(hash, (bytes.clone(), now));
 	}
 
 	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));

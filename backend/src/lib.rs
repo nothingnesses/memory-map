@@ -41,7 +41,8 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub minio_client: s3::Client,
 	pub bucket_name: String,
 	pub last_modified: AtomicU64,
-	pub response_cache: RwLock<HashMap<u64, Bytes>>,
+	// Field `0` is data. Field `1` is the timestamp (in milliseconds) when the response was cached.
+	pub response_cache: RwLock<HashMap<u64, (Bytes, u64)>>,
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
@@ -64,7 +65,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 			.field("minio_client", &self.minio_client)
 			.field("bucket_name", &self.bucket_name)
 			.field("last_modified", &self.last_modified)
-			.field("response_cache", &"RwLock<HashMap<u64, Bytes>>")
+			.field("response_cache", &"RwLock<HashMap<u64, (Bytes, u64)>>")
 			.finish()
 	}
 }
