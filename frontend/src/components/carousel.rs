@@ -250,9 +250,9 @@ pub fn Carousel(
 							</Show>
 							<Show when=move || { show_bottom_buttons.get() }>
 								<div class="bottom-buttons absolute w-full h-full grid items-end">
-									<div class="relative grid gap-4 justify-content-center items-center grid-flow-col w-full bg-[rgba(0,0,0,0.4)]">
+									<div class="relative z-1 grid gap-4 justify-content-center items-center grid-flow-col w-full bg-[rgba(0,0,0,0.4)]">
 										<Button
-											class="previous-button relative z-1 h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+											class="previous-button relative h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
 											on_click=move |_| rotate_anti_clockwise()
 										>
 											<div class="text-white">
@@ -260,7 +260,7 @@ pub fn Carousel(
 											</div>
 										</Button>
 										<Button
-											class="next-button relative z-1 h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+											class="next-button relative h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
 											on_click=move |_| rotate_clockwise()
 										>
 											<div class="text-white">
