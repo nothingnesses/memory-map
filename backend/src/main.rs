@@ -52,6 +52,16 @@ async fn caching_middleware(
 		Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
 	};
 
+	// Return early if it's a mutation
+	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+		if let Some(query) = json.get("query").and_then(|q| q.as_str()) {
+			if query.trim().to_lowercase().starts_with("mutation") {
+				let req = Request::from_parts(parts, Body::from(bytes));
+				return next.run(req).await.into_response();
+			}
+		}
+	}
+
 	// 2. Hash body
 	let mut hasher = DefaultHasher::new();
 	bytes.hash(&mut hasher);
