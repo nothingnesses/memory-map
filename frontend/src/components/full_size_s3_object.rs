@@ -8,11 +8,14 @@ use thaw::*;
 #[component]
 pub fn FullSizeS3Object(
 	#[prop(into)] s3_object: Signal<S3Object>,
-	#[prop(optional, into)] class: MaybeProp<String>,
+	#[prop(optional, into)] class: MaybeProp<Signal<String>>,
+	#[prop(into)] rotation: Signal<usize>,
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	view! {
-		<ConfigProvider class>
+		<ConfigProvider class=Signal::derive(move || {
+			class.get().map(|s| s.get()).unwrap_or_default()
+		})>
 			<Button
 				class="p-unset rounded-none border-none"
 				on_click=move |_| {
@@ -31,7 +34,12 @@ pub fn FullSizeS3Object(
 							on_click=move |_| { open.set(false) }
 						></Button>
 						// Full size content
-						<div class="absolute z-1 overflow-auto max-w-full max-h-full">
+						<div
+							class="absolute z-1 overflow-auto max-w-full max-h-full"
+							class=("rotate-90", move || rotation.get() == 1)
+							class=("rotate-180", move || rotation.get() == 2)
+							class=("rotate-270", move || rotation.get() == 3)
+						>
 							<Button
 								class="p-unset rounded-none border-none"
 								on_click=move |_| {
