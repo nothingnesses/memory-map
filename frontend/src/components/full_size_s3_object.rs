@@ -9,10 +9,22 @@ use thaw::*;
 pub fn FullSizeS3Object(
 	#[prop(into)] s3_object: Signal<S3Object>,
 	#[prop(optional, into)] class: MaybeProp<String>,
+	#[prop(into)] rotation: Signal<usize>,
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	view! {
-		<ConfigProvider class>
+		<ConfigProvider class=Signal::derive(move || {
+			format!(
+				"{} {}",
+				class.get().unwrap_or_default(),
+				match rotation.get() {
+					1 => "rotate-90",
+					2 => "rotate-180",
+					3 => "rotate-270",
+					_ => "",
+				},
+			)
+		})>
 			<Button
 				class="p-unset rounded-none border-none"
 				on_click=move |_| {
@@ -31,7 +43,18 @@ pub fn FullSizeS3Object(
 							on_click=move |_| { open.set(false) }
 						></Button>
 						// Full size content
-						<div class="absolute z-1 overflow-auto max-w-full max-h-full">
+						<div
+							class="absolute z-1 overflow-auto"
+							// Apply rotations
+							class=("rotate-90", move || rotation.get() == 1)
+							class=("rotate-180", move || rotation.get() == 2)
+							class=("rotate-270", move || rotation.get() == 3)
+							// Swap the width and height of the element in the flow of the document to prevent overflowing layout issue
+							class=("max-w-full", move || rotation.get() % 2 == 0)
+							class=("max-h-full", move || rotation.get() % 2 == 0)
+							class=("max-w-dvh", move || rotation.get() % 2 != 0)
+							class=("max-h-dvw", move || rotation.get() % 2 != 0)
+						>
 							<Button
 								class="p-unset rounded-none border-none"
 								on_click=move |_| {
