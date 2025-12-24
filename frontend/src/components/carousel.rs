@@ -6,7 +6,7 @@ use crate::{
 };
 use leptos::{ev, logging::debug_log, prelude::*};
 use lucide_leptos::{ChevronLeft, ChevronRight, RotateCcw, RotateCw, X};
-use std::time;
+use std::{collections::HashMap, time};
 use thaw::*;
 use web_sys::js_sys;
 
@@ -50,34 +50,49 @@ pub fn Carousel(
 	clockwise_button_content: CallbackAnyView,
 	#[prop(into, default = Signal::derive(|| true))] show_bottom_buttons: Signal<bool>,
 ) -> impl IntoView {
-	let rotation: RwSignal<usize> = RwSignal::new(0);
+	let rotations: RwSignal<HashMap<String, usize>> = RwSignal::new(HashMap::new());
 	let is_open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
-	let reset_rotation = move || {
-		rotation.set(0);
-		debug_log!("called `reset_rotation`");
-	};
+
+	let current_rotation = Signal::derive(move || {
+		let s3_objects = s3_objects.get();
+		if let Some(obj) = s3_objects.get(index.get()) {
+			*rotations.get().get(&obj.id).unwrap_or(&0)
+		} else {
+			0
+		}
+	});
+
 	let rotate_anti_clockwise = move || {
-		rotation.set(rotation.get().modular_subtract(1, 4));
-		debug_log!("called `rotate_anti_clockwise`");
+		let s3_objects = s3_objects.get();
+		if let Some(obj) = s3_objects.get(index.get()) {
+			rotations.update(|map| {
+				let current = *map.get(&obj.id).unwrap_or(&0);
+				map.insert(obj.id.clone(), current.modular_subtract(1, 4));
+			});
+			debug_log!("called `rotate_anti_clockwise`");
+		}
 	};
 	let rotate_clockwise = move || {
-		rotation.set(rotation.get().modular_add(1, 4));
-		debug_log!("called `rotate_clockwise`");
+		let s3_objects = s3_objects.get();
+		if let Some(obj) = s3_objects.get(index.get()) {
+			rotations.update(|map| {
+				let current = *map.get(&obj.id).unwrap_or(&0);
+				map.insert(obj.id.clone(), current.modular_add(1, 4));
+			});
+			debug_log!("called `rotate_clockwise`");
+		}
 	};
 	let close = move || {
 		is_open.set(false);
-		reset_rotation();
 		debug_log!("called `close`");
 	};
 	let previous_slide = move || {
 		index.set(index.get().modular_subtract(1, s3_objects.get().len()));
-		reset_rotation();
 		debug_log!("called `previous_slide`");
 	};
 	let next_slide = move || {
 		index.set(index.get().modular_add(1, s3_objects.get().len()));
-		reset_rotation();
 		debug_log!("called `next_slide`");
 	};
 	let show_buttons = RwSignal::new(true);
@@ -270,7 +285,7 @@ pub fn Carousel(
 						// Content
 						<FullSizeS3Object
 							class="full-size-s3-object absolute w-fit h-auto"
-							rotation
+							rotation=current_rotation
 							s3_object=Signal::derive(move || {
 								s3_objects.get()[index.get()].clone()
 							})
