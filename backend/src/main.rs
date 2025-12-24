@@ -23,23 +23,21 @@ use deadpool::managed::Object;
 use deadpool_postgres::{Manager, Runtime};
 use dotenvy::dotenv;
 use minio::s3::{ClientBuilder, creds::StaticProvider, http::BaseUrl};
+use moka::future::Cache;
 use std::{
-	collections::{HashMap, hash_map::DefaultHasher},
+	collections::hash_map::DefaultHasher,
 	hash::{Hash, Hasher},
 	ops::DerefMut,
 	sync::{
-		Arc, RwLock,
+		Arc,
 		atomic::{AtomicU64, Ordering},
 	},
-	time::{SystemTime, UNIX_EPOCH},
+	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
-
-// 1 minute.
-const CACHE_TTL_MILLIS: u64 = 60_000;
 
 async fn caching_middleware(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
@@ -70,28 +68,22 @@ async fn caching_middleware(
 	// 2. Hash body
 	let mut hasher = DefaultHasher::new();
 	bytes.hash(&mut hasher);
+	if let Some(auth_header) = parts.headers.get("Authorization") {
+		auth_header.hash(&mut hasher);
+	}
 	let hash = hasher.finish();
 
 	// 3. Check cache
-	if let Ok(cache) = state.response_cache.read() {
-		if let Some((cached_response, created_at)) = cache.get(&hash) {
-			let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-			// Check if the cached entry is still valid based on TTL.
-			if now - created_at < CACHE_TTL_MILLIS {
-				tracing::info!("Cache hit for hash: {}", hash);
-				let mut response =
-					axum::response::Response::new(Body::from(cached_response.clone()));
-				response
-					.headers_mut()
-					.insert("Content-Type", HeaderValue::from_static("application/json"));
+	if let Some(cached_response) = state.response_cache.get(&hash).await {
+		tracing::info!("Cache hit for hash: {}", hash);
+		let mut response = axum::response::Response::new(Body::from(cached_response));
+		response.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
 
-				let last_modified = state.last_modified.load(Ordering::Relaxed);
-				let etag = format!("\"{}\"", last_modified);
-				response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
+		let last_modified = state.last_modified.load(Ordering::Relaxed);
+		let etag = format!("\"{}\"", last_modified);
+		response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
 
-				return response;
-			}
-		}
+		return response;
 	}
 
 	// 4. Process request
@@ -105,10 +97,7 @@ async fn caching_middleware(
 		Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
 	};
 
-	if let Ok(mut cache) = state.response_cache.write() {
-		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-		cache.insert(hash, (bytes.clone(), now));
-	}
+	state.response_cache.insert(hash, bytes.clone()).await;
 
 	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));
 
@@ -152,7 +141,9 @@ async fn main() {
 
 	let last_modified =
 		AtomicU64::new(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
-	let response_cache = RwLock::new(HashMap::new());
+
+	let response_cache =
+		Cache::builder().max_capacity(10000).time_to_live(Duration::from_secs(60)).build();
 
 	let shared_state =
 		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache });

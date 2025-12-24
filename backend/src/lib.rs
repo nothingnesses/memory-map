@@ -7,10 +7,10 @@ use axum::{
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
+use moka::future::Cache;
 use std::{
-	collections::HashMap,
 	fmt,
-	sync::{RwLock, atomic::AtomicU64},
+	sync::atomic::AtomicU64,
 	time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -41,17 +41,14 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub minio_client: s3::Client,
 	pub bucket_name: String,
 	pub last_modified: AtomicU64,
-	// Field `0` is data. Field `1` is the timestamp (in milliseconds) when the response was cached.
-	pub response_cache: RwLock<HashMap<u64, (Bytes, u64)>>,
+	pub response_cache: Cache<u64, Bytes>,
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
 	pub fn update_last_modified(&self) {
 		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
 		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
-		if let Ok(mut cache) = self.response_cache.write() {
-			cache.clear();
-		}
+		self.response_cache.invalidate_all();
 	}
 }
 
@@ -65,7 +62,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 			.field("minio_client", &self.minio_client)
 			.field("bucket_name", &self.bucket_name)
 			.field("last_modified", &self.last_modified)
-			.field("response_cache", &"RwLock<HashMap<u64, (Bytes, u64)>>")
+			.field("response_cache", &"Cache<u64, Bytes>")
 			.finish()
 	}
 }
