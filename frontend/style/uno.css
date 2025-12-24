@@ -450,7 +450,9 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .h-100px{height:100px;}
 .h-auto{height:auto;}
 .h-full{height:100%;}
+.max-h-dvw{max-height:100dvw;}
 .max-h-full{max-height:100%;}
+.max-w-dvh{max-width:100dvh;}
 .max-w-dvw{max-width:100dvw;}
 .max-w-full{max-width:100%;}
 .max-w-none{max-width:none;}

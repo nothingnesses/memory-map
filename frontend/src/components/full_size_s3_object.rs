@@ -44,10 +44,16 @@ pub fn FullSizeS3Object(
 						></Button>
 						// Full size content
 						<div
-							class="absolute z-1 overflow-auto max-w-full max-h-full"
+							class="absolute z-1 overflow-auto"
+							// Apply rotations
 							class=("rotate-90", move || rotation.get() == 1)
 							class=("rotate-180", move || rotation.get() == 2)
 							class=("rotate-270", move || rotation.get() == 3)
+							// Swap the width and height of the element in the flow of the document to prevent overflowing layout issue
+							class=("max-w-full", move || rotation.get() % 2 == 0)
+							class=("max-h-full", move || rotation.get() % 2 == 0)
+							class=("max-w-dvh", move || rotation.get() % 2 != 0)
+							class=("max-h-dvw", move || rotation.get() % 2 != 0)
 						>
 							<Button
 								class="p-unset rounded-none border-none"
