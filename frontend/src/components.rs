@@ -1,5 +1,6 @@
 pub mod carousel;
 pub mod file_upload;
+pub mod full_size_s3_object;
 pub mod gallery;
 pub mod location_marker;
 pub mod location_markers;
