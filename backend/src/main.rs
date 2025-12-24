@@ -2,7 +2,7 @@ use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
 use axum::{
 	Router,
-	body::Body,
+	body::{Body, to_bytes},
 	extract::{DefaultBodyLimit, State},
 	http::{HeaderMap, HeaderValue, Request, StatusCode},
 	middleware::{self, Next},
@@ -24,9 +24,11 @@ use deadpool_postgres::{Manager, Runtime};
 use dotenvy::dotenv;
 use minio::s3::{ClientBuilder, creds::StaticProvider, http::BaseUrl};
 use std::{
+	collections::{HashMap, hash_map::DefaultHasher},
+	hash::{Hash, Hasher},
 	ops::DerefMut,
 	sync::{
-		Arc,
+		Arc, RwLock,
 		atomic::{AtomicU64, Ordering},
 	},
 	time::{SystemTime, UNIX_EPOCH},
@@ -36,24 +38,62 @@ use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
 
-async fn etag_middleware(
+async fn caching_middleware(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
-	headers: HeaderMap,
+	_headers: HeaderMap,
 	request: Request<Body>,
 	next: Next,
 ) -> impl IntoResponse {
-	let last_modified = state.last_modified.load(Ordering::Relaxed);
-	let etag = format!("\"{}\"", last_modified);
+	// 1. Read body
+	let (parts, body) = request.into_parts();
+	// Limit body size to avoid DoS. Using a reasonable limit for GraphQL queries (e.g. 1MB).
+	let bytes = match to_bytes(body, 1024 * 1024).await {
+		Ok(b) => b,
+		Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+	};
 
-	if let Some(if_none_match) = headers.get("if-none-match") {
-		if if_none_match.to_str().unwrap_or("") == etag {
-			return StatusCode::NOT_MODIFIED.into_response();
+	// 2. Hash body
+	let mut hasher = DefaultHasher::new();
+	bytes.hash(&mut hasher);
+	let hash = hasher.finish();
+
+	// 3. Check cache
+	if let Ok(cache) = state.response_cache.read() {
+		if let Some(cached_response) = cache.get(&hash) {
+			tracing::info!("Cache hit for hash: {}", hash);
+			let mut response = axum::response::Response::new(Body::from(cached_response.clone()));
+			response
+				.headers_mut()
+				.insert("Content-Type", HeaderValue::from_static("application/json"));
+
+			let last_modified = state.last_modified.load(Ordering::Relaxed);
+			let etag = format!("\"{}\"", last_modified);
+			response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
+
+			return response;
 		}
 	}
 
-	let mut response = next.run(request).await;
+	// 4. Process request
+	let req = Request::from_parts(parts, Body::from(bytes));
+	let response = next.run(req).await;
+
+	// 5. Cache response
+	let (parts, body) = response.into_parts();
+	let bytes = match to_bytes(body, BODY_MAX_SIZE_LIMIT_BYTES).await {
+		Ok(b) => b,
+		Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+	};
+
+	if let Ok(mut cache) = state.response_cache.write() {
+		cache.insert(hash, bytes.clone());
+	}
+
+	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));
+
+	let last_modified = state.last_modified.load(Ordering::Relaxed);
+	let etag = format!("\"{}\"", last_modified);
 	response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
-	response.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-cache"));
 
 	response
 }
@@ -91,8 +131,10 @@ async fn main() {
 
 	let last_modified =
 		AtomicU64::new(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
+	let response_cache = RwLock::new(HashMap::new());
 
-	let shared_state = Arc::new(SharedState { pool, minio_client, bucket_name, last_modified });
+	let shared_state =
+		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache });
 
 	// Set up GraphQL
 	let schema =
@@ -105,7 +147,7 @@ async fn main() {
 			"/",
 			get(graphiql)
 				.post_service(GraphQL::new(schema))
-				.layer(middleware::from_fn_with_state(shared_state.clone(), etag_middleware)),
+				.layer(middleware::from_fn_with_state(shared_state.clone(), caching_middleware)),
 		)
 		.route(
 			"/api/locations/",

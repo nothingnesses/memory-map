@@ -1,14 +1,21 @@
 use async_graphql::http::GraphiQLSource;
-use axum::response::{self, IntoResponse};
-use std::fmt;
-pub mod controllers;
-pub mod graphql;
 use async_graphql::{Context, Error as GraphQLError};
+use axum::{
+	body::Bytes,
+	response::{self, IntoResponse},
+};
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
-use std::sync::atomic::AtomicU64;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+	collections::HashMap,
+	fmt,
+	sync::{RwLock, atomic::AtomicU64},
+	time::{SystemTime, UNIX_EPOCH},
+};
+
+pub mod controllers;
+pub mod graphql;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
@@ -34,12 +41,16 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub minio_client: s3::Client,
 	pub bucket_name: String,
 	pub last_modified: AtomicU64,
+	pub response_cache: RwLock<HashMap<u64, Bytes>>,
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
 	pub fn update_last_modified(&self) {
 		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
 		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
+		if let Ok(mut cache) = self.response_cache.write() {
+			cache.clear();
+		}
 	}
 }
 
@@ -53,6 +64,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 			.field("minio_client", &self.minio_client)
 			.field("bucket_name", &self.bucket_name)
 			.field("last_modified", &self.last_modified)
+			.field("response_cache", &"RwLock<HashMap<u64, Bytes>>")
 			.finish()
 	}
 }
