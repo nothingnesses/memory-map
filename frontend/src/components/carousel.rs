@@ -269,17 +269,7 @@ pub fn Carousel(
 						></Button>
 						// Content
 						<FullSizeS3Object
-							class=Signal::derive(move || {
-								format!(
-									"full-size-s3-object absolute w-fit h-auto {}",
-									match rotation.get() {
-										1 => "rotate-90",
-										2 => "rotate-180",
-										3 => "rotate-270",
-										_ => "",
-									},
-								)
-							})
+							class="full-size-s3-object absolute w-fit h-auto"
 							rotation
 							s3_object=Signal::derive(move || {
 								s3_objects.get()[index.get()].clone()
