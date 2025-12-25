@@ -69,7 +69,17 @@ pub fn S3ObjectsTable(
 						// Trigger the refresh callback to update the table
 						on_change.run(());
 					} else {
-						debug_error!("Failed to delete objects. Status: {}", resp.status());
+						let text = JsFuture::from(resp.text().unwrap())
+							.await
+							.unwrap()
+							.as_string()
+							.unwrap_or_default();
+						debug_error!(
+							"Failed to delete objects. Status: {} {}, Body: {}",
+							resp.status(),
+							resp.status_text(),
+							text
+						);
 					}
 				}
 				Err(e) => {

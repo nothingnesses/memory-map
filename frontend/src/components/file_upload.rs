@@ -38,10 +38,16 @@ pub fn FileUpload(
 						// Trigger the parent's refresh callback instead of reloading the page
 						on_success.run(());
 					} else {
+						let text = JsFuture::from(resp.text().unwrap())
+							.await
+							.unwrap()
+							.as_string()
+							.unwrap_or_default();
 						debug_error!(
-							"Failed to upload files. Status: {} {}",
+							"Failed to upload files. Status: {} {}, Body: {}",
 							resp.status(),
-							resp.status_text()
+							resp.status_text(),
+							text
 						);
 					}
 				}
