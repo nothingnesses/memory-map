@@ -1,15 +1,17 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
 use crate::SharedState;
-use crate::graphql::objects::location::Location;
-use crate::graphql::queries::mutation::Mutation;
-use axum::body::Bytes;
-use axum::extract::{Multipart, State};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use crate::graphql::{objects::location::Location, queries::mutation::Mutation};
+use axum::{
+	body::Bytes,
+	extract::{Multipart, State},
+	http::StatusCode,
+	response::{IntoResponse, Response},
+};
 use axum_macros::debug_handler;
 use deadpool::managed::Object;
 use deadpool_postgres::Manager;
+use shared::ALLOWED_MIME_TYPES;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -24,7 +26,7 @@ struct FileData {
 pub async fn post(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
 	mut multipart: Multipart,
-) -> impl IntoResponse {
+) -> Response {
 	let mut latitude: Option<f64> = None;
 	let mut longitude: Option<f64> = None;
 	let mut files: Vec<FileData> = Vec::new();
@@ -50,6 +52,15 @@ pub async fn post(
 			"files" => {
 				let filename = field.file_name().unwrap_or_default().to_string();
 				let content_type = field.content_type().unwrap_or_default().to_string();
+
+				if !ALLOWED_MIME_TYPES.contains(&content_type.as_str()) {
+					return (
+						StatusCode::BAD_REQUEST,
+						format!("Unsupported file type: {}", content_type),
+					)
+						.into_response();
+				}
+
 				if let Ok(bytes) = field.bytes().await {
 					files.push(FileData { filename, content_type, bytes });
 				}
@@ -89,5 +100,5 @@ pub async fn post(
 		state.update_last_modified();
 	}
 
-	StatusCode::OK
+	StatusCode::OK.into_response()
 }

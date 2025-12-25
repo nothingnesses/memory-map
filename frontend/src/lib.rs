@@ -3,6 +3,7 @@ use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{components::*, path};
 use std::ops::{Add, Rem, Sub};
+use thaw::{ConfigProvider, ToasterProvider};
 
 // Modules
 mod components;
@@ -16,29 +17,33 @@ pub fn App() -> impl IntoView {
 	provide_meta_context();
 
 	view! {
-		<Html attr:lang="en" attr:dir="ltr" attr:data-theme="light" />
+		<ConfigProvider>
+			<ToasterProvider>
+				<Html attr:lang="en" attr:dir="ltr" attr:data-theme="light" />
 
-		// sets the document title
-		<Title text="Memory Map" />
+				// sets the document title
+				<Title text="Memory Map" />
 
-		// injects metadata in the <head> of the page
-		<Meta charset="UTF-8" />
-		<Meta name="viewport" content="width=device-width, initial-scale=1.0" />
+				// injects metadata in the <head> of the page
+				<Meta charset="UTF-8" />
+				<Meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-		<Router>
-			<header>
-				<nav class="relative container mx-auto grid gap-4 grid-flow-col justify-start">
-					<A href="/">"Map"</A>
-					<A href="/admin">"Admin"</A>
-				</nav>
-			</header>
-			<main>
-				<Routes fallback=|| view! { NotFound }>
-					<Route path=path!("/") view=Home />
-					<Route path=path!("/admin") view=Admin />
-				</Routes>
-			</main>
-		</Router>
+				<Router>
+					<header>
+						<nav class="relative container mx-auto grid gap-4 grid-flow-col justify-start">
+							<A href="/">"Map"</A>
+							<A href="/admin">"Admin"</A>
+						</nav>
+					</header>
+					<main>
+						<Routes fallback=|| view! { NotFound }>
+							<Route path=path!("/") view=Home />
+							<Route path=path!("/admin") view=Admin />
+						</Routes>
+					</main>
+				</Router>
+			</ToasterProvider>
+		</ConfigProvider>
 	}
 }
 
