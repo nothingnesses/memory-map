@@ -99,6 +99,7 @@ pub fn Carousel(
 	let timer_handle: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
 	let last_activity = RwSignal::new(js_sys::Date::now());
 	let trigger_check = RwSignal::new(());
+	let is_hovering = RwSignal::new(false);
 
 	let is_mobile = RwSignal::new(false);
 	let check_mobile = move || {
@@ -140,9 +141,21 @@ pub fn Carousel(
 					let timeout = button_timeout_duration.get_untracked() as f64;
 
 					if elapsed >= timeout {
-						show_buttons.set(false);
-						timer_handle.set(None);
-						debug_log!("buttons should be hidden");
+						if is_hovering.get_untracked() {
+							let handle = set_timeout_with_handle(
+								move || {
+									timer_handle.set(None);
+									trigger_check.set(());
+								},
+								time::Duration::from_millis(200),
+							)
+							.ok();
+							timer_handle.set(handle);
+						} else {
+							show_buttons.set(false);
+							timer_handle.set(None);
+							debug_log!("buttons should be hidden");
+						}
 					} else {
 						// Reschedule for remaining time
 						let remaining = timeout - elapsed;
@@ -235,6 +248,8 @@ pub fn Carousel(
 									<Button
 										class="previous-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
 										on_click=move |_| previous_slide()
+										on:mouseenter=move |_| is_hovering.set(true)
+										on:mouseleave=move |_| is_hovering.set(false)
 									>
 										<div class="text-white">
 											{previous_button_content.run(())}
@@ -243,6 +258,8 @@ pub fn Carousel(
 									<Button
 										class="next-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
 										on_click=move |_| next_slide()
+										on:mouseenter=move |_| is_hovering.set(true)
+										on:mouseleave=move |_| is_hovering.set(false)
 									>
 										<div class="text-white">{next_button_content.run(())}</div>
 									</Button>
@@ -250,9 +267,13 @@ pub fn Carousel(
 							</Show>
 							<Show when=move || { show_bottom_buttons.get() }>
 								<div class="bottom-buttons absolute w-full h-full grid items-end">
-									<div class="relative z-1 grid gap-4 justify-content-center items-center grid-flow-col w-full bg-[rgba(0,0,0,0.4)]">
+									<div
+										class="relative z-1 grid gap-4 justify-content-center items-center grid-flow-col w-full bg-[rgba(0,0,0,0.4)]"
+										on:mouseenter=move |_| is_hovering.set(true)
+										on:mouseleave=move |_| is_hovering.set(false)
+									>
 										<Button
-											class="previous-button relative h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+											class="anti-clockwise-button relative h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
 											on_click=move |_| rotate_anti_clockwise()
 										>
 											<div class="text-white">
@@ -260,7 +281,7 @@ pub fn Carousel(
 											</div>
 										</Button>
 										<Button
-											class="next-button relative h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+											class="clockwise-button relative h-100px rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
 											on_click=move |_| rotate_clockwise()
 										>
 											<div class="text-white">
@@ -273,6 +294,8 @@ pub fn Carousel(
 							<Button
 								class="close-button absolute z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
 								on_click=move |_| close()
+								on:mouseenter=move |_| is_hovering.set(true)
+								on:mouseleave=move |_| is_hovering.set(false)
 							>
 								{close_button_content.run(())}
 							</Button>
