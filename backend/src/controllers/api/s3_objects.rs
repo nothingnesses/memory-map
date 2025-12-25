@@ -1,8 +1,10 @@
 use crate::SharedState;
 use crate::graphql::queries::mutation::Mutation;
-use axum::extract::{Json, Path, State};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::{
+	extract::{Json, Path, State},
+	http::StatusCode,
+	response::IntoResponse,
+};
 use axum_macros::debug_handler;
 use deadpool::managed::Object;
 use deadpool_postgres::Manager;

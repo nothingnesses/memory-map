@@ -1,5 +1,6 @@
 use crate::dump_errors;
 use leptos::{
+	html::Input,
 	logging::{debug_error, debug_log},
 	prelude::*,
 	task::spawn_local,
@@ -7,6 +8,7 @@ use leptos::{
 	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent},
 };
 use leptos_router::components::Form;
+use shared::ALLOWED_MIME_TYPES;
 use thaw::*;
 use wasm_bindgen_futures::JsFuture;
 
@@ -15,12 +17,62 @@ pub fn FileUpload(
 	// Callback to trigger a refresh of the parent's data (e.g., table)
 	#[prop(into, default = Callback::new(|_| ()))] on_success: Callback<()>,
 ) -> impl IntoView {
+	let toaster = ToasterInjection::expect_context();
+	let file_input_ref = NodeRef::<Input>::new();
+
 	let on_submit = move |event: SubmitEvent| {
 		event.prevent_default();
 		let target = event.target().unwrap();
 		let form = target.unchecked_into::<HtmlFormElement>();
 		let form_data = FormData::new_with_form(&form).unwrap();
 		debug_log!("{:?}", form_data);
+
+		// Client-side validation
+		if let Some(input) = file_input_ref.get() {
+			if let Some(files) = input.files() {
+				if files.length() == 0 {
+					toaster.dispatch_toast(
+						move || {
+							view! {
+								<Toast>
+									<ToastTitle>"Error"</ToastTitle>
+									<ToastBody>
+										"Please select at least one file to upload."
+									</ToastBody>
+								</Toast>
+							}
+						},
+						ToastOptions::default().with_intent(ToastIntent::Error),
+					);
+					return;
+				}
+				for i in 0..files.length() {
+					let file = files.item(i).unwrap();
+					let file_type = file.type_();
+					if !ALLOWED_MIME_TYPES.contains(&file_type.as_str()) {
+						let file_name = file.name();
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Error"</ToastTitle>
+										<ToastBody>
+											{format!(
+												"Unsupported file type: {} ({})",
+												file_name,
+												file_type,
+											)}
+										</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Error),
+						);
+						return;
+					}
+				}
+			}
+		}
 
 		spawn_local(async move {
 			let options = RequestInit::new();
@@ -49,10 +101,32 @@ pub fn FileUpload(
 							resp.status_text(),
 							text
 						);
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Error"</ToastTitle>
+										<ToastBody>{text}</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Error),
+						);
 					}
 				}
 				Err(e) => {
 					debug_error!("Failed to upload files (network error): {:?}", e);
+					toaster.dispatch_toast(
+						move || {
+							view! {
+								<Toast>
+									<ToastTitle>"Error"</ToastTitle>
+									<ToastBody>"Failed to upload files (network error)"</ToastBody>
+								</Toast>
+							}
+						},
+						ToastOptions::default().with_intent(ToastIntent::Error),
+					);
 				}
 			}
 		});
@@ -71,7 +145,13 @@ pub fn FileUpload(
 					</label>
 					<label>
 						<div>"Select files to upload"</div>
-						<input type="file" name="files" accept="image/*,video/*" multiple />
+						<input
+							type="file"
+							name="files"
+							accept=ALLOWED_MIME_TYPES.join(",")
+							multiple
+							node_ref=file_input_ref
+						/>
 					</label>
 					<Button class="w-fit">"Submit"</Button>
 				</div>
