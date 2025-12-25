@@ -11,7 +11,10 @@ use thaw::*;
 use wasm_bindgen_futures::JsFuture;
 
 #[component]
-pub fn FileUpload() -> impl IntoView {
+pub fn FileUpload(
+	// Callback to trigger a refresh of the parent's data (e.g., table)
+	#[prop(into, default = Callback::new(|_| ()))] on_success: Callback<()>,
+) -> impl IntoView {
 	let on_submit = move |event: SubmitEvent| {
 		event.prevent_default();
 		let target = event.target().unwrap();
@@ -28,14 +31,34 @@ pub fn FileUpload() -> impl IntoView {
 				Request::new_with_str_and_init("http://localhost:8000/api/locations/", &options)
 					.unwrap();
 
-			let _ = JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await;
+			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
+				Ok(resp_value) => {
+					let resp: web_sys::Response = resp_value.unchecked_into();
+					if resp.ok() {
+						// Trigger the parent's refresh callback instead of reloading the page
+						on_success.run(());
+					} else {
+						let text = JsFuture::from(resp.text().unwrap())
+							.await
+							.unwrap()
+							.as_string()
+							.unwrap_or_default();
+						debug_error!(
+							"Failed to upload files. Status: {} {}, Body: {}",
+							resp.status(),
+							resp.status_text(),
+							text
+						);
+					}
+				}
+				Err(e) => {
+					debug_error!("Failed to upload files (network error): {:?}", e);
+				}
+			}
 		});
 	};
 	view! {
-		<ErrorBoundary fallback=|errors| {
-			debug_error!("Failed to upload files: {:?}", errors.get());
-			return dump_errors(errors);
-		}>
+		<ErrorBoundary fallback=dump_errors>
 			<Form action="" on:submit=on_submit>
 				<div class="relative grid">
 					<label>
