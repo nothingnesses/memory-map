@@ -28,14 +28,27 @@ pub fn FileUpload() -> impl IntoView {
 				Request::new_with_str_and_init("http://localhost:8000/api/locations/", &options)
 					.unwrap();
 
-			let _ = JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await;
+			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
+				Ok(resp_value) => {
+					let resp: web_sys::Response = resp_value.unchecked_into();
+					if resp.ok() {
+						let _ = web_sys::window().unwrap().location().reload();
+					} else {
+						debug_error!(
+							"Failed to upload files. Status: {} {}",
+							resp.status(),
+							resp.status_text()
+						);
+					}
+				}
+				Err(e) => {
+					debug_error!("Failed to upload files (network error): {:?}", e);
+				}
+			}
 		});
 	};
 	view! {
-		<ErrorBoundary fallback=|errors| {
-			debug_error!("Failed to upload files: {:?}", errors.get());
-			return dump_errors(errors);
-		}>
+		<ErrorBoundary fallback=dump_errors>
 			<Form action="" on:submit=on_submit>
 				<div class="relative grid">
 					<label>
