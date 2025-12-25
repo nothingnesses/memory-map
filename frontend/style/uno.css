@@ -431,9 +431,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .group:hover:active .group-hover\:group-active\:text-white{color:color-mix(in srgb, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .m-unset{margin:unset;}
 .mx-auto{margin-inline:auto;}
-.p-4{padding:calc(var(--spacing) * 4);}
 .p-unset{padding:unset;}
-.rounded-full{border-radius:calc(infinity * 1px);}
 .rounded-none{border-radius:var(--radius-none);}
 .border-none{--un-border-style:none;border-style:none;}
 .bg-\[rgba\(0\,0\,0\,0\.4\)\]{background-color:color-mix(in oklab, rgba(0,0,0,0.4) var(--un-bg-opacity), transparent) /* rgba(0,0,0,0.4) */;}
@@ -447,8 +445,8 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .grid{display:grid;}
 .grid-flow-col{grid-auto-flow:column;}
 .grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
-.h-100px{height:100px;}
 .h-auto{height:auto;}
+.h-fit{height:fit-content;}
 .h-full{height:100%;}
 .max-h-dvw{max-height:100dvw;}
 .max-h-full{max-height:100%;}
@@ -461,6 +459,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .w-dvw{width:100dvw;}
 .w-fit{width:fit-content;}
 .w-full{width:100%;}
+.aspect-square{aspect-ratio:1/1;}
 .block{display:block;}
 .\[\&_\.thaw-dialog-surface\\_\\_backdrop\]\:hidden .thaw-dialog-surface__backdrop,
 .hidden{display:none;}
@@ -470,12 +469,12 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .rotate-90{rotate:90deg;}
 .transition-opacity{transition-property:opacity;transition-timing-function:var(--un-ease, var(--default-transition-timingFunction));transition-duration:var(--un-duration, var(--default-transition-duration));}
 .duration-500{--un-duration:500ms;transition-duration:500ms;}
-.items-end{align-items:flex-end;}
 .items-center{align-items:center;}
 .right-0{right:calc(var(--spacing) * 0);}
 .justify-start{justify-content:flex-start;}
 .justify-between{justify-content:space-between;}
 .justify-items-center{justify-items:center;}
+.place-items-end{place-items:end;}
 .place-items-center{place-items:center;}
 .absolute{position:absolute;}
 .relative{position:relative;}
