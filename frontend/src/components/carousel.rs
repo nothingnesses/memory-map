@@ -5,7 +5,7 @@ use crate::{
 	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::{ev, logging::debug_log, prelude::*};
-use lucide_leptos::{ChevronLeft, ChevronRight, RotateCcw, RotateCw, X};
+use lucide_leptos::{ChevronLeft, ChevronRight, Pause, Play, RotateCcw, RotateCw, X};
 use std::{collections::HashMap, time};
 use thaw::*;
 use web_sys::js_sys;
@@ -48,11 +48,33 @@ pub fn Carousel(
 		}.into_any()
 	))]
 	clockwise_button_content: CallbackAnyView,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<Play />
+		}.into_any()
+	))]
+	play_button_content: CallbackAnyView,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<Pause />
+		}.into_any()
+	))]
+	pause_button_content: CallbackAnyView,
+	#[prop(into, default = Signal::derive(|| 5000))] autoplay_duration: Signal<u64>,
 	#[prop(into, default = Signal::derive(|| true))] show_ui_buttons: Signal<bool>,
 ) -> impl IntoView {
 	let rotations: RwSignal<HashMap<String, usize>> = RwSignal::new(HashMap::new());
 	let is_open = RwSignal::new(false);
 	let index: RwSignal<usize> = RwSignal::new(0);
+	let is_playing = RwSignal::new(false);
+	let play = move || {
+		is_playing.set(true);
+		debug_log!("called `play`");
+	};
+	let pause = move || {
+		is_playing.set(false);
+		debug_log!("called `pause`");
+	};
 
 	let current_rotation = Signal::derive(move || {
 		let s3_objects = s3_objects.get();
@@ -95,6 +117,24 @@ pub fn Carousel(
 		index.set(index.get().modular_add(1, s3_objects.get().len()));
 		debug_log!("called `next_slide`");
 	};
+
+	let local_autoplay_duration = RwSignal::new(autoplay_duration.get_untracked());
+
+	Effect::new(move |_| {
+		if is_playing.get() {
+			if let Ok(handle) = set_interval_with_handle(
+				move || {
+					next_slide();
+				},
+				time::Duration::from_millis(local_autoplay_duration.get()),
+			) {
+				on_cleanup(move || {
+					handle.clear();
+				});
+			}
+		}
+	});
+
 	let show_buttons = RwSignal::new(true);
 	let timer_handle: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
 	let last_activity = RwSignal::new(js_sys::Date::now());
@@ -288,6 +328,39 @@ pub fn Carousel(
 												{clockwise_button_content.run(())}
 											</div>
 										</Button>
+										<div class="relative grid grid-flow-col gap-4">
+											<label class="absolute h-full grid gap-4 place-content-center place-items-center px-4 bg-[rgba(0,0,0,0.4)] text-white right-full">
+												<div>"Autoplay duration (ms):"</div>
+												<input
+													type="number"
+													name="autoplay-duration"
+													min="1000"
+													step="any"
+													prop:value=move || local_autoplay_duration.get()
+													on:input=move |ev| {
+														if let Ok(value) = event_target_value(&ev).parse::<u64>() {
+															local_autoplay_duration.set(value);
+														}
+													}
+												/>
+											</label>
+											<Button
+												class="play-pause-button relative h-100px aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+												on_click=move |_| {
+													if is_playing.get() { pause() } else { play() }
+												}
+											>
+												<div class="text-white">
+													{move || {
+														if is_playing.get() {
+															pause_button_content.run(())
+														} else {
+															play_button_content.run(())
+														}
+													}}
+												</div>
+											</Button>
+										</div>
 									</div>
 								</div>
 							</Show>

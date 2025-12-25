@@ -16,7 +16,11 @@ leptos-leaflet = { version = "0.10", features = [
 leptos_meta = { version = "0.8" }
 leptos_router = { version = "0.8" }
 log = "0.4"
-lucide-leptos = { version = "2", features = ["arrows", "notifications"] }
+lucide-leptos = { version = "2", features = [
+  "arrows",
+  "multimedia",
+  "notifications"
+] }
 mime = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
 serde = "1.0"
