@@ -22,60 +22,62 @@ struct DeleteRequest {
 	s3_objects: Vec<i64>,
 }
 
-fn delete_objects(objects: Vec<S3Object>) {
-	spawn_local(async move {
-		let ids: Vec<i64> = objects.iter().filter_map(|o| o.id.parse::<i64>().ok()).collect();
-
-		let payload = DeleteRequest { s3_objects: ids };
-		let json = match serde_json::to_string(&payload) {
-			Ok(j) => j,
-			Err(e) => {
-				debug_error!("Failed to serialize payload: {:?}", e);
-				return;
-			}
-		};
-
-		debug_log!("Delete request JSON: {json}");
-
-		let options = RequestInit::new();
-		options.set_method("POST");
-		let headers = web_sys::Headers::new().unwrap();
-		headers.append("Content-Type", "application/json").unwrap();
-		options.set_headers(&headers);
-		options.set_body(&JsValue::from_str(&json));
-
-		let request = Request::new_with_str_and_init(
-			"http://localhost:8000/api/delete-s3-objects/",
-			&options,
-		)
-		.unwrap();
-
-		debug_log!("Delete request: {:?}", request);
-
-		match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
-			Ok(resp_value) => {
-				let resp: web_sys::Response = resp_value.unchecked_into();
-				debug_log!("Response status: {} {}", resp.status(), resp.status_text());
-				if resp.ok() {
-					debug_log!("Deleted objects: {json}");
-					let _ = web_sys::window().unwrap().location().reload();
-				} else {
-					debug_error!("Failed to delete objects. Status: {}", resp.status());
-				}
-			}
-			Err(e) => {
-				debug_error!("Failed to delete objects (network error): {:?}", e);
-			}
-		}
-	});
-}
-
 #[component]
 pub fn S3ObjectsTable(
 	#[prop(into)] s3_objects_resource: Signal<LocalResource<Result<Vec<S3Object>, Error>>>,
 	#[prop(into, default = Callback::new(|_| "Close".into_any()))]
 	close_button_content: CallbackAnyView,
+	// Callback to trigger a refresh of the data after deletion
+	#[prop(into, default = Callback::new(|_| ()))] on_change: Callback<()>,
 ) -> impl IntoView {
+	let delete_objects = move |objects: Vec<S3Object>| {
+		spawn_local(async move {
+			let ids: Vec<i64> = objects.iter().filter_map(|o| o.id.parse::<i64>().ok()).collect();
+
+			let payload = DeleteRequest { s3_objects: ids };
+			let json = match serde_json::to_string(&payload) {
+				Ok(j) => j,
+				Err(e) => {
+					debug_error!("Failed to serialize payload: {:?}", e);
+					return;
+				}
+			};
+
+			debug_log!("Delete request JSON: {json}");
+
+			let options = RequestInit::new();
+			options.set_method("POST");
+			let headers = web_sys::Headers::new().unwrap();
+			headers.append("Content-Type", "application/json").unwrap();
+			options.set_headers(&headers);
+			options.set_body(&JsValue::from_str(&json));
+
+			let request = Request::new_with_str_and_init(
+				"http://localhost:8000/api/delete-s3-objects/",
+				&options,
+			)
+			.unwrap();
+
+			debug_log!("Delete request: {:?}", request);
+
+			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
+				Ok(resp_value) => {
+					let resp: web_sys::Response = resp_value.unchecked_into();
+					debug_log!("Response status: {} {}", resp.status(), resp.status_text());
+					if resp.ok() {
+						debug_log!("Deleted objects: {json}");
+						// Trigger the refresh callback to update the table
+						on_change.run(());
+					} else {
+						debug_error!("Failed to delete objects. Status: {}", resp.status());
+					}
+				}
+				Err(e) => {
+					debug_error!("Failed to delete objects (network error): {:?}", e);
+				}
+			}
+		});
+	};
 	let open_delete = RwSignal::new(false);
 	let selected_objects = RwSignal::new(vec![]);
 	let selected_ids = RwSignal::new(HashSet::<String>::new());

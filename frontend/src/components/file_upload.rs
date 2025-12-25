@@ -11,7 +11,10 @@ use thaw::*;
 use wasm_bindgen_futures::JsFuture;
 
 #[component]
-pub fn FileUpload() -> impl IntoView {
+pub fn FileUpload(
+	// Callback to trigger a refresh of the parent's data (e.g., table)
+	#[prop(into, default = Callback::new(|_| ()))] on_success: Callback<()>,
+) -> impl IntoView {
 	let on_submit = move |event: SubmitEvent| {
 		event.prevent_default();
 		let target = event.target().unwrap();
@@ -32,7 +35,8 @@ pub fn FileUpload() -> impl IntoView {
 				Ok(resp_value) => {
 					let resp: web_sys::Response = resp_value.unchecked_into();
 					if resp.ok() {
-						let _ = web_sys::window().unwrap().location().reload();
+						// Trigger the parent's refresh callback instead of reloading the page
+						on_success.run(());
 					} else {
 						debug_error!(
 							"Failed to upload files. Status: {} {}",
