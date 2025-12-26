@@ -24,7 +24,7 @@ pub fn S3ObjectTableRows(
 				let s3_object_for_delete = s3_object.clone();
 				view! {
 					<TableRow>
-						<TableCell>
+						<TableCell class="wrap-anywhere">
 							<input
 								type="checkbox"
 								checked=move || {
@@ -33,10 +33,10 @@ pub fn S3ObjectTableRows(
 								on:change=move |_| on_toggle.run(s3_object_for_toggle.id.clone())
 							/>
 						</TableCell>
-						<TableCell>{s3_object.id.clone()}</TableCell>
-						<TableCell>{s3_object.name.clone()}</TableCell>
-						<TableCell>{s3_object.made_on.clone()}</TableCell>
-						<TableCell>
+						<TableCell class="wrap-anywhere">{s3_object.id.clone()}</TableCell>
+						<TableCell class="wrap-anywhere">{s3_object.name.clone()}</TableCell>
+						<TableCell class="wrap-anywhere">{s3_object.made_on.clone()}</TableCell>
+						<TableCell class="wrap-anywhere">
 							{s3_object
 								.location
 								.clone()
@@ -44,11 +44,11 @@ pub fn S3ObjectTableRows(
 									format!("{}, {}", location.latitude, location.longitude)
 								})}
 						</TableCell>
-						<TableCell>
+						<TableCell class="wrap-anywhere">
 							<A href=s3_object.url.clone()>"Click me"</A>
 						</TableCell>
-						<TableCell>{s3_object.content_type.clone()}</TableCell>
-						<TableCell>
+						<TableCell class="wrap-anywhere">{s3_object.content_type.clone()}</TableCell>
+						<TableCell class="wrap-anywhere">
 							<div>
 								<Button on_click=move |_| {
 									on_delete.run(s3_object_for_delete.clone())
