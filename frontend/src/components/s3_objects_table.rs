@@ -125,14 +125,30 @@ pub fn S3ObjectsTable(
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHeaderCell resizable=true>"Select"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"ID"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"Name"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"Made On"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"Location"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"Link"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"Content Type"</TableHeaderCell>
-						<TableHeaderCell resizable=true>"Actions"</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Select"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"ID"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Name"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Made On"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Location"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Link"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Content Type"
+						</TableHeaderCell>
+						<TableHeaderCell class="wrap-anywhere" resizable=true>
+							"Actions"
+						</TableHeaderCell>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
