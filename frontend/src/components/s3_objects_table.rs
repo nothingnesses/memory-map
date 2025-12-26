@@ -122,7 +122,6 @@ pub fn S3ObjectsTable(
 
 	view! {
 		<ErrorBoundary fallback=dump_errors>
-			<Button class="w-fit" on_click=open_delete_selected_dialog>"Delete selected"</Button>
 			<Table>
 				<TableHeader>
 					<TableRow>
@@ -159,15 +158,25 @@ pub fn S3ObjectsTable(
 					}}
 				</TableBody>
 			</Table>
+			<Show when=move || { !selected_ids.get().is_empty() } fallback=|| view! {}>
+				<Button class="w-fit" on_click=open_delete_selected_dialog>
+					"Delete selected"
+				</Button>
+			</Show>
 			<Dialog open=open_delete>
 				<DialogSurface>
 					<DialogBody>
 						<DialogContent>
-							<div class="relative grid justify-items-center group">
-								<Button on_click=move |_| {
-									open_delete.set(false);
-								}>{close_button_content.run(())}</Button>
-								<div>
+							<div class="relative grid gap-4 group">
+								<Button
+									class="justify-self-end"
+									on_click=move |_| {
+										open_delete.set(false);
+									}
+								>
+									{close_button_content.run(())}
+								</Button>
+								<div class="relative grid gap-4">
 									<h2>
 										"Are you sure you want to delete "
 										{move || {
@@ -181,7 +190,7 @@ pub fn S3ObjectsTable(
 												.join(", ")
 										}}"?"
 									</h2>
-									<div>
+									<div class="relative grid gap-4 grid-flow-col">
 										<Button on_click=move |_| {
 											delete_objects(selected_objects.get());
 											open_delete.set(false);
