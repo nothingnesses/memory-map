@@ -1,0 +1,11 @@
+query S3ObjectByIdQuery($id: Int!) {
+	s3ObjectById(id: $id) {
+		id
+		name
+		madeOn
+		location {
+			latitude
+			longitude
+		}
+	}
+}

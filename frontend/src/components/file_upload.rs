@@ -1,11 +1,11 @@
-use crate::dump_errors;
+use crate::{dump_errors, js_date_value_to_iso};
 use leptos::{
 	html::Input,
 	logging::{debug_error, debug_log},
 	prelude::*,
 	task::spawn_local,
-	wasm_bindgen::{JsCast, JsValue},
-	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent, js_sys},
+	wasm_bindgen::JsCast,
+	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent},
 };
 use leptos_router::components::Form;
 use shared::ALLOWED_MIME_TYPES;
@@ -29,16 +29,8 @@ pub fn FileUpload(
 
 		if let Some(input) = made_on_input_ref.get() {
 			let value = input.value();
-			if !value.is_empty() {
-				// Parse the local datetime string using the browser's Date object
-				// to handle timezone conversion correctly.
-				let date = js_sys::Date::new(&JsValue::from_str(&value));
-				// Convert to ISO 8601 UTC string (e.g., "2023-12-26T14:30:00.000Z")
-				let iso_string = date.to_iso_string();
-				if let Some(iso_str) = iso_string.as_string() {
-					// Overwrite or add the 'made_on' field with the UTC timestamp
-					let _ = form_data.set_with_str("made_on", &iso_str);
-				}
+			if let Some(iso_str) = js_date_value_to_iso(&value) {
+				let _ = form_data.set_with_str("made_on", &iso_str);
 			}
 		}
 

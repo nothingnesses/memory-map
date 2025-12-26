@@ -20,7 +20,8 @@ lucide-leptos = { version = "2", features = [
 	"arrows",
 	"files",
 	"multimedia",
-	"notifications"
+	"notifications",
+	"text"
 ] }
 mime = "0.3"
 reqwest = { version = "0.12", features = ["json"] }

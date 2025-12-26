@@ -1,15 +1,18 @@
 /* layer: properties */
-@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-text-opacity:100%;}}
+@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-text-opacity:100%;--un-border-opacity:100%;}}
 @property --un-text-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
+@property --un-border-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-bg-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
---fontWeight-bold: 700;
 --radius-none: 0;
 --default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
 --default-transition-duration: 150ms;
 --colors-white: #fff;
+--fontWeight-bold: 700;
+--colors-black: #000;
+--colors-gray-200: oklch(92.8% 0.006 264.531);
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);
@@ -437,10 +440,16 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .mx-auto{margin-inline:auto;}
 .p-unset{padding:unset;}
 .px-4{padding-inline:calc(var(--spacing) * 4);}
+.py-2{padding-block:calc(var(--spacing) * 2);}
 .py-4{padding-block:calc(var(--spacing) * 4);}
+.border{border-width:1px;}
+.border-black{border-color:color-mix(in srgb, var(--colors-black) var(--un-border-opacity), transparent) /* #000 */;}
+.rounded-full{border-radius:calc(infinity * 1px);}
 .rounded-none{border-radius:var(--radius-none);}
 .border-none{--un-border-style:none;border-style:none;}
+.border-solid{--un-border-style:solid;border-style:solid;}
 .bg-\[rgba\(0\,0\,0\,0\.4\)\]{background-color:color-mix(in oklab, rgba(0,0,0,0.4) var(--un-bg-opacity), transparent) /* rgba(0,0,0,0.4) */;}
+.bg-gray-200{background-color:color-mix(in srgb, var(--colors-gray-200) var(--un-bg-opacity), transparent) /* oklch(92.8% 0.006 264.531) */;}
 .bg-transparent{background-color:transparent;}
 .hover\:active\:bg-\[rgba\(0\,0\,0\,0\.4\)\]:active:hover{background-color:color-mix(in oklab, rgba(0,0,0,0.4) var(--un-bg-opacity), transparent) /* rgba(0,0,0,0.4) */;}
 .hover\:active\:bg-transparent:active:hover{background-color:transparent;}
@@ -455,6 +464,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .grid-flow-col{grid-auto-flow:column;}
 .grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr));}
 .h-100px{height:100px;}
+.h-45px{height:45px;}
 .h-auto{height:auto;}
 .h-fit{height:fit-content;}
 .h-full{height:100%;}
@@ -473,6 +483,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .block{display:block;}
 .\[\&_\.thaw-dialog-surface\\_\\_backdrop\]\:hidden .thaw-dialog-surface__backdrop,
 .hidden{display:none;}
+.cursor-not-allowed{cursor:not-allowed;}
 .pointer-events-none{pointer-events:none;}
 .wrap-anywhere{overflow-wrap:anywhere;}
 .rotate-180{rotate:180deg;}
@@ -505,6 +516,8 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .group:hover .group-hover\:text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .group:hover:active .group-hover\:group-active\:text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
+.border-black{border-color:color-mix(in oklab, var(--colors-black) var(--un-border-opacity), transparent) /* #000 */;}
+.bg-gray-200{background-color:color-mix(in oklab, var(--colors-gray-200) var(--un-bg-opacity), transparent) /* oklch(92.8% 0.006 264.531) */;}
 }
 @media (min-width: 40rem){
 .sm\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
