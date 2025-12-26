@@ -30,7 +30,8 @@ pub fn FileUpload(
 		// Client-side validation
 		if let Some(input) = file_input_ref.get() {
 			if let Some(files) = input.files() {
-				if files.length() == 0 {
+				let files_length = files.length();
+				if files_length == 0 {
 					toaster.dispatch_toast(
 						move || {
 							view! {
@@ -46,8 +47,7 @@ pub fn FileUpload(
 					);
 					return;
 				}
-				for i in 0..files.length() {
-					let file = files.item(i).unwrap();
+				for file in (0..files_length).map(|i| files.item(i).unwrap()) {
 					let file_type = file.type_();
 					if !ALLOWED_MIME_TYPES.contains(&file_type.as_str()) {
 						let file_name = file.name();
