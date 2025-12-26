@@ -122,82 +122,80 @@ pub fn S3ObjectsTable(
 
 	view! {
 		<ErrorBoundary fallback=dump_errors>
-			<ConfigProvider>
-				<Button on_click=open_delete_selected_dialog>"Delete selected"</Button>
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHeaderCell resizable=true>"Select"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"ID"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"Name"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"Made On"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"Location"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"Link"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"Content Type"</TableHeaderCell>
-							<TableHeaderCell resizable=true>"Actions"</TableHeaderCell>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{move || {
-							s3_objects_resource
-								.get()
-								.get()
-								.map(|data| {
-									Ok::<
-										_,
-										Error,
-									>(
-										view! {
-											<S3ObjectTableRows
-												s3_objects=data?
-												selected_ids=selected_ids
-												on_toggle=Callback::new(toggle_id)
-												on_delete=Callback::new(open_delete_object_dialog)
-											/>
-										},
-									)
-								})
-						}}
-					</TableBody>
-				</Table>
-				<Dialog open=open_delete>
-					<DialogSurface>
-						<DialogBody>
-							<DialogContent>
-								<div class="relative grid justify-items-center group">
-									<Button on_click=move |_| {
-										open_delete.set(false);
-									}>{close_button_content.run(())}</Button>
+			<Button on_click=open_delete_selected_dialog>"Delete selected"</Button>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHeaderCell resizable=true>"Select"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"ID"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"Name"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"Made On"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"Location"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"Link"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"Content Type"</TableHeaderCell>
+						<TableHeaderCell resizable=true>"Actions"</TableHeaderCell>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{move || {
+						s3_objects_resource
+							.get()
+							.get()
+							.map(|data| {
+								Ok::<
+									_,
+									Error,
+								>(
+									view! {
+										<S3ObjectTableRows
+											s3_objects=data?
+											selected_ids=selected_ids
+											on_toggle=Callback::new(toggle_id)
+											on_delete=Callback::new(open_delete_object_dialog)
+										/>
+									},
+								)
+							})
+					}}
+				</TableBody>
+			</Table>
+			<Dialog open=open_delete>
+				<DialogSurface>
+					<DialogBody>
+						<DialogContent>
+							<div class="relative grid justify-items-center group">
+								<Button on_click=move |_| {
+									open_delete.set(false);
+								}>{close_button_content.run(())}</Button>
+								<div>
+									<h2>
+										"Are you sure you want to delete "
+										{move || {
+											selected_objects
+												.get()
+												.iter()
+												.map(|s3_object: &S3Object| {
+													format!("\"{}\"", s3_object.name)
+												})
+												.collect::<Vec<_>>()
+												.join(", ")
+										}}"?"
+									</h2>
 									<div>
-										<h2>
-											"Are you sure you want to delete "
-											{move || {
-												selected_objects
-													.get()
-													.iter()
-													.map(|s3_object: &S3Object| {
-														format!("\"{}\"", s3_object.name)
-													})
-													.collect::<Vec<_>>()
-													.join(", ")
-											}}"?"
-										</h2>
-										<div>
-											<Button on_click=move |_| {
-												delete_objects(selected_objects.get());
-												open_delete.set(false);
-											}>"Yes"</Button>
-											<Button on_click=move |_| {
-												open_delete.set(false);
-											}>"No"</Button>
-										</div>
+										<Button on_click=move |_| {
+											delete_objects(selected_objects.get());
+											open_delete.set(false);
+										}>"Yes"</Button>
+										<Button on_click=move |_| {
+											open_delete.set(false);
+										}>"No"</Button>
 									</div>
 								</div>
-							</DialogContent>
-						</DialogBody>
-					</DialogSurface>
-				</Dialog>
-			</ConfigProvider>
+							</div>
+						</DialogContent>
+					</DialogBody>
+				</DialogSurface>
+			</Dialog>
 		</ErrorBoundary>
 	}
 }

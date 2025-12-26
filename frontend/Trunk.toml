@@ -65,12 +65,4 @@ stage = "pre_build"
 # Command to run
 command = "pnpm"
 # Arguments to pass to command
-command_arguments = ["i"]
-
-[[hooks]]
-# When to run hook, must be one of "pre_build", "build", "post_build"
-stage = "pre_build"
-# Command to run
-command = "pnpm"
-# Arguments to pass to command
 command_arguments = ["dlx", "@unocss/cli"]

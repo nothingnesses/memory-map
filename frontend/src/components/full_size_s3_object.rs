@@ -13,7 +13,7 @@ pub fn FullSizeS3Object(
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	view! {
-		<ConfigProvider class=Signal::derive(move || {
+		<div class=Signal::derive(move || {
 			format!(
 				"{} {}",
 				class.get().unwrap_or_default(),
@@ -67,6 +67,6 @@ pub fn FullSizeS3Object(
 					</div>
 				</DialogSurface>
 			</Dialog>
-		</ConfigProvider>
+		</div>
 	}
 }

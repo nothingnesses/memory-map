@@ -255,140 +255,138 @@ pub fn Carousel(
 		}
 	});
 	view! {
-		<ConfigProvider>
-			<div class="relative grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
-				<ForEnumerate
-					each=move || s3_objects.get()
-					key=|s3_object| s3_object.id.clone()
-					let(s3_object_index,
-					s3_object)
-				>
-					<Button on_click=move |_| {
-						is_open.set(true);
-						index.set(s3_object_index.get());
-					}>
-						<S3ObjectComponent s3_object=Signal::derive(move || s3_object.clone()) />
-					</Button>
-				</ForEnumerate>
-			</div>
-			<Dialog
-				class=r#"dialog [&_.thaw-dialog-surface\_\_backdrop]:hidden bg-none"#
-				open=is_open
+		<div class="relative grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
+			<ForEnumerate
+				each=move || s3_objects.get()
+				key=|s3_object| s3_object.id.clone()
+				let(s3_object_index,
+				s3_object)
 			>
-				<DialogSurface class="dialog-surface border-none rounded-none m-unset p-unset bg-transparent">
-					<div class="dialog-content relative w-dvw h-dvh grid place-items-center">
-						// Buttons
-						<div
-							class="buttons absolute w-dvw h-dvh transition-opacity duration-500"
-							class=(["opacity-0", "pointer-events-none"], move || !buttons_visible())
-						>
-							// @todo Maybe this should be a component that emits index updates
-							<Show when=move || { show_navigation_buttons.get() }>
-								<div class="navigation-buttons absolute w-full h-full grid justify-between items-center grid-flow-col">
+				<Button on_click=move |_| {
+					is_open.set(true);
+					index.set(s3_object_index.get());
+				}>
+					<S3ObjectComponent s3_object=Signal::derive(move || s3_object.clone()) />
+				</Button>
+			</ForEnumerate>
+		</div>
+		<Dialog
+			class=r#"dialog [&_.thaw-dialog-surface\_\_backdrop]:hidden bg-none"#
+			open=is_open
+		>
+			<DialogSurface class="dialog-surface border-none rounded-none m-unset p-unset bg-transparent">
+				<div class="dialog-content relative w-dvw h-dvh grid place-items-center">
+					// Buttons
+					<div
+						class="buttons absolute w-dvw h-dvh transition-opacity duration-500"
+						class=(["opacity-0", "pointer-events-none"], move || !buttons_visible())
+					>
+						// @todo Maybe this should be a component that emits index updates
+						<Show when=move || { show_navigation_buttons.get() }>
+							<div class="navigation-buttons absolute w-full h-full grid justify-between items-center grid-flow-col">
+								<Button
+									class="previous-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
+									on_click=move |_| previous_slide()
+									on:mouseenter=move |_| is_hovering.set(true)
+									on:mouseleave=move |_| is_hovering.set(false)
+								>
+									<div class="text-white">
+										{previous_button_content.run(())}
+									</div>
+								</Button>
+								<Button
+									class="next-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
+									on_click=move |_| next_slide()
+									on:mouseenter=move |_| is_hovering.set(true)
+									on:mouseleave=move |_| is_hovering.set(false)
+								>
+									<div class="text-white">{next_button_content.run(())}</div>
+								</Button>
+							</div>
+						</Show>
+						<Show when=move || { show_ui_buttons.get() }>
+							<div class="bottom-buttons absolute w-full h-full grid place-items-end">
+								<div
+									class="relative z-1 w-100px h-fit grid gap-4 bg-[rgba(0,0,0,0.4)]"
+									on:mouseenter=move |_| is_hovering.set(true)
+									on:mouseleave=move |_| is_hovering.set(false)
+								>
 									<Button
-										class="previous-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
-										on_click=move |_| previous_slide()
-										on:mouseenter=move |_| is_hovering.set(true)
-										on:mouseleave=move |_| is_hovering.set(false)
+										class="anti-clockwise-button relative w-full aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+										on_click=move |_| rotate_anti_clockwise()
 									>
 										<div class="text-white">
-											{previous_button_content.run(())}
+											{anti_clockwise_button_content.run(())}
 										</div>
 									</Button>
 									<Button
-										class="next-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
-										on_click=move |_| next_slide()
-										on:mouseenter=move |_| is_hovering.set(true)
-										on:mouseleave=move |_| is_hovering.set(false)
+										class="clockwise-button relative w-full aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+										on_click=move |_| rotate_clockwise()
 									>
-										<div class="text-white">{next_button_content.run(())}</div>
-									</Button>
-								</div>
-							</Show>
-							<Show when=move || { show_ui_buttons.get() }>
-								<div class="bottom-buttons absolute w-full h-full grid place-items-end">
-									<div
-										class="relative z-1 w-100px h-fit grid gap-4 bg-[rgba(0,0,0,0.4)]"
-										on:mouseenter=move |_| is_hovering.set(true)
-										on:mouseleave=move |_| is_hovering.set(false)
-									>
-										<Button
-											class="anti-clockwise-button relative w-full aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
-											on_click=move |_| rotate_anti_clockwise()
-										>
-											<div class="text-white">
-												{anti_clockwise_button_content.run(())}
-											</div>
-										</Button>
-										<Button
-											class="clockwise-button relative w-full aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
-											on_click=move |_| rotate_clockwise()
-										>
-											<div class="text-white">
-												{clockwise_button_content.run(())}
-											</div>
-										</Button>
-										<div class="relative grid grid-flow-col gap-4">
-											<label class="absolute h-full grid gap-4 place-content-center place-items-center px-4 bg-[rgba(0,0,0,0.4)] text-white right-full">
-												<div>"Autoplay duration (ms):"</div>
-												<input
-													type="number"
-													name="autoplay-duration"
-													min="1000"
-													step="any"
-													prop:value=move || local_autoplay_duration.get()
-													on:input=move |ev| {
-														if let Ok(value) = event_target_value(&ev).parse::<u64>() {
-															local_autoplay_duration.set(value);
-														}
-													}
-												/>
-											</label>
-											<Button
-												class="play-pause-button relative h-100px aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
-												on_click=move |_| {
-													if is_playing.get() { pause() } else { play() }
-												}
-											>
-												<div class="text-white">
-													{move || {
-														if is_playing.get() {
-															pause_button_content.run(())
-														} else {
-															play_button_content.run(())
-														}
-													}}
-												</div>
-											</Button>
+										<div class="text-white">
+											{clockwise_button_content.run(())}
 										</div>
+									</Button>
+									<div class="relative grid grid-flow-col gap-4">
+										<label class="absolute h-full grid gap-4 place-content-center place-items-center px-4 bg-[rgba(0,0,0,0.4)] text-white right-full">
+											<div>"Autoplay duration (ms):"</div>
+											<input
+												type="number"
+												name="autoplay-duration"
+												min="1000"
+												step="any"
+												prop:value=move || local_autoplay_duration.get()
+												on:input=move |ev| {
+													if let Ok(value) = event_target_value(&ev).parse::<u64>() {
+														local_autoplay_duration.set(value);
+													}
+												}
+											/>
+										</label>
+										<Button
+											class="play-pause-button relative h-100px aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
+											on_click=move |_| {
+												if is_playing.get() { pause() } else { play() }
+											}
+										>
+											<div class="text-white">
+												{move || {
+													if is_playing.get() {
+														pause_button_content.run(())
+													} else {
+														play_button_content.run(())
+													}
+												}}
+											</div>
+										</Button>
 									</div>
 								</div>
-							</Show>
-							<Button
-								class="close-button absolute z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
-								on_click=move |_| close()
-								on:mouseenter=move |_| is_hovering.set(true)
-								on:mouseleave=move |_| is_hovering.set(false)
-							>
-								{close_button_content.run(())}
-							</Button>
-						</div>
-						// Lightbox
+							</div>
+						</Show>
 						<Button
-							class="relative z-0 w-full h-full rounded-none border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] p-unset"
+							class="close-button absolute z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
 							on_click=move |_| close()
-						></Button>
-						// Content
-						<FullSizeS3Object
-							class="full-size-s3-object absolute w-fit h-auto"
-							rotation=current_rotation
-							s3_object=Signal::derive(move || {
-								s3_objects.get()[index.get()].clone()
-							})
-						/>
+							on:mouseenter=move |_| is_hovering.set(true)
+							on:mouseleave=move |_| is_hovering.set(false)
+						>
+							{close_button_content.run(())}
+						</Button>
 					</div>
-				</DialogSurface>
-			</Dialog>
-		</ConfigProvider>
+					// Lightbox
+					<Button
+						class="relative z-0 w-full h-full rounded-none border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] p-unset"
+						on_click=move |_| close()
+					></Button>
+					// Content
+					<FullSizeS3Object
+						class="full-size-s3-object absolute w-fit h-auto"
+						rotation=current_rotation
+						s3_object=Signal::derive(move || {
+							s3_objects.get()[index.get()].clone()
+						})
+					/>
+				</div>
+			</DialogSurface>
+		</Dialog>
 	}
 }

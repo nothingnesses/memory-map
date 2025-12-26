@@ -17,7 +17,7 @@ pub fn Gallery(
 ) -> impl IntoView {
 	let open = RwSignal::new(false);
 	view! {
-		<ConfigProvider>
+		<div>
 			<Button on_click=move |_| { open.set(true) }>{open_button_content.run(())}</Button>
 			<Dialog open>
 				<DialogSurface>
@@ -34,6 +34,6 @@ pub fn Gallery(
 					</DialogBody>
 				</DialogSurface>
 			</Dialog>
-		</ConfigProvider>
+		</div>
 	}
 }
