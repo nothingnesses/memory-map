@@ -122,7 +122,7 @@ pub fn S3ObjectsTable(
 
 	view! {
 		<ErrorBoundary fallback=dump_errors>
-			<Button on_click=open_delete_selected_dialog>"Delete selected"</Button>
+			<Button class="w-fit" on_click=open_delete_selected_dialog>"Delete selected"</Button>
 			<Table>
 				<TableHeader>
 					<TableRow>

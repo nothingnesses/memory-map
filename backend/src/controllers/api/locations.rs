@@ -29,6 +29,7 @@ pub async fn post(
 ) -> Response {
 	let mut latitude: Option<f64> = None;
 	let mut longitude: Option<f64> = None;
+	let mut made_on: Option<String> = None;
 	let mut files: Vec<FileData> = Vec::new();
 
 	while let Some(field) = multipart.next_field().await.unwrap() {
@@ -46,6 +47,14 @@ pub async fn post(
 				if let Ok(txt) = field.text().await {
 					if let Ok(val) = txt.parse::<f64>() {
 						longitude = Some(val);
+					}
+				}
+			}
+			"made_on" => {
+				if let Ok(txt) = field.text().await {
+					if !txt.is_empty() {
+						// Store the ISO 8601 UTC timestamp string
+						made_on = Some(txt);
 					}
 				}
 			}
@@ -95,7 +104,7 @@ pub async fn post(
 			None
 		};
 
-		let _ = Mutation::upsert_s3_object_worker(&client, file.filename, None, location).await;
+		let _ = Mutation::upsert_s3_object_worker(&client, file.filename, made_on.clone(), location).await;
 
 		state.update_last_modified();
 	}

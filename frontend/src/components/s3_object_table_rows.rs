@@ -45,7 +45,7 @@ pub fn S3ObjectTableRows(
 								})}
 						</TableCell>
 						<TableCell>
-							<A href=s3_object.url.clone()>"Click"</A>
+							<A href=s3_object.url.clone()>"Click me"</A>
 						</TableCell>
 						<TableCell>{s3_object.content_type.clone()}</TableCell>
 						<TableCell>
