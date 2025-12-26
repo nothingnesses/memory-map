@@ -4,8 +4,8 @@ use leptos::{
 	logging::{debug_error, debug_log},
 	prelude::*,
 	task::spawn_local,
-	wasm_bindgen::JsCast,
-	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent},
+	wasm_bindgen::{JsCast, JsValue},
+	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent, js_sys},
 };
 use leptos_router::components::Form;
 use shared::ALLOWED_MIME_TYPES;
@@ -19,18 +19,36 @@ pub fn FileUpload(
 ) -> impl IntoView {
 	let toaster = ToasterInjection::expect_context();
 	let file_input_ref = NodeRef::<Input>::new();
+	let made_on_input_ref = NodeRef::<Input>::new();
 
 	let on_submit = move |event: SubmitEvent| {
 		event.prevent_default();
 		let target = event.target().unwrap();
 		let form = target.unchecked_into::<HtmlFormElement>();
 		let form_data = FormData::new_with_form(&form).unwrap();
+
+		if let Some(input) = made_on_input_ref.get() {
+			let value = input.value();
+			if !value.is_empty() {
+				// Parse the local datetime string using the browser's Date object
+				// to handle timezone conversion correctly.
+				let date = js_sys::Date::new(&JsValue::from_str(&value));
+				// Convert to ISO 8601 UTC string (e.g., "2023-12-26T14:30:00.000Z")
+				let iso_string = date.to_iso_string();
+				if let Some(iso_str) = iso_string.as_string() {
+					// Overwrite or add the 'made_on' field with the UTC timestamp
+					let _ = form_data.set_with_str("made_on", &iso_str);
+				}
+			}
+		}
+
 		debug_log!("{:?}", form_data);
 
 		// Client-side validation
 		if let Some(input) = file_input_ref.get() {
 			if let Some(files) = input.files() {
-				if files.length() == 0 {
+				let files_length = files.length();
+				if files_length == 0 {
 					toaster.dispatch_toast(
 						move || {
 							view! {
@@ -46,8 +64,7 @@ pub fn FileUpload(
 					);
 					return;
 				}
-				for i in 0..files.length() {
-					let file = files.item(i).unwrap();
+				for file in (0..files_length).map(|i| files.item(i).unwrap()) {
 					let file_type = file.type_();
 					if !ALLOWED_MIME_TYPES.contains(&file_type.as_str()) {
 						let file_name = file.name();
@@ -134,17 +151,21 @@ pub fn FileUpload(
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<Form action="" on:submit=on_submit>
-				<div class="relative grid">
+				<div class="relative grid gap-4">
 					<label>
-						<div>"Set latitude"</div>
+						<div class="font-bold">"Set latitude"</div>
 						<input type="number" name="latitude" min="-90" max="90" step="any" />
 					</label>
 					<label>
-						<div>"Set longitude"</div>
+						<div class="font-bold">"Set longitude"</div>
 						<input type="number" name="longitude" min="-180" max="180" step="any" />
 					</label>
 					<label>
-						<div>"Select files to upload"</div>
+						<div class="font-bold">"Set date and time"</div>
+						<input type="datetime-local" node_ref=made_on_input_ref />
+					</label>
+					<label>
+						<div class="font-bold">"Select files to upload"</div>
 						<input
 							type="file"
 							name="files"

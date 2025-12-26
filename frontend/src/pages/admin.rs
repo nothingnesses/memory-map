@@ -18,19 +18,21 @@ pub fn Admin() -> impl IntoView {
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<div class="relative w-dvw">
-				<div class="container mx-auto">
-					<h1>"Admin Page"</h1>
-					<section>
-						<h2>"Objects Table"</h2>
-						<S3ObjectsTable
-							s3_objects_resource=s3_objects_resource
-							on_change=on_change
-						/>
-					</section>
-					<section>
-						<h2>"Add new entries"</h2>
-						<FileUpload on_success=on_change />
-					</section>
+				<div class="container mx-auto grid gap-4">
+					<h1 class="text-22px font-bold">"Admin"</h1>
+					<div class="grid gap-6">
+						<section class="grid gap-4">
+							<h2 class="text-20px font-bold">"Objects"</h2>
+							<S3ObjectsTable
+								s3_objects_resource=s3_objects_resource
+								on_change=on_change
+							/>
+						</section>
+						<section class="grid gap-4">
+							<h2 class="text-20px font-bold">"Add new entries"</h2>
+							<FileUpload on_success=on_change />
+						</section>
+					</div>
 				</div>
 			</div>
 		</ErrorBoundary>

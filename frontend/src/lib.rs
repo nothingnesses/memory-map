@@ -30,7 +30,7 @@ pub fn App() -> impl IntoView {
 
 				<Router>
 					<header>
-						<nav class="relative container mx-auto grid gap-4 grid-flow-col justify-start">
+						<nav class="relative container mx-auto grid gap-4 grid-flow-col justify-start py-4">
 							<A href="/">"Map"</A>
 							<A href="/admin">"Admin"</A>
 						</nav>
