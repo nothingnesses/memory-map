@@ -8,7 +8,7 @@ use leptos::{ev, logging::debug_log, prelude::*};
 use lucide_leptos::{ChevronLeft, ChevronRight, Pause, Play, RotateCcw, RotateCw, X};
 use std::{collections::HashMap, time};
 use thaw::*;
-use web_sys::js_sys;
+use web_sys::{js_sys, wasm_bindgen::JsValue};
 
 #[component]
 pub fn Carousel(
@@ -270,10 +270,7 @@ pub fn Carousel(
 				</Button>
 			</ForEnumerate>
 		</div>
-		<Dialog
-			class=r#"dialog [&_.thaw-dialog-surface\_\_backdrop]:hidden bg-none"#
-			open=is_open
-		>
+		<Dialog class=r#"dialog [&_.thaw-dialog-surface\_\_backdrop]:hidden bg-none"# open=is_open>
 			<DialogSurface class="dialog-surface border-none rounded-none m-unset p-unset bg-transparent">
 				<div class="dialog-content relative w-dvw h-dvh grid place-items-center">
 					// Buttons
@@ -281,6 +278,38 @@ pub fn Carousel(
 						class="buttons absolute w-dvw h-dvh transition-opacity duration-500"
 						class=(["opacity-0", "pointer-events-none"], move || !buttons_visible())
 					>
+						<Show when=move || {
+							s3_objects
+								.get()
+								.get(index.get())
+								.and_then(|o| o.made_on.clone())
+								.is_some()
+						}>
+							<div class="bottom-bar absolute w-full h-full grid items-end">
+								<div
+									class="relative z-1"
+									on:mouseenter=move |_| is_hovering.set(true)
+									on:mouseleave=move |_| is_hovering.set(false)
+								>
+									<div class="relative grid place-items-center left-100px w-fit h-100px bg-[rgba(0,0,0,0.4)] text-white px-4">
+										{move || {
+											if let Some(obj) = s3_objects.get().get(index.get()) {
+												if let Some(made_on) = &obj.made_on {
+													let date = js_sys::Date::new(&JsValue::from_str(made_on));
+													date.to_locale_string("en-GB", &JsValue::UNDEFINED)
+														.as_string()
+														.unwrap_or(made_on.clone())
+												} else {
+													String::new()
+												}
+											} else {
+												String::new()
+											}
+										}}
+									</div>
+								</div>
+							</div>
+						</Show>
 						// @todo Maybe this should be a component that emits index updates
 						<Show when=move || { show_navigation_buttons.get() }>
 							<div class="navigation-buttons absolute w-full h-full grid justify-between items-center grid-flow-col">
@@ -290,9 +319,7 @@ pub fn Carousel(
 									on:mouseenter=move |_| is_hovering.set(true)
 									on:mouseleave=move |_| is_hovering.set(false)
 								>
-									<div class="text-white">
-										{previous_button_content.run(())}
-									</div>
+									<div class="text-white">{previous_button_content.run(())}</div>
 								</Button>
 								<Button
 									class="next-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
@@ -381,9 +408,7 @@ pub fn Carousel(
 					<FullSizeS3Object
 						class="full-size-s3-object absolute w-fit h-auto"
 						rotation=current_rotation
-						s3_object=Signal::derive(move || {
-							s3_objects.get()[index.get()].clone()
-						})
+						s3_object=Signal::derive(move || { s3_objects.get()[index.get()].clone() })
 					/>
 				</div>
 			</DialogSurface>
