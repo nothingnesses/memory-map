@@ -6,14 +6,14 @@ use leptos::prelude::*;
 #[component]
 pub fn Admin() -> impl IntoView {
 	// Signal to trigger resource refetching
-	let trigger = RwSignal::new(0);
+	let trigger = RwSignal::new(false);
 	// Resource that fetches S3 objects, re-running whenever `trigger` changes
 	let s3_objects_resource = LocalResource::new(move || {
 		trigger.get();
 		S3ObjectsQuery::run()
 	});
 	// Callback to update the trigger, effectively reloading the table
-	let on_change = Callback::new(move |_| trigger.update(|n| *n += 1));
+	let on_change = Callback::new(move |_| trigger.update(|n| *n = !*n));
 
 	view! {
 		<ErrorBoundary fallback=dump_errors>
