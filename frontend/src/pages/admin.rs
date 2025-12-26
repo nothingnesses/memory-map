@@ -29,7 +29,7 @@ pub fn Admin() -> impl IntoView {
 							/>
 						</section>
 						<section class="grid gap-4">
-							<h2 class="text-20px font-bold">"Add new entries"</h2>
+							<h2 class="text-20px font-bold">"Add/update entries"</h2>
 							<FileUpload on_success=on_change />
 						</section>
 					</div>
