@@ -1,6 +1,10 @@
-use crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
+use crate::{
+	CallbackAnyView,
+	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+};
 use leptos::prelude::*;
 use leptos_router::components::*;
+use lucide_leptos::Trash;
 use std::collections::HashSet;
 use thaw::*;
 
@@ -10,6 +14,15 @@ pub fn S3ObjectTableRows(
 	#[prop(into)] selected_ids: Signal<HashSet<String>>,
 	#[prop(into)] on_toggle: Callback<String>,
 	#[prop(into)] on_delete: Callback<S3Object>,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<div class="relative grid grid-flow-col gap-4 place-items-center">
+				<Trash />
+				"Delete"
+			</div>
+		}.into_any()
+	))]
+	delete_button_content: CallbackAnyView,
 ) -> impl IntoView {
 	view! {
 		<ForEnumerate
@@ -47,12 +60,14 @@ pub fn S3ObjectTableRows(
 						<TableCell class="wrap-anywhere">
 							<A href=s3_object.url.clone()>"Click me"</A>
 						</TableCell>
-						<TableCell class="wrap-anywhere">{s3_object.content_type.clone()}</TableCell>
+						<TableCell class="wrap-anywhere">
+							{s3_object.content_type.clone()}
+						</TableCell>
 						<TableCell class="wrap-anywhere">
 							<div>
 								<Button on_click=move |_| {
 									on_delete.run(s3_object_for_delete.clone())
-								}>"Delete"</Button>
+								}>{delete_button_content.run(())}</Button>
 							</div>
 						</TableCell>
 					</TableRow>

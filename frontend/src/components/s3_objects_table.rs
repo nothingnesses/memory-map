@@ -10,6 +10,7 @@ use leptos::{
 	task::spawn_local,
 	web_sys::{self, Request, RequestInit},
 };
+use lucide_leptos::Trash;
 use std::collections::HashSet;
 use thaw::*;
 use wasm_bindgen_futures::{
@@ -29,6 +30,15 @@ pub fn S3ObjectsTable(
 	close_button_content: CallbackAnyView,
 	// Callback to trigger a refresh of the data after deletion
 	#[prop(into, default = Callback::new(|_| ()))] on_change: Callback<()>,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<div class="relative grid grid-flow-col gap-4 place-items-center">
+				<Trash />
+				"Delete selected"
+			</div>
+		}.into_any()
+	))]
+	delete_selected_button_content: CallbackAnyView,
 ) -> impl IntoView {
 	let delete_objects = move |objects: Vec<S3Object>| {
 		spawn_local(async move {
@@ -176,7 +186,7 @@ pub fn S3ObjectsTable(
 			</Table>
 			<Show when=move || { !selected_ids.get().is_empty() } fallback=|| view! {}>
 				<Button class="w-fit" on_click=open_delete_selected_dialog>
-					"Delete selected"
+					{delete_selected_button_content.run(())}
 				</Button>
 			</Show>
 			<Dialog open=open_delete>
