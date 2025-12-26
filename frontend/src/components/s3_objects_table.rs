@@ -10,6 +10,7 @@ use leptos::{
 	task::spawn_local,
 	web_sys::{self, Request, RequestInit},
 };
+use lucide_leptos::Trash;
 use std::collections::HashSet;
 use thaw::*;
 use wasm_bindgen_futures::{
@@ -29,6 +30,15 @@ pub fn S3ObjectsTable(
 	close_button_content: CallbackAnyView,
 	// Callback to trigger a refresh of the data after deletion
 	#[prop(into, default = Callback::new(|_| ()))] on_change: Callback<()>,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<div class="relative grid grid-flow-col gap-4 place-items-center">
+				<Trash />
+				"Delete selected"
+			</div>
+		}.into_any()
+	))]
+	delete_selected_button_content: CallbackAnyView,
 ) -> impl IntoView {
 	let delete_objects = move |objects: Vec<S3Object>| {
 		spawn_local(async move {
@@ -120,33 +130,72 @@ pub fn S3ObjectsTable(
 		});
 	};
 
+	let all_ids = Memo::new(move |_| {
+		s3_objects_resource
+			.get()
+			.get()
+			.and_then(|res| res.ok())
+			.map(|objects| objects.iter().map(|o| o.id.clone()).collect::<HashSet<_>>())
+			.unwrap_or_default()
+	});
+
+	let toggle_all = move |_| {
+		let all = all_ids.get();
+		let selected = selected_ids.get();
+		let all_selected = !all.is_empty() && all.iter().all(|id| selected.contains(id));
+
+		if all_selected {
+			selected_ids.set(HashSet::new());
+		} else {
+			selected_ids.set(all);
+		}
+	};
+
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
-							"Select"
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
+							<div class="flex gap-2 items-center">
+								<input
+									type="checkbox"
+									prop:indeterminate=move || {
+										let all = all_ids.get();
+										let selected = selected_ids.get();
+										let selected_count = all.intersection(&selected).count();
+										selected_count > 0 && selected_count < all.len()
+									}
+									prop:checked=move || {
+										let all = all_ids.get();
+										let selected = selected_ids.get();
+										!all.is_empty()
+											&& all.iter().all(|id| selected.contains(id))
+									}
+									on:change=toggle_all
+								/>
+								<div>"Select"</div>
+							</div>
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"ID"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Name"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Made On"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Location"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Link"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Content Type"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Actions"
 						</TableHeaderCell>
 					</TableRow>
@@ -176,7 +225,7 @@ pub fn S3ObjectsTable(
 			</Table>
 			<Show when=move || { !selected_ids.get().is_empty() } fallback=|| view! {}>
 				<Button class="w-fit" on_click=open_delete_selected_dialog>
-					"Delete selected"
+					{delete_selected_button_content.run(())}
 				</Button>
 			</Show>
 			<Dialog open=open_delete>

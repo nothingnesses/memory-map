@@ -1,6 +1,10 @@
-use crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
+use crate::{
+	CallbackAnyView,
+	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+};
 use leptos::prelude::*;
 use leptos_router::components::*;
+use lucide_leptos::{Pencil, Trash};
 use std::collections::HashSet;
 use thaw::*;
 
@@ -10,6 +14,24 @@ pub fn S3ObjectTableRows(
 	#[prop(into)] selected_ids: Signal<HashSet<String>>,
 	#[prop(into)] on_toggle: Callback<String>,
 	#[prop(into)] on_delete: Callback<S3Object>,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<div class="relative grid grid-flow-col gap-4 place-items-center">
+				<Trash />
+				"Delete"
+			</div>
+		}.into_any()
+	))]
+	delete_button_content: CallbackAnyView,
+	#[prop(into, default = Callback::new(|_|
+		view! {
+			<div class="relative grid grid-flow-col gap-4 place-items-center">
+				<Pencil />
+				"Edit"
+			</div>
+		}.into_any()
+	))]
+	edit_button_content: CallbackAnyView,
 ) -> impl IntoView {
 	view! {
 		<ForEnumerate
@@ -22,12 +44,13 @@ pub fn S3ObjectTableRows(
 				let s3_object_for_checkbox = s3_object.clone();
 				let s3_object_for_toggle = s3_object.clone();
 				let s3_object_for_delete = s3_object.clone();
+				let s3_object_for_edit = s3_object.clone();
 				view! {
 					<TableRow>
 						<TableCell class="wrap-anywhere">
 							<input
 								type="checkbox"
-								checked=move || {
+								prop:checked=move || {
 									selected_ids.get().contains(&s3_object_for_checkbox.id)
 								}
 								on:change=move |_| on_toggle.run(s3_object_for_toggle.id.clone())
@@ -47,12 +70,20 @@ pub fn S3ObjectTableRows(
 						<TableCell class="wrap-anywhere">
 							<A href=s3_object.url.clone()>"Click me"</A>
 						</TableCell>
-						<TableCell class="wrap-anywhere">{s3_object.content_type.clone()}</TableCell>
 						<TableCell class="wrap-anywhere">
-							<div>
+							{s3_object.content_type.clone()}
+						</TableCell>
+						<TableCell class="wrap-anywhere py-2">
+							<div class="relative grid gap-4">
 								<Button on_click=move |_| {
 									on_delete.run(s3_object_for_delete.clone())
-								}>"Delete"</Button>
+								}>{delete_button_content.run(())}</Button>
+								// Link to the edit page for this S3 object
+								<A href=format!("/admin/s3-objects/{}/edit", s3_object_for_edit.id)>
+									<div class="rounded-full border border-solid border-black h-45px grid place-items-center w-fit px-4">
+										{edit_button_content.run(())}
+									</div>
+								</A>
 							</div>
 						</TableCell>
 					</TableRow>

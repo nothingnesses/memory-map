@@ -12,6 +12,13 @@ use tracing;
 
 const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
 
+/// Query to update an existing object in the database.
+/// It updates the name, made_on timestamp, and location based on the provided ID.
+const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
+SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4)
+WHERE id = $1
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
+
 const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location)
 VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3))
 ON CONFLICT (name) DO UPDATE
@@ -61,6 +68,56 @@ impl Mutation {
 		}
 
 		Ok(objects)
+	}
+
+	/// Worker function to execute the update S3 object query.
+	/// It parses the timestamp, formats the location geometry, and executes the SQL query.
+	pub async fn update_s3_object_worker(
+		client: &Client,
+		id: i64,
+		name: String,
+		made_on: Option<String>,
+		location: Option<Location>,
+	) -> Result<S3Object, GraphQLError> {
+		let parsed_made_on: Option<Timestamp> = match made_on {
+			Some(timestamp_string) => match timestamp_string.parse() {
+				Ok(timestamp_string) => Some(timestamp_string),
+				Err(error) => {
+					tracing::error!("Failed to parse timestamp '{}': {}", timestamp_string, error);
+					return Err(GraphQLError::new(format!(
+						"Invalid timestamp format: {}",
+						timestamp_string
+					)));
+				}
+			},
+			None => None,
+		};
+		let location_geometry = location.map(|location| {
+			let location_geometry =
+				format!("SRID=4326;POINT({} {})", location.longitude, location.latitude);
+			tracing::debug!("Formatted location geometry: {}", location_geometry);
+			location_geometry
+		});
+		tracing::debug!(
+			"Executing update with: id={}, name={}, made_on={:?}, location={:?}",
+			id,
+			name,
+			parsed_made_on.as_ref().map(|ts| ts.to_string()),
+			location_geometry
+		);
+		S3Object::try_from(
+			client
+				.query_one(
+					&client.prepare_cached(UPDATE_OBJECT_QUERY).await?,
+					&[&id, &name, &parsed_made_on, &location_geometry],
+				)
+				.await
+				.map_err(|e| {
+					tracing::error!("Database query failed: {}", e);
+					GraphQLError::new(format!("Database error: {}", e))
+				})?,
+		)
+		.await
 	}
 
 	pub async fn upsert_s3_object_worker(
@@ -131,6 +188,29 @@ impl Mutation {
 
 		let result =
 			Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids).await?;
+
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		state.update_last_modified();
+
+		Ok(result)
+	}
+
+	/// GraphQL mutation to update an S3 object.
+	/// It retrieves the database client, parses the ID, calls the worker function,
+	/// and updates the last modified state.
+	async fn update_s3_object(
+		&self,
+		ctx: &Context<'_>,
+		id: ID,
+		name: String,
+		made_on: Option<String>,
+		location: Option<Location>,
+	) -> Result<S3Object, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		let id = id
+			.parse::<i64>()
+			.map_err(|e| GraphQLError::new(format!("Invalid ID format: {}", e)))?;
+		let result = Self::update_s3_object_worker(&client, id, name, made_on, location).await?;
 
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 		state.update_last_modified();

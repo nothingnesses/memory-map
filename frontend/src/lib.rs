@@ -1,5 +1,5 @@
-use crate::pages::{admin::Admin, home::Home};
-use leptos::prelude::*;
+use crate::pages::{admin::Admin, edit_s3_object::EditS3Object, home::Home};
+use leptos::{prelude::*, wasm_bindgen::JsValue, web_sys::js_sys};
 use leptos_meta::*;
 use leptos_router::{components::*, path};
 use std::ops::{Add, Rem, Sub};
@@ -39,6 +39,7 @@ pub fn App() -> impl IntoView {
 						<Routes fallback=|| view! { NotFound }>
 							<Route path=path!("/") view=Home />
 							<Route path=path!("/admin") view=Admin />
+							<Route path=path!("/admin/s3-objects/:id/edit") view=EditS3Object />
 						</Routes>
 					</main>
 				</Router>
@@ -135,3 +136,29 @@ where
 }
 
 pub type CallbackAnyView = Callback<(), AnyView>;
+
+/// Converts a date string from an HTML input (e.g. "2023-12-26T14:30")
+/// to an ISO 8601 UTC string (e.g. "2023-12-26T14:30:00.000Z").
+pub fn js_date_value_to_iso(value: &str) -> Option<String> {
+	if value.is_empty() {
+		return None;
+	}
+	let date = js_sys::Date::new(&JsValue::from_str(value));
+	// Check for invalid date (NaN timestamp) to prevent panic in to_iso_string
+	if date.get_time().is_nan() {
+		return None;
+	}
+	date.to_iso_string().as_string()
+}
+
+/// Converts an ISO 8601 UTC string (e.g. "2023-12-26T14:30:00.000Z")
+/// to a local datetime string suitable for an HTML input (e.g. "2023-12-26T14:30").
+pub fn iso_to_local_datetime_value(iso: &str) -> Option<String> {
+	let date = js_sys::Date::new(&JsValue::from_str(iso));
+	if date.get_time().is_nan() {
+		return None;
+	}
+	let offset = date.get_timezone_offset() * 60000.0;
+	let local_date = js_sys::Date::new(&JsValue::from_f64(date.get_time() - offset));
+	local_date.to_iso_string().as_string().map(|s| s.chars().take(16).collect())
+}
