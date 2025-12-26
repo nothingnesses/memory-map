@@ -144,6 +144,10 @@ pub fn js_date_value_to_iso(value: &str) -> Option<String> {
 		return None;
 	}
 	let date = js_sys::Date::new(&JsValue::from_str(value));
+	// Check for invalid date (NaN timestamp) to prevent panic in to_iso_string
+	if date.get_time().is_nan() {
+		return None;
+	}
 	date.to_iso_string().as_string()
 }
 
@@ -151,6 +155,9 @@ pub fn js_date_value_to_iso(value: &str) -> Option<String> {
 /// to a local datetime string suitable for an HTML input (e.g. "2023-12-26T14:30").
 pub fn iso_to_local_datetime_value(iso: &str) -> Option<String> {
 	let date = js_sys::Date::new(&JsValue::from_str(iso));
+	if date.get_time().is_nan() {
+		return None;
+	}
 	let offset = date.get_timezone_offset() * 60000.0;
 	let local_date = js_sys::Date::new(&JsValue::from_f64(date.get_time() - offset));
 	local_date.to_iso_string().as_string().map(|s| s.chars().take(16).collect())

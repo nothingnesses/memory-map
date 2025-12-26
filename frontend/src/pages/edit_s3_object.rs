@@ -9,14 +9,7 @@ use crate::{
 	},
 	iso_to_local_datetime_value, js_date_value_to_iso,
 };
-use leptos::{
-	html::Input,
-	logging::debug_error,
-	prelude::*,
-	task::spawn_local,
-	wasm_bindgen::JsCast,
-	web_sys::{FormData, HtmlFormElement, SubmitEvent},
-};
+use leptos::{logging::debug_error, prelude::*, task::spawn_local, web_sys::SubmitEvent};
 use leptos_router::{
 	components::{A, Form},
 	hooks::use_params_map,
@@ -41,35 +34,52 @@ pub fn EditS3Object() -> impl IntoView {
 	});
 
 	let toaster = ToasterInjection::expect_context();
-	let made_on_input_ref = NodeRef::<Input>::new();
 
-	let on_submit = move |event: SubmitEvent| {
-		event.prevent_default();
-		let target = event.target().unwrap();
-		let form = target.unchecked_into::<HtmlFormElement>();
-		let form_data = FormData::new_with_form(&form).unwrap();
+	// Form state signals
+	// Use signals for controlled inputs to manage form state explicitly
+	let (name, set_name) = signal(String::new());
+	let (latitude, set_latitude) = signal(None::<f64>);
+	let (longitude, set_longitude) = signal(None::<f64>);
+	let (made_on, set_made_on) = signal(String::new());
 
-		let name = form_data.get("name").as_string().unwrap_or_default();
-		let latitude = form_data.get("latitude").as_string().and_then(|s| s.parse::<f64>().ok());
-		let longitude = form_data.get("longitude").as_string().and_then(|s| s.parse::<f64>().ok());
-
-		let mut made_on = None;
-		if let Some(input) = made_on_input_ref.get() {
-			let value = input.value();
-			// Convert the local datetime value to ISO 8601 UTC string
-			if let Some(iso_str) = js_date_value_to_iso(&value) {
-				made_on = Some(iso_str);
+	// Populate form when data is loaded
+	// Effect to populate form state from the resource data.
+	// This runs once when the resource data becomes available, avoiding
+	// the "Effect inside View" anti-pattern.
+	Effect::new(move |_| {
+		if let Some(Ok(s3_object)) = s3_object_resource.get() {
+			set_name.set(s3_object.name);
+			if let Some(loc) = s3_object.location {
+				set_latitude.set(Some(loc.latitude));
+				set_longitude.set(Some(loc.longitude));
+			}
+			if let Some(iso_str) = s3_object.made_on {
+				if let Some(local_str) = iso_to_local_datetime_value(&iso_str) {
+					set_made_on.set(local_str);
+				}
 			}
 		}
+	});
 
-		let location = if let (Some(lat), Some(lon)) = (latitude, longitude) {
+	// Submit handler uses signal values directly, avoiding manual DOM/FormData extraction
+	let on_submit = move |event: SubmitEvent| {
+		event.prevent_default();
+
+		let name_val = name.get();
+		let lat_val = latitude.get();
+		let lon_val = longitude.get();
+		let made_on_val = made_on.get();
+
+		let location = if let (Some(lat), Some(lon)) = (lat_val, lon_val) {
 			Some(LocationInput { latitude: lat, longitude: lon })
 		} else {
 			None
 		};
 
+		let made_on_iso = js_date_value_to_iso(&made_on_val);
+
 		spawn_local(async move {
-			let variables = Variables { name, made_on, location };
+			let variables = Variables { name: name_val, made_on: made_on_iso, location };
 
 			// Send the mutation to update the S3 object
 			match UpsertS3ObjectQuery::run(variables).await {
@@ -119,20 +129,7 @@ pub fn EditS3Object() -> impl IntoView {
 								.get()
 								.map(|result| {
 									match result {
-										Ok(s3_object) => {
-											let made_on_default = s3_object.made_on.clone();
-											// Use an effect to set the initial value of the datetime input
-											// because we need to convert the ISO string to a local datetime string
-											Effect::new(move |_| {
-												if let Some(made_on) = made_on_default.as_ref() {
-													if let Some(input) = made_on_input_ref.get() {
-														if let Some(value) = iso_to_local_datetime_value(made_on) {
-															input.set_value(&value);
-														}
-													}
-												}
-											});
-
+										Ok(_) => {
 											view! {
 												<Form action="" on:submit=on_submit>
 													<div class="relative grid gap-4">
@@ -141,7 +138,7 @@ pub fn EditS3Object() -> impl IntoView {
 															<input
 																type="text"
 																name="name"
-																value=s3_object.name.clone()
+																prop:value=name
 																readonly
 																class="bg-gray-200 cursor-not-allowed"
 															/>
@@ -154,11 +151,13 @@ pub fn EditS3Object() -> impl IntoView {
 																min="-90"
 																max="90"
 																step="any"
-																value=s3_object
-																	.location
-																	.as_ref()
-																	.map(|l| l.latitude)
-																	.unwrap_or_default()
+																on:input=move |ev| {
+																	set_latitude
+																		.set(event_target_value(&ev).parse::<f64>().ok());
+																}
+																prop:value=move || {
+																	latitude.get().map(|f| f.to_string()).unwrap_or_default()
+																}
 															/>
 														</label>
 														<label>
@@ -169,16 +168,22 @@ pub fn EditS3Object() -> impl IntoView {
 																min="-180"
 																max="180"
 																step="any"
-																value=s3_object
-																	.location
-																	.as_ref()
-																	.map(|l| l.longitude)
-																	.unwrap_or_default()
+																on:input=move |ev| {
+																	set_longitude
+																		.set(event_target_value(&ev).parse::<f64>().ok());
+																}
+																prop:value=move || {
+																	longitude.get().map(|f| f.to_string()).unwrap_or_default()
+																}
 															/>
 														</label>
 														<label>
 															<div class="font-bold">"Set date and time"</div>
-															<input type="datetime-local" node_ref=made_on_input_ref />
+															<input
+																type="datetime-local"
+																on:input=move |ev| set_made_on.set(event_target_value(&ev))
+																prop:value=made_on
+															/>
 														</label>
 														<div class="grid grid-flow-col justify-start gap-4">
 															<Button class="w-fit">"Submit"</Button>
@@ -200,7 +205,6 @@ pub fn EditS3Object() -> impl IntoView {
 									}
 								})
 						}}
-
 					</Suspense>
 				</div>
 			</div>
