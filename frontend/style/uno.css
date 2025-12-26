@@ -447,6 +447,8 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .hover\:bg-\[rgba\(0\,0\,0\,0\.4\)\]:hover{background-color:color-mix(in oklab, rgba(0,0,0,0.4) var(--un-bg-opacity), transparent) /* rgba(0,0,0,0.4) */;}
 .hover\:bg-transparent:hover{background-color:transparent;}
 .opacity-0{opacity:0%;}
+.flex{display:flex;}
+.gap-2{gap:calc(var(--spacing) * 2);}
 .gap-4{gap:calc(var(--spacing) * 4);}
 .gap-6{gap:calc(var(--spacing) * 6);}
 .grid{display:grid;}

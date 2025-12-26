@@ -130,33 +130,72 @@ pub fn S3ObjectsTable(
 		});
 	};
 
+	let all_ids = Memo::new(move |_| {
+		s3_objects_resource
+			.get()
+			.get()
+			.and_then(|res| res.ok())
+			.map(|objects| objects.iter().map(|o| o.id.clone()).collect::<HashSet<_>>())
+			.unwrap_or_default()
+	});
+
+	let toggle_all = move |_| {
+		let all = all_ids.get();
+		let selected = selected_ids.get();
+		let all_selected = !all.is_empty() && all.iter().all(|id| selected.contains(id));
+
+		if all_selected {
+			selected_ids.set(HashSet::new());
+		} else {
+			selected_ids.set(all);
+		}
+	};
+
 	view! {
 		<ErrorBoundary fallback=dump_errors>
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
-							"Select"
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
+							<div class="flex gap-2 items-center">
+								<input
+									type="checkbox"
+									prop:indeterminate=move || {
+										let all = all_ids.get();
+										let selected = selected_ids.get();
+										let selected_count = all.intersection(&selected).count();
+										selected_count > 0 && selected_count < all.len()
+									}
+									prop:checked=move || {
+										let all = all_ids.get();
+										let selected = selected_ids.get();
+										!all.is_empty()
+											&& all.iter().all(|id| selected.contains(id))
+									}
+									on:change=toggle_all
+								/>
+								<div>"Select"</div>
+							</div>
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"ID"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Name"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Made On"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Location"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Link"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Content Type"
 						</TableHeaderCell>
-						<TableHeaderCell class="wrap-anywhere" resizable=true>
+						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Actions"
 						</TableHeaderCell>
 					</TableRow>

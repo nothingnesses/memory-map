@@ -40,7 +40,7 @@ pub fn S3ObjectTableRows(
 						<TableCell class="wrap-anywhere">
 							<input
 								type="checkbox"
-								checked=move || {
+								prop:checked=move || {
 									selected_ids.get().contains(&s3_object_for_checkbox.id)
 								}
 								on:change=move |_| on_toggle.run(s3_object_for_toggle.id.clone())
