@@ -1,0 +1,16 @@
+mutation UpdateS3ObjectQuery(
+	$id: ID!
+	$name: String!
+	$made_on: String
+	$location: LocationInput
+) {
+	updateS3Object(id: $id, name: $name, madeOn: $made_on, location: $location) {
+		id
+		name
+		madeOn
+		location {
+			latitude
+			longitude
+		}
+	}
+}

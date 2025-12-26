@@ -2,9 +2,9 @@ use crate::{
 	dump_errors,
 	graphql_queries::{
 		s3_object_by_id::S3ObjectByIdQuery,
-		upsert_s3_object::{
-			UpsertS3ObjectQuery,
-			upsert_s3_object_query::{LocationInput, Variables},
+		update_s3_object::{
+			UpdateS3ObjectQuery,
+			update_s3_object_query::{LocationInput, Variables},
 		},
 	},
 	iso_to_local_datetime_value, js_date_value_to_iso,
@@ -79,10 +79,11 @@ pub fn EditS3Object() -> impl IntoView {
 		let made_on_iso = js_date_value_to_iso(&made_on_val);
 
 		spawn_local(async move {
-			let variables = Variables { name: name_val, made_on: made_on_iso, location };
+			let variables =
+				Variables { id: id().to_string(), name: name_val, made_on: made_on_iso, location };
 
-			// Send the mutation to update the S3 object
-			match UpsertS3ObjectQuery::run(variables).await {
+			// Send the mutation to update the S3 object using the specific update query
+			match UpdateS3ObjectQuery::run(variables).await {
 				Ok(_) => {
 					toaster.dispatch_toast(
 						move || {
