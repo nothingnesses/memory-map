@@ -477,7 +477,9 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .rotate-90{rotate:90deg;}
 .transition-opacity{transition-property:opacity;transition-timing-function:var(--un-ease, var(--default-transition-timingFunction));transition-duration:var(--un-duration, var(--default-transition-duration));}
 .duration-500{--un-duration:500ms;transition-duration:500ms;}
+.items-end{align-items:flex-end;}
 .items-center{align-items:center;}
+.left-100px{left:100px;}
 .right-0{right:calc(var(--spacing) * 0);}
 .right-full{right:100%;}
 .justify-start{justify-content:flex-start;}
