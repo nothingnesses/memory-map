@@ -192,7 +192,8 @@
                 pkgs.dart-sass
                 # Stable had 0.2.100 and we needed 0.2.104, so we're using unstable here
                 pkgs.unstable.wasm-bindgen-cli
-                # pkgs.binaryen
+                # Needed for building in release mode
+                pkgs.binaryen
                 # pkgs.tailwindcss
               ];
 
