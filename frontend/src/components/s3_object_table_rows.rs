@@ -1,9 +1,8 @@
 use crate::{
-	CallbackAnyView,
+	CallbackAnyView, components::s3_object::S3Object as S3ObjectComponent,
 	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::prelude::*;
-use leptos_router::components::*;
 use lucide_leptos::{Pencil, Trash};
 use std::collections::HashSet;
 use thaw::*;
@@ -34,6 +33,9 @@ pub fn S3ObjectTableRows(
 	))]
 	edit_button_content: CallbackAnyView,
 ) -> impl IntoView {
+	let viewing_object = RwSignal::new(None::<S3Object>);
+	let open_view = RwSignal::new(false);
+
 	view! {
 		<ForEnumerate
 			each=move || s3_objects.get()
@@ -46,6 +48,8 @@ pub fn S3ObjectTableRows(
 				let s3_object_for_toggle = s3_object.clone();
 				let s3_object_for_delete = s3_object.clone();
 				let s3_object_for_edit = s3_object.clone();
+				let s3_object_for_view = s3_object.clone();
+				let s3_object_for_thumbnail = s3_object.clone();
 				view! {
 					<TableRow>
 						<TableCell class="wrap-anywhere">
@@ -69,7 +73,20 @@ pub fn S3ObjectTableRows(
 								})}
 						</TableCell>
 						<TableCell class="wrap-anywhere">
-							<A href=s3_object.url.clone()>"Click me"</A>
+							<Button
+								class="p-0 h-auto"
+								on_click=move |_| {
+									viewing_object.set(Some(s3_object_for_view.clone()));
+									open_view.set(true);
+								}
+							>
+								<S3ObjectComponent
+									s3_object=Signal::derive(move || {
+										s3_object_for_thumbnail.clone()
+									})
+									class="w-20 h-20 object-cover"
+								/>
+							</Button>
 						</TableCell>
 						<TableCell class="wrap-anywhere">
 							{s3_object.content_type.clone()}
@@ -88,5 +105,33 @@ pub fn S3ObjectTableRows(
 				}
 			}
 		</ForEnumerate>
+
+		<Dialog open=open_view>
+			<DialogSurface>
+				<DialogBody>
+					<DialogContent>
+						<div class="grid gap-4">
+							<div class="flex justify-end">
+								<Button on_click=move |_| open_view.set(false)>"Close"</Button>
+							</div>
+							<div class="flex justify-center">
+								{move || {
+									viewing_object
+										.get()
+										.map(|obj| {
+											view! {
+												<S3ObjectComponent
+													s3_object=Signal::derive(move || obj.clone())
+													class="max-w-[80vw] max-h-[80vh]"
+												/>
+											}
+										})
+								}}
+							</div>
+						</div>
+					</DialogContent>
+				</DialogBody>
+			</DialogSurface>
+		</Dialog>
 	}
 }

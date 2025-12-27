@@ -191,7 +191,7 @@ pub fn S3ObjectsTable(
 							"Location"
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"Link"
+							"View"
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
 							"Content Type"
