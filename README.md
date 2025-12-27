@@ -1,4 +1,4 @@
-## Memory Map
+# Memory Map
 
 Memory Map is a location-aware media archive that allows users to upload photos, videos, and audio files.
 
@@ -6,7 +6,7 @@ The list of supported file types is defined in the [allowed files list](https://
 
 Time and location metadata are manually provided by users and are used to visualise uploaded media on an interactive world map.
 
-Users can browse the map, click markers, and explore media galleries tied to real-world locations - creating a digital memory atlas.
+Users can browse the map, click markers and explore media galleries tied to real-world locations - creating a digital memory atlas.
 
 ## Features
 
@@ -14,23 +14,20 @@ Users can browse the map, click markers, and explore media galleries tied to rea
 - Manual GPS location & timestamp tagging
 - Interactive world map with clickable memory pins
 - Gallery view for each map location
-- GraphQL API backend
-- Object storage powered by MinIO
-- Rust backend with modern Nix dev-shell
-- Fully browser-based frontend
 
 ## Tech Stack
 
-| Layer                   | Technology | URL                                         |
-| ----------------------- | ---------- | ------------------------------------------- |
-| Frontend                | Leptos     | https://leptos.dev/                         |
-| Backend                 | Axum       | https://github.com/tokio-rs/axum            |
-|                         | GraphQL    | https://graphql.org                         |
-| Storage                 | MinIO      | https://min.io                              |
-| Database                | PostgreSQL | https://www.postgresql.org                  |
-| Development Environment | Nix        | https://nixos.org                           |
-|                         | nix-direnv | https://github.com/nix-community/nix-direnv |
-| Task Runner             | Just       | https://github.com/casey/just               |
+| Layer                   | Technology          | URL                                         |
+| ----------------------- | ------------------- | ------------------------------------------- |
+| Frontend                | Leptos              | https://leptos.dev/                         |
+|                         | UnoCSS              | https://unocss.dev/                         |
+| Backend                 | Axum                | https://github.com/tokio-rs/axum            |
+|                         | GraphQL             | https://graphql.org                         |
+| Storage                 | MinIO               | https://min.io                              |
+| Database                | PostgreSQL          | https://www.postgresql.org                  |
+| Development Environment | Nix package manager | https://nixos.org                           |
+|                         | nix-direnv          | https://github.com/nix-community/nix-direnv |
+| Task Runner             | Just                | https://github.com/casey/just               |
 
 ## Project Structure
 
@@ -39,9 +36,9 @@ memory-map/
 │
 ├── .direnv/         # Direnv environment cache
 ├── backend/         # Axum and GraphQL backend
-├── data/            # Database & storage volumes
+├── data/            # Database and storage volumes
 ├── devenv/          # Nix development environment
-├── frontend/        # Leptos frontend
+├── frontend/        # Leptos and UnoCSS frontend
 ├── shared/          # Shared utilities & types
 ├── .env.example     # Environment configuration template
 ├── justfile         # Development commands
