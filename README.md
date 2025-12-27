@@ -1,73 +1,85 @@
 ## Memory Map
-Memory Map is a location-aware media archive that lets users upload photos, videos, and other files, automatically tagging them with time and GPS metadata, and visualizing them on an interactive world map.
+Memory Map is a location-aware media archive that allows users to upload photos, videos, and audio files.  
+The list of supported file types is defined in the [allowed files list](https://github.com/nothingnesses/memory-map/blob/main/shared/src/lib.rs).  
+
+Time and location metadata are manually provided by users and are used to visualize uploaded media on an interactive world map.
 
 Users can browse the map, click markers, and explore media galleries tied to real-world locations — creating a digital memory atlas.
 
 ## Features
-Upload media files (images, videos, documents)
+- Upload media files (images, videos and audio files)
 
-Automatic GPS location & timestamp tagging
+- Manual GPS location & timestamp tagging
 
-Interactive world map with clickable memory pins
+- Interactive world map with clickable memory pins
 
-Gallery view for each map location
+- Gallery view for each map location
 
-GraphQL API backend
+- GraphQL API backend
 
-Object storage powered by MinIO
+- Object storage powered by MinIO
 
-Rust backend with modern Nix dev-shell
+- Rust backend with modern Nix dev-shell
 
-Fully browser-based frontend
+- Fully browser-based frontend
 
 ## Tech Stack
-Layer	Technology
-Frontend	React / Next.js
-Backend	Rust + GraphQL
-Storage	MinIO
-Database	PostgreSQL
-Dev Env	Nix + direnv
-Task Runner	Just
+
+| Layer		| Technology	 | URL									|
+|----------	|--------------	 |--------------------------------------|
+|Frontend	|Leptos			 | https://leptos.dev/					|
+|Backend	|Rust + GraphQL	 |https://www.rust-lang.org, 			|
+|			|				 |https://graphql.org					|
+|Storage	|MinIO			 |https://min.io						|
+|Database	|PostgreSQL		 |https://www.postgresql.org			|
+|Dev Env	|Nix + direnv	 |https://nixos.org / https://direnv.net| 
+|Task Runner|	Just		 |https://github.com/casey/just 		|
 
 ## Project Structure
 
+```
 memory-map/
 │
-├── .direnv/          # Direnv environment cache
+├── .direnv/         # Direnv environment cache
 ├── backend/         # Rust GraphQL backend
 ├── data/            # Database & storage volumes
 ├── devenv/          # Nix development environment
 ├── frontend/        # React / Next.js frontend
 ├── shared/          # Shared utilities & types
 ├── .env.example     # Environment configuration template
-├── Justfile         # Development commands
+├── justfile         # Development commands
 ├── Cargo.toml       # Rust workspace configuration
 ├── Cargo.lock       # Rust dependency lock file
 └── README.md        # Project documentation
+```
 
-
-Getting Started
+## Getting Started
 1. Install dependencies
 
 You’ll need:
 
-Nix Package Manager
+- [Nix Package Manager](https://nixos.org/download/)
 
-direnv
+- [nix-direnv](https://github.com/nix-community/nix-direnv?tab=readme-ov-file#installation)
 
 2. Clone & enter project
+```
 git clone https://github.com/your-org/memory-map.git
 cd memory-map
+```
 
 3. Setup environment
+```
 cp .env.example .env
 direnv allow
-
+```
 
 This installs all dependencies and auto-loads the development shell whenever you enter the folder.
 
 4. Start database & storage
+```
 just
+```
 
 MinIO object storage becomes available at:
 
@@ -77,9 +89,12 @@ Password: minioadmin
 
 5. Start backend
 
-Open a new terminal:
+Open a new terminal or shell  
+(Some terminals support multiple shells, so you may not need to open a separate terminal window.)
 
+```
 just watch
+```
 
 Backend GraphQL playground:
 
@@ -87,9 +102,11 @@ http://localhost:8000/
 
 6. Start frontend
 
-Open another terminal:
+Open a new terminal or shell  
 
+```
 just serve
+```
 
 Frontend app:
 
@@ -108,12 +125,9 @@ http://localhost:8000/
  Screenshots
 GraphiQL 
 
-	![GrtaphiQL View](./screenshots/graphiQL.png)
-
+	![GraphiQL View](./screenshots/graphiQL.png)
 
 Use it to:
-
-Upload files
 
 Query memories by location
 
@@ -124,10 +138,7 @@ Contributing
 We welcome contributions!
 Please ensure:
 
-direnv loads correctly
-
-All services start via just
-
-Frontend builds without errors
-
-Code is formatted (cargo fmt, npm run lint)
+- direnv loads correctly
+- All services start via just
+- Frontend builds without errors
+- Code is formatted (cargo fmt, npm run lint)
