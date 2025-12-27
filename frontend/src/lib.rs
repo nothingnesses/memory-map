@@ -1,5 +1,5 @@
 use crate::components::header::Header;
-use crate::pages::{admin::Admin, edit_s3_object::EditS3Object, home::Home};
+use crate::pages::{home::Home, objects::Objects};
 use leptos::{
 	ev, html,
 	prelude::*,
@@ -140,8 +140,7 @@ pub fn App() -> impl IntoView {
 					<Shell>
 						<Routes fallback=|| view! { NotFound }>
 							<Route path=path!("/") view=Home />
-							<Route path=path!("/admin") view=Admin />
-							<Route path=path!("/admin/s3-objects/:id/edit") view=EditS3Object />
+							<Route path=path!("/objects") view=Objects />
 						</Routes>
 					</Shell>
 				</Router>

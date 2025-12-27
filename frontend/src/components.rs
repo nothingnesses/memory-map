@@ -1,4 +1,5 @@
 pub mod carousel;
+pub mod edit_s3_object_form;
 pub mod file_upload;
 pub mod full_size_s3_object;
 pub mod gallery;

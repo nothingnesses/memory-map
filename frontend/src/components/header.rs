@@ -60,10 +60,10 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 								</A>
 								<A
 									attr:class="py-4 w-full grid place-items-center"
-									href="/admin"
+									href="/objects"
 									on:click=move |_| close_header_menu()
 								>
-									"Admin"
+									"Objects"
 								</A>
 							</nav>
 						</div>

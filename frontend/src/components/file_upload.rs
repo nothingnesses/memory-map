@@ -5,7 +5,7 @@ use leptos::{
 	prelude::*,
 	task::spawn_local,
 	wasm_bindgen::JsCast,
-	web_sys::{self, FormData, HtmlFormElement, Request, RequestInit, SubmitEvent},
+	web_sys::{self, FormData, HtmlFormElement, MouseEvent, Request, RequestInit, SubmitEvent},
 };
 use leptos_router::components::Form;
 use shared::ALLOWED_MIME_TYPES;
@@ -16,6 +16,7 @@ use wasm_bindgen_futures::JsFuture;
 pub fn FileUpload(
 	// Callback to trigger a refresh of the parent's data (e.g., table)
 	#[prop(into, default = Callback::new(|_| ()))] on_success: Callback<()>,
+	#[prop(into)] on_cancel: Callback<()>,
 ) -> impl IntoView {
 	let toaster = ToasterInjection::expect_context();
 	let file_input_ref = NodeRef::<Input>::new();
@@ -166,7 +167,19 @@ pub fn FileUpload(
 							node_ref=file_input_ref
 						/>
 					</label>
-					<Button class="w-fit">"Submit"</Button>
+					<div class="grid grid-flow-col justify-start gap-4">
+						<Button class="w-fit">"Submit"</Button>
+						<Button
+							class="w-fit"
+							appearance=ButtonAppearance::Subtle
+							on_click=move |e: MouseEvent| {
+								e.prevent_default();
+								on_cancel.run(());
+							}
+						>
+							"Cancel"
+						</Button>
+					</div>
 				</div>
 			</Form>
 		</ErrorBoundary>
