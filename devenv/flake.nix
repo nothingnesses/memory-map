@@ -57,6 +57,8 @@
             #   foo = config.packages.foo;
             # };
 
+            formatter = pkgs.nixfmt;
+
             _module.args.pkgs = import inputs.nixpkgs {
               inherit system;
               config.allowUnfree = true;

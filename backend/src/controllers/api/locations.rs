@@ -104,7 +104,9 @@ pub async fn post(
 			None
 		};
 
-		let _ = Mutation::upsert_s3_object_worker(&client, file.filename, made_on.clone(), location).await;
+		let _ =
+			Mutation::upsert_s3_object_worker(&client, file.filename, made_on.clone(), location)
+				.await;
 
 		state.update_last_modified();
 	}

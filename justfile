@@ -21,6 +21,10 @@ backend:
 frontend:
     cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; trunk serve {{release_flag}} --skip-version-check --offline --open
 
-# Regenerate frontend/graphql/schema.json
+# Regenerate "frontend/graphql/schema.json".
 regenerate-schema:
     graphql-client introspect-schema http://localhost:8000 > frontend/graphql/schema.json
+
+# Prepare the project before pushing.
+prepare:
+    cd devenv; nix fmt; cd ..; cargo fmt; cargo doc --no-deps; cargo clippy; cargo test
