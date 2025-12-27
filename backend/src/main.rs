@@ -39,6 +39,13 @@ use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
 
+// Amount of bytes to cache.
+const CACHE_MAX_CAPACITY: u64 = 10_000;
+// Cache time-to-live duration in seconds. Currently 10 minutes.
+const CACHE_TTL_SECONDS: u64 = 600;
+// Max body size for GraphQL queries (1MB).
+const GRAPHQL_BODY_LIMIT_BYTES: usize = 1024 * 1024;
+
 async fn caching_middleware(
 	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
 	_headers: HeaderMap,
@@ -47,8 +54,8 @@ async fn caching_middleware(
 ) -> impl IntoResponse {
 	// 1. Read body
 	let (parts, body) = request.into_parts();
-	// Limit body size to avoid DoS. Using a reasonable limit for GraphQL queries (e.g. 1MB).
-	let bytes = match to_bytes(body, 1024 * 1024).await {
+	// Limit body size to avoid DoS.
+	let bytes = match to_bytes(body, GRAPHQL_BODY_LIMIT_BYTES).await {
 		Ok(b) => b,
 		Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
 	};
@@ -142,8 +149,10 @@ async fn main() {
 	let last_modified =
 		AtomicU64::new(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
 
-	let response_cache =
-		Cache::builder().max_capacity(10000).time_to_live(Duration::from_secs(60)).build();
+	let response_cache = Cache::builder()
+		.max_capacity(CACHE_MAX_CAPACITY)
+		.time_to_live(Duration::from_secs(CACHE_TTL_SECONDS))
+		.build();
 
 	let shared_state =
 		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache });
