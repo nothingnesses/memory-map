@@ -38,30 +38,40 @@ pub fn Carousel(
 	#[prop(into, default = Signal::derive(|| 1024))] mobile_width: Signal<u64>,
 	#[prop(into, default = Callback::new(|_|
 		view! {
-			<RotateCcw />
+			<div class="relative w-100px aspect-square grid place-items-center bg-[rgba(0,0,0,0.4)] group-hover:text-white group-hover:group-active:text-white text-white">
+				<RotateCcw />
+			</div>
 		}.into_any()
 	))]
 	anti_clockwise_button_content: CallbackAnyView,
 	#[prop(into, default = Callback::new(|_|
 		view! {
-			<RotateCw />
+			<div class="relative w-100px aspect-square grid place-items-center bg-[rgba(0,0,0,0.4)] group-hover:text-white group-hover:group-active:text-white text-white">
+				<RotateCw />
+			</div>
 		}.into_any()
 	))]
 	clockwise_button_content: CallbackAnyView,
 	#[prop(into, default = Callback::new(|_|
 		view! {
-			<Play />
+			<div class="relative w-100px aspect-square grid place-items-center bg-[rgba(0,0,0,0.4)] group-hover:text-white group-hover:group-active:text-white text-white">
+				<Play />
+			</div>
 		}.into_any()
 	))]
 	play_button_content: CallbackAnyView,
 	#[prop(into, default = Callback::new(|_|
 		view! {
-			<Pause />
+			<div class="relative w-100px aspect-square grid place-items-center bg-[rgba(0,0,0,0.4)] group-hover:text-white group-hover:group-active:text-white text-white">
+				<Pause />
+			</div>
 		}.into_any()
 	))]
 	pause_button_content: CallbackAnyView,
 	#[prop(into, default = Signal::derive(|| 5000))] autoplay_duration: Signal<u64>,
 	#[prop(into, default = Signal::derive(|| true))] show_ui_buttons: Signal<bool>,
+	#[prop(into, default = Signal::derive(|| true))] show_thumbnails: Signal<bool>,
+	#[prop(into, default = Signal::derive(|| true))] show_metadata_content: Signal<bool>,
 ) -> impl IntoView {
 	let rotations: RwSignal<HashMap<String, usize>> = RwSignal::new(HashMap::new());
 	let is_open = RwSignal::new(false);
@@ -254,6 +264,19 @@ pub fn Carousel(
 			handle.clear();
 		}
 	});
+
+	let metadata_content = move || {
+		s3_objects.with(|objects| {
+			objects.get(index.get()).and_then(|object| {
+				object.made_on.as_ref().map(|made_on| {
+					let date = js_sys::Date::new(&JsValue::from_str(made_on.as_ref()));
+					date.to_locale_string("en-GB", &JsValue::UNDEFINED)
+						.as_string()
+						.unwrap_or(made_on.clone())
+				})
+			})
+		})
+	};
 	view! {
 		<div class="relative grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
 			<ForEnumerate
@@ -278,84 +301,40 @@ pub fn Carousel(
 						class="buttons absolute w-dvw h-dvh transition-opacity duration-500"
 						class=(["opacity-0", "pointer-events-none"], move || !buttons_visible())
 					>
-						<Show when=move || {
-							s3_objects
-								.get()
-								.get(index.get())
-								.and_then(|o| o.made_on.clone())
-								.is_some()
-						}>
-							<div class="bottom-bar absolute w-full h-full grid items-end">
-								<div
-									class="relative z-1"
-									on:mouseenter=move |_| is_hovering.set(true)
-									on:mouseleave=move |_| is_hovering.set(false)
-								>
-									<div class="relative grid place-items-center left-100px w-fit h-100px bg-[rgba(0,0,0,0.4)] text-white px-4">
-										{move || {
-											if let Some(obj) = s3_objects.get().get(index.get()) {
-												if let Some(made_on) = &obj.made_on {
-													let date = js_sys::Date::new(&JsValue::from_str(made_on));
-													date.to_locale_string("en-GB", &JsValue::UNDEFINED)
-														.as_string()
-														.unwrap_or(made_on.clone())
-												} else {
-													String::new()
-												}
-											} else {
-												String::new()
-											}
-										}}
-									</div>
+						<div class="relative w-full h-full grid grid-rows-[1fr_150px]">
+							<div class="relative w-full h-full grid grid-cols-[100px_1fr_100px]">
+								<div class="relative w-100px h-full">
+									<Show when=move || { show_navigation_buttons.get() }>
+										<Button
+											class="previous-button relative w-full h-full z-1 rounded-none border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
+											on_click=move |_| previous_slide()
+											on:mouseenter=move |_| is_hovering.set(true)
+											on:mouseleave=move |_| is_hovering.set(false)
+										>
+											<div class="text-white">
+												{previous_button_content.run(())}
+											</div>
+										</Button>
+									</Show>
 								</div>
-							</div>
-						</Show>
-						// @todo Maybe this should be a component that emits index updates
-						<Show when=move || { show_navigation_buttons.get() }>
-							<div class="navigation-buttons absolute w-full h-full grid justify-between items-center grid-flow-col">
-								<Button
-									class="previous-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
-									on_click=move |_| previous_slide()
-									on:mouseenter=move |_| is_hovering.set(true)
-									on:mouseleave=move |_| is_hovering.set(false)
-								>
-									<div class="text-white">{previous_button_content.run(())}</div>
-								</Button>
-								<Button
-									class="next-button relative z-1 rounded-none w-100px h-dvh border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
-									on_click=move |_| next_slide()
-									on:mouseenter=move |_| is_hovering.set(true)
-									on:mouseleave=move |_| is_hovering.set(false)
-								>
-									<div class="text-white">{next_button_content.run(())}</div>
-								</Button>
-							</div>
-						</Show>
-						<Show when=move || { show_ui_buttons.get() }>
-							<div class="bottom-buttons absolute w-full h-full grid place-items-end">
-								<div
-									class="relative z-1 w-100px h-fit grid gap-4 bg-[rgba(0,0,0,0.4)]"
-									on:mouseenter=move |_| is_hovering.set(true)
-									on:mouseleave=move |_| is_hovering.set(false)
-								>
-									<Button
-										class="anti-clockwise-button relative w-full aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
-										on_click=move |_| rotate_anti_clockwise()
-									>
-										<div class="text-white">
-											{anti_clockwise_button_content.run(())}
-										</div>
-									</Button>
-									<Button
-										class="clockwise-button relative w-full aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
-										on_click=move |_| rotate_clockwise()
-									>
-										<div class="text-white">
-											{clockwise_button_content.run(())}
-										</div>
-									</Button>
-									<div class="relative grid grid-flow-col gap-4">
-										<label class="absolute h-full grid gap-4 place-content-center place-items-center px-4 bg-[rgba(0,0,0,0.4)] text-white right-full">
+								<div class="relative w-full h-full grid items-end">
+									<div class="flex flex-wrap justify-between flex-row-reverse">
+										<Show when=move || {
+											show_metadata_content.get() && metadata_content().is_some()
+										}>
+											<div
+												class="relative z-1 order-2 grid place-items-center w-fit h-100px bg-[rgba(0,0,0,0.4)] text-white px-4"
+												on:mouseenter=move |_| is_hovering.set(true)
+												on:mouseleave=move |_| is_hovering.set(false)
+											>
+												{metadata_content}
+											</div>
+										</Show>
+										<label
+											class="relative z-1 order-1 h-100px grid gap-4 place-content-center place-items-center px-4 bg-[rgba(0,0,0,0.4)] text-white"
+											on:mouseenter=move |_| is_hovering.set(true)
+											on:mouseleave=move |_| is_hovering.set(false)
+										>
 											<div>"Autoplay duration (ms):"</div>
 											<input
 												type="number"
@@ -370,34 +349,95 @@ pub fn Carousel(
 												}
 											/>
 										</label>
-										<Button
-											class="play-pause-button relative h-100px aspect-square rounded-none border-none bg-transparent hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset"
-											on_click=move |_| {
-												if is_playing.get() { pause() } else { play() }
-											}
-										>
-											<div class="text-white">
-												{move || {
-													if is_playing.get() {
-														pause_button_content.run(())
-													} else {
-														play_button_content.run(())
-													}
-												}}
-											</div>
-										</Button>
 									</div>
 								</div>
+								<div class="relative w-100px h-full]">
+									<Show when=move || { show_navigation_buttons.get() }>
+										<Button
+											class="next-button relative w-full h-full z-1 rounded-none border-none bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.4)] hover:active:bg-[rgba(0,0,0,0.4)] min-w-unset p-unset"
+											on_click=move |_| next_slide()
+											on:mouseenter=move |_| is_hovering.set(true)
+											on:mouseleave=move |_| is_hovering.set(false)
+										>
+											<div class="text-white">{next_button_content.run(())}</div>
+										</Button>
+									</Show>
+									<Show when=move || { show_ui_buttons.get() }>
+										<div class="absolute inset-0 w-full h-full grid content-between">
+											<Button
+												class="close-button relative z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
+												on_click=move |_| close()
+												on:mouseenter=move |_| is_hovering.set(true)
+												on:mouseleave=move |_| is_hovering.set(false)
+											>
+												{close_button_content.run(())}
+											</Button>
+											<div>
+												<Button
+													class="clockwise-button relative z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
+													on_click=move |_| rotate_clockwise()
+												>
+													<div class="text-white">
+														{clockwise_button_content.run(())}
+													</div>
+												</Button>
+												<Button
+													class="anti-clockwise-button relative z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
+													on_click=move |_| rotate_anti_clockwise()
+												>
+													<div class="text-white">
+														{anti_clockwise_button_content.run(())}
+													</div>
+												</Button>
+												<Button
+													class="play-pause-button relative z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
+													on_click=move |_| {
+														if is_playing.get() { pause() } else { play() }
+													}
+												>
+													<div class="text-white">
+														{move || {
+															if is_playing.get() {
+																pause_button_content.run(())
+															} else {
+																play_button_content.run(())
+															}
+														}}
+													</div>
+												</Button>
+											</div>
+										</div>
+									</Show>
+								</div>
 							</div>
-						</Show>
-						<Button
-							class="close-button absolute z-1 rounded-none right-0 bg-transparent border-none hover:bg-transparent hover:active:bg-transparent min-w-unset p-unset group"
-							on_click=move |_| close()
-							on:mouseenter=move |_| is_hovering.set(true)
-							on:mouseleave=move |_| is_hovering.set(false)
-						>
-							{close_button_content.run(())}
-						</Button>
+							<Show when=move || {
+								show_thumbnails.get() && s3_objects.get().len() > 1
+							}>
+								<div
+									class="thumbnail-strip relative w-full h-150px z-1 bg-[rgba(0,0,0,0.4)] overflow-x-auto flex place-content-center gap-2 p-2 self-end"
+									on:mouseenter=move |_| is_hovering.set(true)
+									on:mouseleave=move |_| is_hovering.set(false)
+								>
+									<ForEnumerate
+										each=move || s3_objects.get()
+										key=|s3_object| s3_object.id.clone()
+										let(s3_object_index,
+										s3_object)
+									>
+										<Button
+											class="h-full aspect-square shrink-0 rounded-none border-none p-unset"
+											on_click=move |_| {
+												index.set(s3_object_index.get());
+											}
+										>
+											<S3ObjectComponent s3_object=Signal::derive(move || {
+												s3_object.clone()
+											}) />
+										</Button>
+									</ForEnumerate>
+								</div>
+							</Show>
+						</div>
 					</div>
 					// Lightbox
 					<Button
