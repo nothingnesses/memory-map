@@ -1,14 +1,122 @@
-use crate::pages::{admin::Admin, edit_s3_object::EditS3Object, home::Home};
-use leptos::{prelude::*, wasm_bindgen::JsValue, web_sys::js_sys};
+use crate::components::header::Header;
+use crate::pages::{home::Home, objects::Objects};
+use leptos::{
+	ev, html,
+	prelude::*,
+	wasm_bindgen::JsValue,
+	web_sys::{self, js_sys},
+};
 use leptos_meta::*;
 use leptos_router::{components::*, path};
-use std::ops::{Add, Rem, Sub};
+use std::ops::{Add, Deref, Rem, Sub};
 use thaw::{ConfigProvider, ToasterProvider};
 
 // Modules
 mod components;
 pub mod graphql_queries;
 mod pages;
+
+/// The Shell component wraps the main application content.
+/// It manages the global layout state, including the header's visibility on scroll.
+#[component]
+fn Shell(children: Children) -> impl IntoView {
+	let menu_open = RwSignal::new(false);
+
+	let page_wrapper_ref = NodeRef::<html::Div>::new();
+	let last_scroll_y = StoredValue::new(0.0);
+	let translate_y = StoredValue::new(0.0);
+	let is_scrolling = StoredValue::new(false);
+	let header_height = 100.0;
+
+	// Updates the header's vertical position based on scroll direction
+	let update_header_position = move |val: f64| {
+		// Clamp the translation between -header_height (hidden) and 0.0 (fully visible)
+		let current = f64::min(f64::max(val, -header_height), 0.0);
+		translate_y.set_value(current);
+
+		// Only update the CSS variable if the menu is closed
+		if !menu_open.get() {
+			if let Some(el) = page_wrapper_ref.get() {
+				let _ = el
+					.deref()
+					.style()
+					.set_property("--hide-on-scroll-translate-y", &format!("{}px", current));
+			}
+		}
+	};
+
+	Effect::new(move |_| {
+		// Initialize last_scroll_y
+		last_scroll_y.set_value(window().scroll_y().unwrap_or(0.0).max(0.0));
+
+		let update_pos = update_header_position.clone();
+
+		// Handle scroll events to hide/show header
+		let on_scroll = move |_| {
+			if !is_scrolling.get_value() {
+				if let Some(el) = page_wrapper_ref.get() {
+					// Add 'scrolling' class to disable transitions during active scroll
+					let _ = el.deref().class_list().toggle_with_force("scrolling", true);
+				}
+				is_scrolling.set_value(true);
+			}
+
+			let window = window();
+			let current_scroll_y = window.scroll_y().unwrap_or(0.0).max(0.0);
+			let last = last_scroll_y.get_value();
+			let delta = current_scroll_y - last;
+			let current_translate = translate_y.get_value();
+
+			// Update position based on scroll delta
+			update_pos(current_translate - delta);
+			last_scroll_y.set_value(current_scroll_y);
+		};
+
+		let update_pos_end = update_header_position.clone();
+
+		// Handle scroll end to snap header to open/closed state
+		let on_scroll_end = move |_: web_sys::CustomEvent| {
+			is_scrolling.set_value(false);
+			if let Some(el) = page_wrapper_ref.get() {
+				// Remove 'scrolling' class to re-enable transitions
+				let _ = el.deref().class_list().toggle_with_force("scrolling", false);
+			}
+			let current_translate = translate_y.get_value();
+			let hidden_height = -header_height;
+
+			// Snap to nearest state (fully hidden or fully visible)
+			let target = if current_translate > hidden_height / 2.0 { 0.0 } else { hidden_height };
+			update_pos_end(target);
+		};
+
+		let cleanup_scroll = window_event_listener(ev::scroll, on_scroll);
+		// 'scrollend' is a newer event, might need polyfill or browser support check in some contexts,
+		// but here we assume it's available or handled.
+		let cleanup_scrollend = window_event_listener(ev::Custom::new("scrollend"), on_scroll_end);
+
+		on_cleanup(move || {
+			drop(cleanup_scroll);
+			drop(cleanup_scrollend);
+		});
+	});
+
+	// Reset header position when menu is opened
+	Effect::new(move |_| {
+		if menu_open.get() {
+			translate_y.set_value(0.0);
+			if let Some(el) = page_wrapper_ref.get() {
+				let _ = el.deref().style().set_property("--hide-on-scroll-translate-y", "0px");
+			}
+		}
+	});
+
+	view! {
+		<div class="relative group/page scroll-smooth" node_ref=page_wrapper_ref>
+			<Header menu_open=menu_open />
+			<main class="relative pt-150px">{children()}</main>
+		</div>
+	}
+}
 
 /// An app router which renders the homepage and handles 404's
 #[component]
@@ -29,19 +137,12 @@ pub fn App() -> impl IntoView {
 				<Meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
 				<Router>
-					<header>
-						<nav class="relative container mx-auto grid gap-4 grid-flow-col justify-start py-4">
-							<A href="/">"Map"</A>
-							<A href="/admin">"Admin"</A>
-						</nav>
-					</header>
-					<main>
+					<Shell>
 						<Routes fallback=|| view! { NotFound }>
 							<Route path=path!("/") view=Home />
-							<Route path=path!("/admin") view=Admin />
-							<Route path=path!("/admin/s3-objects/:id/edit") view=EditS3Object />
+							<Route path=path!("/objects") view=Objects />
 						</Routes>
-					</main>
+					</Shell>
 				</Router>
 			</ToasterProvider>
 		</ConfigProvider>

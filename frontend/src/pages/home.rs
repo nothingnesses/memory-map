@@ -11,7 +11,7 @@ pub fn Home() -> impl IntoView {
 				<div class="container mx-auto grid gap-4">
 					<h1 class="text-22px font-bold">"Map"</h1>
 					<MapContainer
-						class="w-full h-dvh"
+						class="w-full h-dvh z-0"
 						center=Position::new(51.505, -0.09)
 						zoom=3.0
 						set_view=true

@@ -14,6 +14,7 @@ pub fn S3ObjectTableRows(
 	#[prop(into)] selected_ids: Signal<HashSet<String>>,
 	#[prop(into)] on_toggle: Callback<String>,
 	#[prop(into)] on_delete: Callback<S3Object>,
+	#[prop(into)] on_edit: Callback<S3Object>,
 	#[prop(into, default = Callback::new(|_|
 		view! {
 			<div class="relative grid grid-flow-col gap-4 place-items-center">
@@ -78,12 +79,9 @@ pub fn S3ObjectTableRows(
 								<Button on_click=move |_| {
 									on_delete.run(s3_object_for_delete.clone())
 								}>{delete_button_content.run(())}</Button>
-								// Link to the edit page for this S3 object
-								<A href=format!("/admin/s3-objects/{}/edit", s3_object_for_edit.id)>
-									<div class="rounded-full border border-solid border-black h-45px grid place-items-center w-fit px-4">
-										{edit_button_content.run(())}
-									</div>
-								</A>
+								<Button on_click=move |_| {
+									on_edit.run(s3_object_for_edit.clone())
+								}>{edit_button_content.run(())}</Button>
 							</div>
 						</TableCell>
 					</TableRow>

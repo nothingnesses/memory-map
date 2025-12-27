@@ -30,6 +30,7 @@ pub fn S3ObjectsTable(
 	close_button_content: CallbackAnyView,
 	// Callback to trigger a refresh of the data after deletion
 	#[prop(into, default = Callback::new(|_| ()))] on_change: Callback<()>,
+	#[prop(into)] on_edit: Callback<S3Object>,
 	#[prop(into, default = Callback::new(|_|
 		view! {
 			<div class="relative grid grid-flow-col gap-4 place-items-center">
@@ -216,6 +217,7 @@ pub fn S3ObjectsTable(
 											selected_ids=selected_ids
 											on_toggle=Callback::new(toggle_id)
 											on_delete=Callback::new(open_delete_object_dialog)
+											on_edit
 										/>
 									},
 								)
