@@ -19,6 +19,7 @@ log = "0.4"
 lucide-leptos = { version = "2", features = [
 	"arrows",
 	"files",
+	"layout",
 	"multimedia",
 	"notifications",
 	"text"
