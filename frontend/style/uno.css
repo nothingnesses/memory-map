@@ -6,13 +6,13 @@
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
+--fontWeight-bold: 700;
+--colors-gray-200: oklch(92.8% 0.006 264.531);
 --radius-none: 0;
 --default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
 --default-transition-duration: 150ms;
 --colors-white: #fff;
---fontWeight-bold: 700;
 --colors-black: #000;
---colors-gray-200: oklch(92.8% 0.006 264.531);
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);

@@ -72,10 +72,15 @@ direnv allow
 
 This installs all dependencies and auto-loads the development shell whenever you enter the directory.
 
+You can optionally configure the build mode by editing `.env`:
+
+- `BUILD_MODE="debug"` (default): Faster compilation, includes debug info.
+- `BUILD_MODE="release"`: Optimised build, smaller binaries, slower compilation.
+
 4. Start database & storage
 
 ```sh
-just
+just servers
 ```
 
 MinIO object storage becomes available at:
@@ -91,7 +96,7 @@ Password: minioadmin
 In another shell, run:
 
 ```sh
-just watch
+just backend
 ```
 
 Backend GraphQL playground:
@@ -103,7 +108,7 @@ http://localhost:8000/
 In another shell, run:
 
 ```sh
-just serve
+just frontend
 ```
 
 Frontend app:
