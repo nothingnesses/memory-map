@@ -17,17 +17,17 @@ Users can browse the map, click markers and explore media galleries tied to real
 
 ## Tech Stack
 
-| Layer                   | Technology          | URL                                         |
-| ----------------------- | ------------------- | ------------------------------------------- |
-| Frontend                | Leptos              | https://leptos.dev/                         |
-|                         | UnoCSS              | https://unocss.dev/                         |
-| Backend                 | Axum                | https://github.com/tokio-rs/axum            |
-|                         | GraphQL             | https://graphql.org                         |
-| Storage                 | MinIO               | https://min.io                              |
-| Database                | PostgreSQL          | https://www.postgresql.org                  |
-| Development Environment | Nix package manager | https://nixos.org                           |
-|                         | nix-direnv          | https://github.com/nix-community/nix-direnv |
-| Task Runner             | Just                | https://github.com/casey/just               |
+| Layer                   | Technology                                                |
+| ----------------------- | --------------------------------------------------------- |
+| Frontend                | [Leptos](https://leptos.dev/)                             |
+|                         | [UnoCSS](https://unocss.dev/)                             |
+| Backend                 | [Axum](https://github.com/tokio-rs/axum)                  |
+|                         | [GraphQL](https://graphql.org)                            |
+| Storage                 | [MinIO](https://min.io)                                   |
+| Database                | [PostgreSQL](https://www.postgresql.org)                  |
+| Development Environment | [Nix package manager](https://nixos.org)                  |
+|                         | [nix-direnv](https://github.com/nix-community/nix-direnv) |
+| Task Runner             | [Just](https://github.com/casey/just)                     |
 
 ## Project Structure
 
