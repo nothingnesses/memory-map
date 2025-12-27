@@ -75,7 +75,7 @@ This installs all dependencies and auto-loads the development shell whenever you
 4. Start database & storage
 
 ```sh
-just
+just servers
 ```
 
 MinIO object storage becomes available at:
@@ -91,7 +91,7 @@ Password: minioadmin
 In another shell, run:
 
 ```sh
-just watch
+just backend
 ```
 
 Backend GraphQL playground:
@@ -103,7 +103,7 @@ http://localhost:8000/
 In another shell, run:
 
 ```sh
-just serve
+just frontend
 ```
 
 Frontend app:

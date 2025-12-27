@@ -1,13 +1,17 @@
-# Run PostgreSQL and Minio.
+# Display list of commands.
 default:
+    just -l
+
+# Start PostgreSQL and Minio servers.
+servers:
     nix run ./devenv
 
-# Run backend.
-watch:
+# Start backend server.
+backend:
     bacon run -- --bin backend
 
-# Run frontend. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
-serve:
+# Start frontend server. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
+frontend:
     cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; trunk serve --skip-version-check --offline --open
 
 # Regenerate frontend/graphql/schema.json
