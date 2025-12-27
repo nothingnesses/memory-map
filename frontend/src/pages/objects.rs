@@ -14,7 +14,7 @@ use thaw::*;
 #[component]
 pub fn Objects() -> impl IntoView {
 	// Signal to trigger resource refetching
-	let trigger = RwSignal::new(false);
+	let trigger = RwSignal::new(0usize);
 	// Signal to control the add object dialog visibility
 	let open_add_object = RwSignal::new(false);
 	// Signal to control the edit object dialog visibility
@@ -31,7 +31,7 @@ pub fn Objects() -> impl IntoView {
 	});
 
 	// Callback to update the trigger, effectively reloading the table
-	let on_change = Callback::new(move |_| trigger.update(|n| *n = !*n));
+	let on_change = Callback::new(move |_| trigger.update(|n| *n = n.wrapping_add(1)));
 
 	// Callback for successful upload: close dialog and refresh table
 	let on_upload_success = Callback::new(move |_| {
