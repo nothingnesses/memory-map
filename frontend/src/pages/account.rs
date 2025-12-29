@@ -17,8 +17,12 @@ pub fn Account() -> impl IntoView {
 	let email_error = RwSignal::new(Option::<String>::None);
 	let password_error = RwSignal::new(Option::<String>::None);
 
+	let is_email_loading = RwSignal::new(false);
+	let is_password_loading = RwSignal::new(false);
+
 	let on_change_email = move |_| {
 		let email_val = email.get();
+		is_email_loading.set(true);
 		spawn_local(async move {
 			let variables = change_email_mutation::Variables { new_email: email_val };
 			match ChangeEmailMutation::run(variables).await {
@@ -31,6 +35,7 @@ pub fn Account() -> impl IntoView {
 					email_message.set(None);
 				}
 			}
+			is_email_loading.set(false);
 		});
 	};
 
@@ -44,6 +49,7 @@ pub fn Account() -> impl IntoView {
 			return;
 		}
 
+		is_password_loading.set(true);
 		spawn_local(async move {
 			let variables = change_password_mutation::Variables {
 				old_password: old_pass,
@@ -59,6 +65,7 @@ pub fn Account() -> impl IntoView {
 					password_message.set(None);
 				}
 			}
+			is_password_loading.set(false);
 		});
 	};
 
@@ -73,7 +80,7 @@ pub fn Account() -> impl IntoView {
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
 						"New Email"
 					</label>
-					<Input value=email placeholder="New Email" />
+					<Input value=email placeholder="New Email" disabled=move || is_email_loading.get() />
 				</div>
 				<Show when=move || email_message.get().is_some()>
 					<p class="text-green-500 text-xs italic mb-4">{email_message.get()}</p>
@@ -84,6 +91,7 @@ pub fn Account() -> impl IntoView {
 				<Button
 					on_click=on_change_email
 					class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+					disabled=move || is_email_loading.get()
 				>
 					"Update Email"
 				</Button>
@@ -96,13 +104,23 @@ pub fn Account() -> impl IntoView {
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="old_password">
 						"Old Password"
 					</label>
-					<Input value=old_password placeholder="Old Password" attr:r#type="password" />
+					<Input
+						value=old_password
+						placeholder="Old Password"
+						attr:r#type="password"
+						disabled=move || is_password_loading.get()
+					/>
 				</div>
 				<div class="mb-4">
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="new_password">
 						"New Password"
 					</label>
-					<Input value=new_password placeholder="New Password" attr:r#type="password" />
+					<Input
+						value=new_password
+						placeholder="New Password"
+						attr:r#type="password"
+						disabled=move || is_password_loading.get()
+					/>
 				</div>
 				<div class="mb-6">
 					<label
@@ -115,6 +133,7 @@ pub fn Account() -> impl IntoView {
 						value=confirm_new_password
 						placeholder="Confirm New Password"
 						attr:r#type="password"
+						disabled=move || is_password_loading.get()
 					/>
 				</div>
 				<Show when=move || password_message.get().is_some()>
@@ -126,6 +145,7 @@ pub fn Account() -> impl IntoView {
 				<Button
 					on_click=on_change_password
 					class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+					disabled=move || is_password_loading.get()
 				>
 					"Update Password"
 				</Button>

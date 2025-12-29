@@ -14,18 +14,40 @@ pub fn Users() -> impl IntoView {
 		async move { UsersQuery::run().await.unwrap_or_default() }
 	});
 
-	let on_update_user = move |id: String, role: String, email: String| {
+	let on_update_email = move |id: String, email: String, loading: RwSignal<bool>| {
+		loading.set(true);
 		spawn_local(async move {
-			let variables = admin_update_user_mutation::Variables { id: id.into(), role, email };
+			let variables = admin_update_user_mutation::Variables {
+				id: id.into(),
+				role: None,
+				email: Some(email),
+			};
 			let _ = AdminUpdateUserMutation::run(variables).await;
+			loading.set(false);
 			trigger.update(|n| *n += 1);
 		});
 	};
 
-	let on_reset_password = move |email: String| {
+	let on_toggle_role = move |id: String, new_role: String, loading: RwSignal<bool>| {
+		loading.set(true);
+		spawn_local(async move {
+			let variables = admin_update_user_mutation::Variables {
+				id: id.into(),
+				role: Some(new_role),
+				email: None,
+			};
+			let _ = AdminUpdateUserMutation::run(variables).await;
+			loading.set(false);
+			trigger.update(|n| *n += 1);
+		});
+	};
+
+	let on_reset_password = move |email: String, loading: RwSignal<bool>| {
+		loading.set(true);
 		spawn_local(async move {
 			let variables = request_password_reset_mutation::Variables { email };
 			let _ = RequestPasswordResetMutation::run(variables).await;
+			loading.set(false);
 		});
 	};
 
@@ -60,33 +82,68 @@ pub fn Users() -> impl IntoView {
 											let id = user.id.clone();
 											let email = RwSignal::new(user.email.clone());
 											let current_role = format!("{:?}", user.role);
-											let update_action = on_update_user.clone();
+											let created_at = user.created_at.clone();
+											let update_email_action = on_update_email.clone();
+											let toggle_role_action = on_toggle_role.clone();
 											let reset_action = on_reset_password.clone();
-											let user_id = user.id.clone();
 											let user_role = user.role.clone();
+											let is_loading = RwSignal::new(false);
+
+											let id_for_email = id.clone();
+											let id_for_role = id.clone();
 
 											view! {
 												<TableRow>
-													<TableCell>{user.id}</TableCell>
-													<TableCell>
-														<Input value=email />
-													</TableCell>
-													<TableCell>{current_role}</TableCell>
-													<TableCell>{user.created_at}</TableCell>
+													<TableCell>{id}</TableCell>
 													<TableCell>
 														<div class="flex gap-2">
-															<Button on_click=move |_| {
-																let r = if format!("{:?}", user_role) == "Admin" {
-																	"user"
-																} else {
-																	"admin"
-																};
-																update_action(user_id.clone(), r.to_string(), email.get())
-															}>"Toggle Role / Update Email"</Button>
-															<Button on_click=move |_| {
-																reset_action(email.get())
-															}>"Reset Password"</Button>
+															<Input value=email disabled=move || is_loading.get() />
+															<Button
+																disabled=move || is_loading.get()
+																on_click=move |_| {
+																	update_email_action(
+																		id_for_email.clone(),
+																		email.get(),
+																		is_loading,
+																	)
+																}
+															>
+																"Save"
+															</Button>
 														</div>
+													</TableCell>
+													<TableCell>
+														<div class="flex gap-2 items-center">
+															<span>{current_role}</span>
+															<Button
+																disabled=move || is_loading.get()
+																on_click=move |_| {
+																	let r = if format!("{:?}", user_role) == "Admin" {
+																		"user"
+																	} else {
+																		"admin"
+																	};
+																	toggle_role_action(
+																		id_for_role.clone(),
+																		r.to_string(),
+																		is_loading,
+																	)
+																}
+															>
+																"Toggle"
+															</Button>
+														</div>
+													</TableCell>
+													<TableCell>{created_at}</TableCell>
+													<TableCell>
+														<Button
+															disabled=move || is_loading.get()
+															on_click=move |_| {
+																reset_action(email.get(), is_loading)
+															}
+														>
+															"Reset Password"
+														</Button>
 													</TableCell>
 												</TableRow>
 											}

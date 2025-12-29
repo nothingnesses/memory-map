@@ -10,6 +10,7 @@ pub fn Register() -> impl IntoView {
 	let password = RwSignal::new(String::new());
 	let confirm_password = RwSignal::new(String::new());
 	let error_message = RwSignal::new(Option::<String>::None);
+	let is_loading = RwSignal::new(false);
 
 	let on_register = move |_| {
 		let email_val = email.get();
@@ -22,6 +23,7 @@ pub fn Register() -> impl IntoView {
 			return;
 		}
 
+		is_loading.set(true);
 		spawn_local(async move {
 			let variables =
 				register_mutation::Variables { email: email_val, password: password_val };
@@ -34,6 +36,7 @@ pub fn Register() -> impl IntoView {
 					error_message.set(Some(e.to_string()));
 				}
 			}
+			is_loading.set(false);
 		});
 	};
 
@@ -45,13 +48,18 @@ pub fn Register() -> impl IntoView {
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
 						"Email"
 					</label>
-					<Input value=email placeholder="Email" />
+					<Input value=email placeholder="Email" disabled=move || is_loading.get() />
 				</div>
 				<div class="mb-4">
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="password">
 						"Password"
 					</label>
-					<Input value=password placeholder="Password" attr:r#type="password" />
+					<Input
+						value=password
+						placeholder="Password"
+						attr:r#type="password"
+						disabled=move || is_loading.get()
+					/>
 				</div>
 				<div class="mb-6">
 					<label
@@ -64,6 +72,7 @@ pub fn Register() -> impl IntoView {
 						value=confirm_password
 						placeholder="Confirm Password"
 						attr:r#type="password"
+						disabled=move || is_loading.get()
 					/>
 				</div>
 
@@ -75,6 +84,7 @@ pub fn Register() -> impl IntoView {
 					<Button
 						on_click=on_register
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+						disabled=move || is_loading.get()
 					>
 						"Register"
 					</Button>

@@ -35,6 +35,13 @@ ON CONFLICT (name) DO UPDATE
 SET made_on = EXCLUDED.made_on, location = EXCLUDED.location
 RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
 
+fn validate_password(password: &str) -> Result<(), GraphQLError> {
+	if password.len() < 8 {
+		return Err(GraphQLError::new("Password must be at least 8 characters long"));
+	}
+	Ok(())
+}
+
 pub struct Mutation;
 
 impl Mutation {
@@ -258,6 +265,8 @@ impl Mutation {
 			return Err(GraphQLError::new("Registration is disabled"));
 		}
 
+		validate_password(&password)?;
+
 		if !EmailAddress::is_valid(&email) {
 			return Err(GraphQLError::new("Invalid email format"));
 		}
@@ -354,6 +363,8 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
+		validate_password(&new_password)?;
+
 		let password_hash_str: String = client
 			.query_one("SELECT password_hash FROM users WHERE id = $1", &[&user_id.0])
 			.await
@@ -399,24 +410,15 @@ impl Mutation {
 
 		// Check if email is taken
 		let count: i64 = client
-			.query_one("SELECT COUNT(*) FROM users WHERE email = $1", &[&new_email])
+			.query_one(
+				"SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2",
+				&[&new_email, &user_id.0],
+			)
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
 			.get(0);
 
 		if count > 0 {
-			// Check if it's the same user
-			let current_email: String = client
-				.query_one("SELECT email FROM users WHERE id = $1", &[&user_id.0])
-				.await?
-				.get("email");
-
-			if current_email == new_email {
-				// No change
-				return User::by_id(ctx, user_id.0)
-					.await?
-					.ok_or_else(|| GraphQLError::new("User not found"));
-			}
 			return Err(GraphQLError::new("Email already in use"));
 		}
 
@@ -478,6 +480,8 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
+		validate_password(&new_password)?;
+
 		let token_hash = blake3::hash(token.as_bytes()).to_string();
 
 		let row_opt = client
@@ -518,8 +522,8 @@ impl Mutation {
 		&self,
 		ctx: &Context<'_>,
 		id: ID,
-		role: String,
-		email: String,
+		role: Option<String>,
+		email: Option<String>,
 	) -> Result<User, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
 		let wrapper = ContextWrapper(ctx);
@@ -535,28 +539,40 @@ impl Mutation {
 
 		let target_id = id.parse::<i64>().map_err(|_| GraphQLError::new("Invalid ID"))?;
 
-		if !EmailAddress::is_valid(&email) {
-			return Err(GraphQLError::new("Invalid email format"));
+		let mut target_user = User::by_id(ctx, target_id)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
+
+		if let Some(new_email) = email {
+			if !EmailAddress::is_valid(&new_email) {
+				return Err(GraphQLError::new("Invalid email format"));
+			}
+
+			// Check email uniqueness if changed
+			let count: i64 = client
+				.query_one(
+					"SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2",
+					&[&new_email, &target_id],
+				)
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+				.get(0);
+
+			if count > 0 {
+				return Err(GraphQLError::new("Email already in use"));
+			}
+			target_user.email = new_email;
 		}
 
-		// Check email uniqueness if changed
-		let count: i64 = client
-			.query_one(
-				"SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2",
-				&[&email, &target_id],
-			)
-			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
-			.get(0);
-
-		if count > 0 {
-			return Err(GraphQLError::new("Email already in use"));
+		if let Some(new_role_str) = role {
+			let new_role = new_role_str.parse().map_err(|_| GraphQLError::new("Invalid role"))?;
+			target_user.role = new_role;
 		}
 
 		let row = client
 			.query_one(
 				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING *",
-				&[&role, &email, &target_id],
+				&[&target_user.role.to_string(), &target_user.email, &target_id],
 			)
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;

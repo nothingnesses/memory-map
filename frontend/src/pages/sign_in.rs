@@ -14,12 +14,14 @@ pub fn SignIn() -> impl IntoView {
 	let password = RwSignal::new(String::new());
 	let error_message = RwSignal::new(Option::<String>::None);
 	let success_message = RwSignal::new(Option::<String>::None);
+	let is_loading = RwSignal::new(false);
 
 	let on_sign_in = move |_| {
 		let email_val = email.get();
 		let password_val = password.get();
 		let navigate = navigate.clone();
 
+		is_loading.set(true);
 		spawn_local(async move {
 			let variables = login_mutation::Variables { email: email_val, password: password_val };
 
@@ -34,6 +36,7 @@ pub fn SignIn() -> impl IntoView {
 					error_message.set(Some(e.to_string()));
 				}
 			}
+			is_loading.set(false);
 		});
 	};
 
@@ -45,6 +48,7 @@ pub fn SignIn() -> impl IntoView {
 			return;
 		}
 
+		is_loading.set(true);
 		spawn_local(async move {
 			let variables = request_password_reset_mutation::Variables { email: email_val };
 
@@ -57,6 +61,7 @@ pub fn SignIn() -> impl IntoView {
 					error_message.set(Some(e.to_string()));
 				}
 			}
+			is_loading.set(false);
 		});
 	};
 
@@ -68,13 +73,18 @@ pub fn SignIn() -> impl IntoView {
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
 						"Email"
 					</label>
-					<Input value=email placeholder="Email" />
+					<Input value=email placeholder="Email" disabled=move || is_loading.get() />
 				</div>
 				<div class="mb-6">
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="password">
 						"Password"
 					</label>
-					<Input value=password placeholder="Password" attr:r#type="password" />
+					<Input
+						value=password
+						placeholder="Password"
+						attr:r#type="password"
+						disabled=move || is_loading.get()
+					/>
 				</div>
 
 				<Show when=move || error_message.get().is_some()>
@@ -88,10 +98,15 @@ pub fn SignIn() -> impl IntoView {
 					<Button
 						on_click=on_sign_in
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+						disabled=move || is_loading.get()
 					>
 						"Sign In"
 					</Button>
-					<Button on_click=on_forgot_password appearance=ButtonAppearance::Transparent>
+					<Button
+						on_click=on_forgot_password
+						appearance=ButtonAppearance::Transparent
+						disabled=move || is_loading.get()
+					>
 						"Forgot Password?"
 					</Button>
 				</div>

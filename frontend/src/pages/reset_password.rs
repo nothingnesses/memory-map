@@ -13,6 +13,7 @@ pub fn ResetPassword() -> impl IntoView {
 	let confirm_password = RwSignal::new(String::new());
 	let error_message = RwSignal::new(Option::<String>::None);
 	let success_message = RwSignal::new(Option::<String>::None);
+	let is_loading = RwSignal::new(false);
 
 	let on_reset = move |_| {
 		let token_val = token();
@@ -30,6 +31,7 @@ pub fn ResetPassword() -> impl IntoView {
 			return;
 		}
 
+		is_loading.set(true);
 		spawn_local(async move {
 			let variables =
 				reset_password_mutation::Variables { token: token_val, new_password: password_val };
@@ -46,6 +48,7 @@ pub fn ResetPassword() -> impl IntoView {
 					error_message.set(Some(e.to_string()));
 				}
 			}
+			is_loading.set(false);
 		});
 	};
 
@@ -57,7 +60,12 @@ pub fn ResetPassword() -> impl IntoView {
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="new_password">
 						"New Password"
 					</label>
-					<Input value=new_password placeholder="New Password" attr:r#type="password" />
+					<Input
+						value=new_password
+						placeholder="New Password"
+						attr:r#type="password"
+						disabled=move || is_loading.get()
+					/>
 				</div>
 				<div class="mb-6">
 					<label
@@ -70,6 +78,7 @@ pub fn ResetPassword() -> impl IntoView {
 						value=confirm_password
 						placeholder="Confirm Password"
 						attr:r#type="password"
+						disabled=move || is_loading.get()
 					/>
 				</div>
 
@@ -84,6 +93,7 @@ pub fn ResetPassword() -> impl IntoView {
 					<Button
 						on_click=on_reset
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+						disabled=move || is_loading.get()
 					>
 						"Reset Password"
 					</Button>
