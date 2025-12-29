@@ -14,7 +14,7 @@ impl LogoutMutation {
 	pub async fn run() -> Result<bool, Error> {
 		Ok(post_graphql::<LogoutMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables {},
 		)
 		.await?

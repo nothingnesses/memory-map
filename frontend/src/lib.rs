@@ -8,13 +8,15 @@ use graphql_queries::me::MeQuery;
 use leptos::{
 	ev, html,
 	prelude::*,
-	wasm_bindgen::JsValue,
+	wasm_bindgen::{JsCast, JsValue},
 	web_sys::{self, js_sys},
 };
 use leptos_meta::*;
 use leptos_router::{components::*, path};
 use std::ops::{Add, Deref, Rem, Sub};
 use thaw::{ConfigProvider, ToasterProvider};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 
 // Modules
 pub mod auth;
@@ -130,7 +132,7 @@ pub fn App() -> impl IntoView {
 	// Provides context that manages stylesheets, titles, meta tags, etc.
 	provide_meta_context();
 
-	let trigger = RwSignal::new(());
+	let trigger = RwSignal::new(0);
 	let user_resource = LocalResource::new(move || {
 		trigger.get();
 		async move { MeQuery::run().await.ok().flatten() }
@@ -138,7 +140,7 @@ pub fn App() -> impl IntoView {
 
 	provide_context(UserContext {
 		user: user_resource,
-		refetch: Callback::new(move |_| trigger.set(())),
+		refetch: Callback::new(move |_| trigger.update(|n| *n += 1)),
 	});
 
 	view! {
@@ -175,14 +177,54 @@ pub fn App() -> impl IntoView {
 /// since we can't initialise a `reqwest::Client` to use with the original version,
 /// since `graphql_client` didn't `pub use` their version of `reqwest` for us to `use`.
 pub async fn post_graphql<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
-	client: &reqwest::Client,
+	_client: &reqwest::Client,
 	url: U,
 	variables: Q::Variables,
-) -> Result<graphql_client::Response<Q::ResponseData>, reqwest::Error> {
+) -> Result<graphql_client::Response<Q::ResponseData>, Box<dyn std::error::Error + Send + Sync>> {
 	let body = Q::build_query(variables);
-	let reqwest_response = client.post(url).json(&body).send().await?;
+	let body_str = serde_json::to_string(&body)?;
 
-	reqwest_response.json().await
+	let mut opts = RequestInit::new();
+	opts.method("POST");
+	opts.mode(RequestMode::Cors);
+	opts.credentials(RequestCredentials::Include);
+	opts.body(Some(&JsValue::from_str(&body_str)));
+
+	let headers = web_sys::Headers::new().unwrap();
+	headers.set("Content-Type", "application/json").unwrap();
+	opts.headers(&headers);
+
+	let url_str = url.into_url()?.to_string();
+
+	let request = web_sys::Request::new_with_str_and_init(&url_str, &opts)
+		.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?;
+
+	let window = web_sys::window().unwrap();
+	let resp_value = JsFuture::from(window.fetch_with_request(&request))
+		.await
+		.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?;
+
+	let resp: Response = resp_value.dyn_into().unwrap();
+
+	if !resp.ok() {
+		return Err(Box::new(std::io::Error::new(
+			std::io::ErrorKind::Other,
+			format!("Network error: {}", resp.status()),
+		)));
+	}
+
+	let text = JsFuture::from(
+		resp.text()
+			.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?,
+	)
+	.await
+	.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))?
+	.as_string()
+	.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Response is not text"))?;
+
+	let response_data: graphql_client::Response<Q::ResponseData> = serde_json::from_str(&text)?;
+
+	Ok(response_data)
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

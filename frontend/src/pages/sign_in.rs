@@ -1,9 +1,16 @@
-use crate::auth::UserContext;
-use crate::graphql_queries::{
-	login::{LoginMutation, login_mutation},
-	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+use crate::{
+	auth::UserContext,
+	graphql_queries::{
+		login::{LoginMutation, login_mutation},
+		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+	},
 };
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{
+	ev,
+	prelude::*,
+	task::spawn_local,
+	wasm_bindgen::{JsCast, closure::Closure},
+};
 use leptos_router::{components::A, hooks::use_navigate};
 use thaw::*;
 
@@ -27,10 +34,7 @@ pub fn SignIn() -> impl IntoView {
 
 			match LoginMutation::run(variables).await {
 				Ok(_) => {
-					if let Some(ctx) = use_context::<UserContext>() {
-						ctx.refetch.run(());
-					}
-					navigate("/", Default::default());
+					let _ = window().location().set_href("/");
 				}
 				Err(e) => {
 					error_message.set(Some(e.to_string()));
@@ -65,10 +69,18 @@ pub fn SignIn() -> impl IntoView {
 		});
 	};
 
+	let on_submit = move |ev: ev::SubmitEvent| {
+		ev.prevent_default();
+		on_sign_in(());
+	};
+
 	view! {
 		<div class="flex flex-col items-center justify-center h-full pt-10">
 			<h1 class="text-2xl font-bold mb-4">"Sign In"</h1>
-			<div class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
+			<form
+				on:submit=on_submit
+				class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
+			>
 				<div class="mb-4">
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
 						"Email"
@@ -96,7 +108,7 @@ pub fn SignIn() -> impl IntoView {
 
 				<div class="flex items-center justify-between">
 					<Button
-						on_click=on_sign_in
+						attr:r#type="submit"
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 						disabled=move || is_loading.get()
 					>
@@ -115,7 +127,7 @@ pub fn SignIn() -> impl IntoView {
 						"Don't have an account? Register"
 					</A>
 				</div>
-			</div>
+			</form>
 		</div>
 	}
 }

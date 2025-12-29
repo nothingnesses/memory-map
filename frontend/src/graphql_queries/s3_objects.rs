@@ -20,7 +20,7 @@ impl S3ObjectsQuery {
 	pub async fn run() -> Result<Vec<S3Object>, Error> {
 		Ok(post_graphql::<S3ObjectsQuery, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables {},
 		)
 		.await?

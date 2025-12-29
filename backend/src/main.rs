@@ -4,7 +4,7 @@ use axum::{
 	Router,
 	body::{Body, to_bytes},
 	extract::{DefaultBodyLimit, Extension, State},
-	http::{HeaderMap, HeaderValue, Request, StatusCode},
+	http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header, request::Parts},
 	middleware::{self, Next},
 	response::IntoResponse,
 	routing::{delete, get, post},
@@ -37,7 +37,7 @@ use std::{
 };
 use tokio::net::TcpListener;
 use tokio_postgres::NoTls;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
 
 // Amount of bytes to cache.
@@ -78,6 +78,9 @@ async fn caching_middleware(
 	bytes.hash(&mut hasher);
 	if let Some(auth_header) = parts.headers.get("Authorization") {
 		auth_header.hash(&mut hasher);
+	}
+	if let Some(cookie_header) = parts.headers.get(header::COOKIE) {
+		cookie_header.hash(&mut hasher);
 	}
 	let hash = hasher.finish();
 
@@ -152,6 +155,7 @@ async fn main() {
 	// Read and parse dotenv config
 	dotenv().ok();
 	let cfg = Config::from_env().unwrap();
+	let frontend_url = cfg.frontend_url.clone();
 
 	// Connect to DB
 	let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
@@ -202,7 +206,16 @@ async fn main() {
 		.data(key.clone())
 		.finish();
 
-	let permissive_cors = CorsLayer::permissive();
+	let cors = CorsLayer::new()
+		.allow_origin(AllowOrigin::predicate(
+			move |origin: &HeaderValue, _request_parts: &Parts| {
+				let origin_bytes = origin.as_bytes();
+				origin_bytes == frontend_url.as_bytes() || origin_bytes == b"http://127.0.0.1:3000"
+			},
+		))
+		.allow_methods([Method::GET, Method::POST])
+		.allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+		.allow_credentials(true);
 
 	let app = Router::new()
 		.route("/", get(graphiql))
@@ -222,7 +235,7 @@ async fn main() {
 		.route("/api/delete-s3-objects/", post(delete_s3_objects).with_state(shared_state.clone()))
 		.layer(Extension(schema))
 		.layer(Extension(key))
-		.route_layer(permissive_cors);
+		.route_layer(cors);
 
 	println!("GraphiQL IDE: http://localhost:8000");
 

@@ -14,7 +14,7 @@ impl ChangePasswordMutation {
 	pub async fn run(variables: Variables) -> Result<bool, Error> {
 		Ok(post_graphql::<ChangePasswordMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

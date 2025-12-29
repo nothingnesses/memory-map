@@ -19,7 +19,7 @@ impl ChangeEmailMutation {
 	pub async fn run(variables: Variables) -> Result<User, Error> {
 		Ok(post_graphql::<ChangeEmailMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

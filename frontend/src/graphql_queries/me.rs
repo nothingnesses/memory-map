@@ -17,7 +17,7 @@ impl MeQuery {
 	pub async fn run() -> Result<Option<User>, Error> {
 		Ok(post_graphql::<MeQuery, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables {},
 		)
 		.await?

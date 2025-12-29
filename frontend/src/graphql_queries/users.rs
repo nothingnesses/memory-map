@@ -17,7 +17,7 @@ impl UsersQuery {
 	pub async fn run() -> Result<Vec<User>, Error> {
 		Ok(post_graphql::<UsersQuery, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables {},
 		)
 		.await?

@@ -20,7 +20,7 @@ impl S3ObjectByIdQuery {
 	pub async fn run(id: i64) -> Result<S3Object, Error> {
 		Ok(post_graphql::<S3ObjectByIdQuery, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables { id },
 		)
 		.await?

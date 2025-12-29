@@ -21,7 +21,7 @@ impl UpdateS3ObjectMutation {
 	pub async fn run(variables: Variables) -> Result<S3Object, Error> {
 		Ok(post_graphql::<UpdateS3ObjectMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?
