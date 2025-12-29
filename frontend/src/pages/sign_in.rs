@@ -4,7 +4,7 @@ use crate::graphql_queries::{
 	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
 };
 use leptos::{prelude::*, task::spawn_local};
-use leptos_router::hooks::use_navigate;
+use leptos_router::{components::A, hooks::use_navigate};
 use thaw::*;
 
 #[component]
@@ -94,6 +94,11 @@ pub fn SignIn() -> impl IntoView {
 					<Button on_click=on_forgot_password appearance=ButtonAppearance::Transparent>
 						"Forgot Password?"
 					</Button>
+				</div>
+				<div class="mt-4 text-center">
+					<A href="/register" attr:class="text-blue-500 hover:text-blue-700">
+						"Don't have an account? Register"
+					</A>
 				</div>
 			</div>
 		</div>

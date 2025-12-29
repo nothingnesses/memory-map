@@ -138,13 +138,6 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																	>
 																		"Sign In"
 																	</A>
-																	<A
-																		attr:class="py-4 w-full grid place-items-center"
-																		href="/register"
-																		on:click=move |_| close_header_menu()
-																	>
-																		"Register"
-																	</A>
 																}
 																	.into_any()
 															}

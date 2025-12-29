@@ -1,5 +1,5 @@
 /* layer: properties */
-@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-border-opacity:100%;--un-text-opacity:100%;--un-translate-x:initial;--un-translate-y:initial;--un-translate-z:initial;--un-from-opacity:100%;--un-to-opacity:100%;}}
+@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-text-opacity:100%;--un-translate-x:initial;--un-translate-y:initial;--un-translate-z:initial;--un-from-opacity:100%;--un-to-opacity:100%;--un-border-opacity:100%;}}
 @property --un-text-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-border-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-bg-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
@@ -50,11 +50,15 @@
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
+--radius-none: 0;
+--default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
+--default-transition-duration: 150ms;
+--colors-white: #fff;
 --fontWeight-bold: 700;
+--colors-gray-200: oklch(92.8% 0.006 264.531);
+--colors-black: #000;
 --container-md: 28rem;
 --radius-DEFAULT: 0.25rem;
---colors-white: #fff;
---colors-gray-200: oklch(92.8% 0.006 264.531);
 --colors-gray-700: oklch(37.3% 0.034 259.733);
 --colors-green-500: oklch(72.3% 0.219 149.579);
 --colors-red-500: oklch(63.7% 0.237 25.331);
@@ -68,10 +72,6 @@
 --text-xs-fontSize: 0.75rem;
 --text-xs-lineHeight: 1rem;
 --colors-blue-700: oklch(48.8% 0.243 264.376);
---radius-none: 0;
---default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
---default-transition-duration: 150ms;
---colors-black: #000;
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);
@@ -494,12 +494,14 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .text-sm{font-size:var(--text-sm-fontSize);line-height:var(--un-leading, var(--text-sm-lineHeight));}
 .text-xl{font-size:var(--text-xl-fontSize);line-height:var(--un-leading, var(--text-xl-lineHeight));}
 .text-xs{font-size:var(--text-xs-fontSize);line-height:var(--un-leading, var(--text-xs-lineHeight));}
+.text-blue-500{color:color-mix(in srgb, var(--colors-blue-500) var(--un-text-opacity), transparent) /* oklch(62.3% 0.214 259.815) */;}
 .text-gray-700{color:color-mix(in srgb, var(--colors-gray-700) var(--un-text-opacity), transparent) /* oklch(37.3% 0.034 259.733) */;}
 .text-green-500{color:color-mix(in srgb, var(--colors-green-500) var(--un-text-opacity), transparent) /* oklch(72.3% 0.219 149.579) */;}
 .text-red-500{color:color-mix(in srgb, var(--colors-red-500) var(--un-text-opacity), transparent) /* oklch(63.7% 0.237 25.331) */;}
 .text-white,
 .group:hover .group-hover\:text-white,
 .group:hover:active .group-hover\:group-active\:text-white{color:color-mix(in srgb, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
+.hover\:text-blue-700:hover{color:color-mix(in srgb, var(--colors-blue-700) var(--un-text-opacity), transparent) /* oklch(48.8% 0.243 264.376) */;}
 .font-bold{--un-font-weight:var(--fontWeight-bold);font-weight:var(--fontWeight-bold);}
 .m-unset{margin:unset;}
 .mx-auto{margin-inline:auto;}
@@ -507,6 +509,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .mb-4{margin-bottom:calc(var(--spacing) * 4);}
 .mb-6{margin-bottom:calc(var(--spacing) * 6);}
 .mt-100px{margin-top:100px;}
+.mt-4{margin-top:calc(var(--spacing) * 4);}
 .p-0{padding:calc(var(--spacing) * 0);}
 .p-2{padding:calc(var(--spacing) * 2);}
 .p-4{padding:calc(var(--spacing) * 4);}
@@ -516,6 +519,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .py-4{padding-block:calc(var(--spacing) * 4);}
 .pt-10{padding-top:calc(var(--spacing) * 10);}
 .pt-150px{padding-top:150px;}
+.text-center{text-align:center;}
 .scroll-smooth{scroll-behavior:smooth;}
 .border{border-width:1px;}
 .border-gray-200{border-color:color-mix(in srgb, var(--colors-gray-200) var(--un-border-opacity), transparent) /* oklch(92.8% 0.006 264.531) */;}
@@ -631,12 +635,14 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .blur{--un-blur:blur(8px);filter:var(--un-blur,) var(--un-brightness,) var(--un-contrast,) var(--un-grayscale,) var(--un-hue-rotate,) var(--un-invert,) var(--un-saturate,) var(--un-sepia,) var(--un-drop-shadow,);}
 .table{display:table;}
 @supports (color: color-mix(in lab, red, red)){
+.text-blue-500{color:color-mix(in oklab, var(--colors-blue-500) var(--un-text-opacity), transparent) /* oklch(62.3% 0.214 259.815) */;}
 .text-gray-700{color:color-mix(in oklab, var(--colors-gray-700) var(--un-text-opacity), transparent) /* oklch(37.3% 0.034 259.733) */;}
 .text-green-500{color:color-mix(in oklab, var(--colors-green-500) var(--un-text-opacity), transparent) /* oklch(72.3% 0.219 149.579) */;}
 .text-red-500{color:color-mix(in oklab, var(--colors-red-500) var(--un-text-opacity), transparent) /* oklch(63.7% 0.237 25.331) */;}
 .text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .group:hover .group-hover\:text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .group:hover:active .group-hover\:group-active\:text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
+.hover\:text-blue-700:hover{color:color-mix(in oklab, var(--colors-blue-700) var(--un-text-opacity), transparent) /* oklch(48.8% 0.243 264.376) */;}
 .border-gray-200{border-color:color-mix(in oklab, var(--colors-gray-200) var(--un-border-opacity), transparent) /* oklch(92.8% 0.006 264.531) */;}
 .bg-black\/40{background-color:color-mix(in oklab, var(--colors-black) 40%, transparent) /* #000 */;}
 .bg-blue-500{background-color:color-mix(in oklab, var(--colors-blue-500) var(--un-bg-opacity), transparent) /* oklch(62.3% 0.214 259.815) */;}
