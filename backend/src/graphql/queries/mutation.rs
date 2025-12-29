@@ -1,13 +1,20 @@
 use crate::{
 	ContextWrapper, SharedState,
-	graphql::objects::{location::Location, s3_object::S3Object},
+	graphql::objects::{location::Location, s3_object::S3Object, user::User},
+};
+use argon2::{
+	Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString
 };
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
+use axum::http::header::SET_COOKIE;
+use axum_extra::extract::cookie::{Cookie, SameSite};
 use deadpool_postgres::{Client, Manager};
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
-use std::sync::Arc;
+use rand::rngs::OsRng;
+use std::sync::{Arc, Mutex};
+use time::Duration;
 use tracing;
 
 const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
@@ -232,5 +239,99 @@ impl Mutation {
 		state.update_last_modified();
 
 		Ok(result)
+	}
+
+	async fn register(
+		&self,
+		ctx: &Context<'_>,
+		email: String,
+		password: String,
+	) -> Result<User, GraphQLError> {
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+
+		if !state.config.enable_registration {
+			return Err(GraphQLError::new("Registration is disabled"));
+		}
+
+		let salt = SaltString::generate(&mut OsRng);
+		let argon2 = Argon2::default();
+		let password_hash = argon2
+			.hash_password(password.as_bytes(), &salt)
+			.map_err(|e| GraphQLError::new(format!("Hashing error: {}", e)))?
+			.to_string();
+
+		let statement = client
+			.prepare_cached(
+				"INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *",
+			)
+			.await?;
+
+		let row = client
+			.query_one(&statement, &[&email, &password_hash])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+		User::try_from(row)
+	}
+
+	async fn login(
+		&self,
+		ctx: &Context<'_>,
+		email: String,
+		password: String,
+	) -> Result<User, GraphQLError> {
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+
+		let statement = client
+			.prepare_cached("SELECT * FROM users WHERE email = $1")
+			.await?;
+
+		let row = client
+			.query_opt(&statement, &[&email])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.ok_or_else(|| GraphQLError::new("Invalid email or password"))?;
+
+		let user = User::try_from(row)?;
+		let password_hash_str: String = client
+			.query_one("SELECT password_hash FROM users WHERE id = $1", &[&user.id.parse::<i64>().unwrap()])
+			.await?
+			.get("password_hash");
+
+		let parsed_hash = PasswordHash::new(&password_hash_str)
+			.map_err(|e| GraphQLError::new(format!("Hash parse error: {}", e)))?;
+
+		Argon2::default()
+			.verify_password(password.as_bytes(), &parsed_hash)
+			.map_err(|_| GraphQLError::new("Invalid email or password"))?;
+
+		// Set cookie
+		let cookie = Cookie::build(("auth_token", user.id.to_string()))
+			.http_only(true)
+			.same_site(SameSite::Lax)
+			.path("/")
+			.build();
+
+		let cookies = ctx.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()?;
+		cookies.lock().unwrap().push(cookie);
+
+		Ok(user)
+	}
+
+	async fn logout(&self, ctx: &Context<'_>) -> Result<bool, GraphQLError> {
+		let cookie = Cookie::build(("auth_token", ""))
+			.http_only(true)
+			.same_site(SameSite::Lax)
+			.path("/")
+			.max_age(Duration::seconds(0))
+			.build();
+
+		let cookies = ctx.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()?;
+		cookies.lock().unwrap().push(cookie);
+
+		Ok(true)
 	}
 }

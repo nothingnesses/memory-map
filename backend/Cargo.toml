@@ -31,4 +31,5 @@ argon2 = "0.5"
 axum-extra = { version = "0.10", features = ["cookie", "cookie-signed", "cookie-private"] }
 lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls", "builder"] }
 rand = "0.8"
+time = "0.3"
 

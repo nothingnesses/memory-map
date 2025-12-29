@@ -22,7 +22,7 @@ use std::{
 pub mod controllers;
 pub mod graphql;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, Clone)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
 	pub enable_registration: bool,
@@ -56,6 +56,7 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub last_modified: AtomicU64,
 	pub response_cache: Cache<u64, Bytes>,
 	pub key: Key,
+	pub config: Config,
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {

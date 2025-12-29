@@ -9,7 +9,7 @@ use axum::{
 	response::IntoResponse,
 	routing::{delete, get, post},
 };
-use axum_extra::extract::cookie::{Key, PrivateCookieJar};
+use axum_extra::extract::cookie::{Cookie, CookieJar, Key, PrivateCookieJar};
 use backend::{
 	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
 	controllers::api::{
@@ -30,7 +30,7 @@ use std::{
 	hash::{Hash, Hasher},
 	ops::DerefMut,
 	sync::{
-		Arc,
+		Arc, Mutex,
 		atomic::{AtomicU64, Ordering},
 	},
 	time::{Duration, SystemTime, UNIX_EPOCH},
@@ -120,7 +120,7 @@ async fn graphql_handler(
 	Extension(schema): Extension<Schema<Query, Mutation, EmptySubscription>>,
 	jar: PrivateCookieJar,
 	req: GraphQLRequest,
-) -> GraphQLResponse {
+) -> (PrivateCookieJar, GraphQLResponse) {
 	let mut req = req.into_inner();
 
 	if let Some(cookie) = jar.get("auth_token") {
@@ -129,7 +129,19 @@ async fn graphql_handler(
 		}
 	}
 
-	schema.execute(req).await.into()
+	let cookies = Arc::new(Mutex::new(Vec::<Cookie<'static>>::new()));
+	req = req.data(cookies.clone());
+
+	let response = schema.execute(req).await;
+
+	let mut jar = jar;
+	if let Ok(cookies) = cookies.lock() {
+		for cookie in cookies.iter() {
+			jar = jar.add(cookie.clone());
+		}
+	}
+
+	(jar, response.into())
 }
 
 #[tokio::main]
@@ -174,7 +186,7 @@ async fn main() {
 	// Set up GraphQL
 	let key = Key::from(cfg.cookie_secret.as_bytes());
 	let shared_state =
-		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache, key: key.clone() });
+		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache, key: key.clone(), config: cfg });
 
 	let app_state = AppState { inner: shared_state.clone() };
 
