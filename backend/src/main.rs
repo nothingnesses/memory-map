@@ -185,8 +185,15 @@ async fn main() {
 
 	// Set up GraphQL
 	let key = Key::from(cfg.cookie_secret.as_bytes());
-	let shared_state =
-		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache, key: key.clone(), config: cfg });
+	let shared_state = Arc::new(SharedState {
+		pool,
+		minio_client,
+		bucket_name,
+		last_modified,
+		response_cache,
+		key: key.clone(),
+		config: cfg,
+	});
 
 	let app_state = AppState { inner: shared_state.clone() };
 
@@ -198,10 +205,10 @@ async fn main() {
 	let permissive_cors = CorsLayer::permissive();
 
 	let app = Router::new()
+		.route("/", get(graphiql))
 		.route(
 			"/",
-			get(graphiql)
-				.post(graphql_handler)
+			post(graphql_handler)
 				.with_state(app_state.clone())
 				.layer(middleware::from_fn_with_state(app_state.clone(), caching_middleware)),
 		)
