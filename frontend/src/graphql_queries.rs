@@ -1,4 +1,14 @@
+pub mod admin_update_user;
+pub mod change_email;
+pub mod change_password;
+pub mod login;
+pub mod logout;
+pub mod me;
+pub mod register;
+pub mod request_password_reset;
+pub mod reset_password;
 pub mod s3_object_by_id;
 pub mod s3_objects;
 pub mod update_s3_object;
 pub mod upsert_s3_object;
+pub mod users;

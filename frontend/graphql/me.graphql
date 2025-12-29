@@ -1,4 +1,4 @@
-query Me {
+query MeQuery {
   me {
     id
     email

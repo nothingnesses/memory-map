@@ -1,4 +1,4 @@
-mutation UpdateS3ObjectQuery(
+mutation UpdateS3ObjectMutation(
 	$id: ID!
 	$name: String!
 	$made_on: String

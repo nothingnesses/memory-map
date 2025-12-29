@@ -1,6 +1,6 @@
 use crate::{
-	graphql_queries::update_s3_object::update_s3_object_query::{
-		UpdateS3ObjectQueryUpdateS3Object as S3Object, Variables,
+	graphql_queries::update_s3_object::update_s3_object_mutation::{
+		UpdateS3ObjectMutationUpdateS3Object as S3Object, Variables,
 	},
 	post_graphql,
 };
@@ -13,13 +13,13 @@ use leptos::error::Error;
 	query_path = "graphql/updateS3Object.graphql",
 	response_derives = "Clone,Debug"
 )]
-pub struct UpdateS3ObjectQuery;
+pub struct UpdateS3ObjectMutation;
 
-impl UpdateS3ObjectQuery {
+impl UpdateS3ObjectMutation {
 	// @todo Add better error-handling
 	/// Executes the UpdateS3ObjectQuery against the GraphQL API.
 	pub async fn run(variables: Variables) -> Result<S3Object, Error> {
-		Ok(post_graphql::<UpdateS3ObjectQuery, _>(
+		Ok(post_graphql::<UpdateS3ObjectMutation, _>(
 			&reqwest::Client::new(),
 			"http://localhost:8000/",
 			variables,

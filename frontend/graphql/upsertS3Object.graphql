@@ -1,4 +1,4 @@
-mutation UpsertS3ObjectQuery(
+mutation UpsertS3ObjectMutation(
 	$name: String!
 	$made_on: String
 	$location: LocationInput
