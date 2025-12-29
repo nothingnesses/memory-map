@@ -14,12 +14,15 @@ axum-extra = { version = "0.10", features = [
 	"cookie-signed"
 ] }
 axum-macros = "0.5"
+blake3 = "1.5"
 config = "0.15"
 deadpool = "0.12"
 deadpool-postgres = { version = "0.14", features = ["rt_tokio_1", "serde"] }
 dotenvy = "0.15"
+email_address = "0.2"
 futures = "0.3"
 futures-util = "0.3"
+hex = "0.4"
 jiff = "0.2"
 lettre = { version = "0.11", features = [
 	"builder",
