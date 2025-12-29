@@ -1,5 +1,5 @@
 use crate::graphql_queries::register::{RegisterMutation, register_mutation};
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{ev, prelude::*, task::spawn_local};
 use leptos_router::hooks::use_navigate;
 use thaw::*;
 
@@ -40,10 +40,18 @@ pub fn Register() -> impl IntoView {
 		});
 	};
 
+	let on_submit = move |ev: ev::SubmitEvent| {
+		ev.prevent_default();
+		on_register(());
+	};
+
 	view! {
 		<div class="flex flex-col items-center justify-center h-full pt-10">
 			<h1 class="text-2xl font-bold mb-4">"Register"</h1>
-			<div class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
+			<form
+				on:submit=on_submit
+				class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
+			>
 				<div class="mb-4">
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
 						"Email"
@@ -82,14 +90,14 @@ pub fn Register() -> impl IntoView {
 
 				<div class="flex items-center justify-between">
 					<Button
-						on_click=on_register
+						attr:r#type="submit"
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 						disabled=move || is_loading.get()
 					>
 						"Register"
 					</Button>
 				</div>
-			</div>
+			</form>
 		</div>
 	}
 }

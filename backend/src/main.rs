@@ -4,7 +4,7 @@ use axum::{
 	Router,
 	body::{Body, to_bytes},
 	extract::{DefaultBodyLimit, Extension, State},
-	http::{HeaderMap, HeaderValue, Request, StatusCode},
+	http::{HeaderMap, HeaderValue, Request, StatusCode, header},
 	middleware::{self, Next},
 	response::IntoResponse,
 	routing::{delete, get, post},
@@ -78,6 +78,9 @@ async fn caching_middleware(
 	bytes.hash(&mut hasher);
 	if let Some(auth_header) = parts.headers.get("Authorization") {
 		auth_header.hash(&mut hasher);
+	}
+	if let Some(cookie_header) = parts.headers.get(header::COOKIE) {
+		cookie_header.hash(&mut hasher);
 	}
 	let hash = hasher.finish();
 
