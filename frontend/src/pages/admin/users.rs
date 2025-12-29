@@ -1,6 +1,9 @@
 use crate::graphql_queries::admin_update_user::{
 	AdminUpdateUserMutation, admin_update_user_mutation,
 };
+use crate::graphql_queries::request_password_reset::{
+	RequestPasswordResetMutation, request_password_reset_mutation,
+};
 use crate::graphql_queries::users::{UsersQuery, users_query::UsersQueryUsers as User};
 use leptos::{prelude::*, task::spawn_local};
 use thaw::*;
@@ -18,6 +21,13 @@ pub fn Users() -> impl IntoView {
 			let variables = admin_update_user_mutation::Variables { id: id.into(), role, email };
 			let _ = AdminUpdateUserMutation::run(variables).await;
 			trigger.update(|n| *n += 1);
+		});
+	};
+
+	let on_reset_password = move |email: String| {
+		spawn_local(async move {
+			let variables = request_password_reset_mutation::Variables { email };
+			let _ = RequestPasswordResetMutation::run(variables).await;
 		});
 	};
 
@@ -53,6 +63,7 @@ pub fn Users() -> impl IntoView {
 											let email = RwSignal::new(user.email.clone());
 											let current_role = format!("{:?}", user.role);
 											let update_action = on_update_user.clone();
+											let reset_action = on_reset_password.clone();
 											let user_id = user.id.clone();
 											let user_role = user.role.clone();
 
@@ -65,14 +76,19 @@ pub fn Users() -> impl IntoView {
 													<TableCell>{current_role}</TableCell>
 													<TableCell>{user.created_at}</TableCell>
 													<TableCell>
-														<Button on_click=move |_| {
-															let r = if format!("{:?}", user_role) == "Admin" {
-																"user"
-															} else {
-																"admin"
-															};
-															update_action(user_id.clone(), r.to_string(), email.get())
-														}>"Toggle Role / Update Email"</Button>
+														<div class="flex gap-2">
+															<Button on_click=move |_| {
+																let r = if format!("{:?}", user_role) == "Admin" {
+																	"user"
+																} else {
+																	"admin"
+																};
+																update_action(user_id.clone(), r.to_string(), email.get())
+															}>"Toggle Role / Update Email"</Button>
+															<Button on_click=move |_| {
+																reset_action(email.get())
+															}>"Reset Password"</Button>
+														</div>
 													</TableCell>
 												</TableRow>
 											}
