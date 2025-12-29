@@ -27,3 +27,8 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+argon2 = "0.5"
+axum-extra = { version = "0.10", features = ["cookie", "cookie-signed"] }
+lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls", "builder"] }
+rand = "0.8"
+
