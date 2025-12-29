@@ -20,6 +20,7 @@ use std::{
 };
 
 pub mod controllers;
+pub mod email;
 pub mod graphql;
 
 #[derive(Debug, serde::Deserialize, Clone)]

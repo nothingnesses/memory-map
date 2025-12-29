@@ -1,9 +1,11 @@
 use crate::{
-	ContextWrapper, SharedState,
-	graphql::objects::{location::Location, s3_object::S3Object, user::User},
+	ContextWrapper, SharedState, UserId,
+	email::send_password_reset_email,
+	graphql::objects::{location::Location, s3_object::S3Object, user::{User, UserRole}},
 };
 use argon2::{
-	Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString
+	Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+	password_hash::SaltString,
 };
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum::http::header::SET_COOKIE;
@@ -12,7 +14,7 @@ use deadpool_postgres::{Client, Manager};
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
-use rand::rngs::OsRng;
+use rand::{Rng, distributions::Alphanumeric, rngs::OsRng};
 use std::sync::{Arc, Mutex};
 use time::Duration;
 use tracing;
@@ -333,5 +335,211 @@ impl Mutation {
 		cookies.lock().unwrap().push(cookie);
 
 		Ok(true)
+	}
+
+	async fn change_password(
+		&self,
+		ctx: &Context<'_>,
+		old_password: String,
+		new_password: String,
+	) -> Result<bool, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+
+		let password_hash_str: String = client
+			.query_one("SELECT password_hash FROM users WHERE id = $1", &[&user_id.0])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.get("password_hash");
+
+		let parsed_hash = PasswordHash::new(&password_hash_str)
+			.map_err(|e| GraphQLError::new(format!("Hash parse error: {}", e)))?;
+
+		Argon2::default()
+			.verify_password(old_password.as_bytes(), &parsed_hash)
+			.map_err(|_| GraphQLError::new("Invalid old password"))?;
+
+		let salt = SaltString::generate(&mut OsRng);
+		let new_hash = Argon2::default()
+			.hash_password(new_password.as_bytes(), &salt)
+			.map_err(|e| GraphQLError::new(format!("Hashing error: {}", e)))?
+			.to_string();
+
+		client
+			.execute(
+				"UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2",
+				&[&new_hash, &user_id.0],
+			)
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+		Ok(true)
+	}
+
+	async fn change_email(
+		&self,
+		ctx: &Context<'_>,
+		new_email: String,
+	) -> Result<User, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+
+		// Check if email is taken
+		let count: i64 = client
+			.query_one("SELECT COUNT(*) FROM users WHERE email = $1", &[&new_email])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.get(0);
+
+		if count > 0 {
+			// Check if it's the same user
+			let current_email: String = client
+				.query_one("SELECT email FROM users WHERE id = $1", &[&user_id.0])
+				.await?
+				.get("email");
+			
+			if current_email == new_email {
+				// No change
+				return User::by_id(ctx, user_id.0).await?.ok_or_else(|| GraphQLError::new("User not found"));
+			}
+			return Err(GraphQLError::new("Email already in use"));
+		}
+
+		let row = client
+			.query_one(
+				"UPDATE users SET email = $1, updated_at = now() WHERE id = $2 RETURNING *",
+				&[&new_email, &user_id.0],
+			)
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+		User::try_from(row)
+	}
+
+	async fn request_password_reset(
+		&self,
+		ctx: &Context<'_>,
+		email: String,
+	) -> Result<bool, GraphQLError> {
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+
+		let user_opt = User::by_email(ctx, &email).await?;
+		if let Some(user) = user_opt {
+			let token: String = rand::thread_rng()
+				.sample_iter(&Alphanumeric)
+				.take(32)
+				.map(char::from)
+				.collect();
+
+			// Expires in 10 minutes
+			client
+				.execute(
+					"INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES ($1, $2, now() + interval '10 minutes')",
+					&[&token, &user.id.parse::<i64>().unwrap()],
+				)
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+			// Send email
+			// We spawn this to not block the request, but we need to handle errors.
+			// For now, let's await it.
+			send_password_reset_email(&state.config, &email, &token).await.map_err(|e| {
+				tracing::error!("Failed to send email: {}", e);
+				GraphQLError::new("Failed to send email")
+			})?;
+		}
+
+		// Always return true to prevent user enumeration
+		Ok(true)
+	}
+
+	async fn reset_password(
+		&self,
+		ctx: &Context<'_>,
+		token: String,
+		new_password: String,
+	) -> Result<bool, GraphQLError> {
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+
+		let row_opt = client
+			.query_opt(
+				"SELECT user_id FROM password_reset_tokens WHERE token = $1 AND expires_at > now()",
+				&[&token],
+			)
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+		if let Some(row) = row_opt {
+			let user_id: i64 = row.get("user_id");
+
+			let salt = SaltString::generate(&mut OsRng);
+			let new_hash = Argon2::default()
+				.hash_password(new_password.as_bytes(), &salt)
+				.map_err(|e| GraphQLError::new(format!("Hashing error: {}", e)))?
+				.to_string();
+
+			client
+				.execute(
+					"UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2",
+					&[&new_hash, &user_id],
+				)
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+			// Delete token
+			client
+				.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token])
+				.await?;
+
+			Ok(true)
+		} else {
+			Err(GraphQLError::new("Invalid or expired token"))
+		}
+	}
+
+	async fn admin_update_user(
+		&self,
+		ctx: &Context<'_>,
+		id: ID,
+		role: String,
+		email: String,
+	) -> Result<User, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+
+		// Check if current user is admin
+		let current_user = User::by_id(ctx, user_id.0).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		if current_user.role != UserRole::Admin {
+			return Err(GraphQLError::new("Forbidden"));
+		}
+
+		let target_id = id.parse::<i64>().map_err(|_| GraphQLError::new("Invalid ID"))?;
+
+		// Check email uniqueness if changed
+		let count: i64 = client
+			.query_one("SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2", &[&email, &target_id])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.get(0);
+
+		if count > 0 {
+			return Err(GraphQLError::new("Email already in use"));
+		}
+
+		let row = client
+			.query_one(
+				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING *",
+				&[&role, &email, &target_id],
+			)
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+
+		User::try_from(row)
 	}
 }
