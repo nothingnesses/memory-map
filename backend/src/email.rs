@@ -15,8 +15,8 @@ pub async fn send_password_reset_email(
 		.subject("Password Reset Request")
 		.header(ContentType::TEXT_PLAIN)
 		.body(format!(
-			"Click the link below to reset your password:\n\nhttp://localhost:3000/reset-password?token={}\n\nThis link expires in 10 minutes.",
-			token
+			"Click the link below to reset your password:\n\n{}/reset-password?token={}\n\nThis link expires in 10 minutes.",
+			config.frontend_url, token
 		))?;
 
 	let creds = Credentials::new(config.smtp_user.clone(), config.smtp_pass.clone());

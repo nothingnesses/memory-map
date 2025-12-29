@@ -11,6 +11,7 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_ha
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use deadpool_postgres::{Client, Manager};
+use email_address::EmailAddress;
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
@@ -257,6 +258,10 @@ impl Mutation {
 			return Err(GraphQLError::new("Registration is disabled"));
 		}
 
+		if !EmailAddress::is_valid(&email) {
+			return Err(GraphQLError::new("Invalid email format"));
+		}
+
 		let salt = SaltString::generate(&mut OsRng);
 		let argon2 = Argon2::default();
 		let password_hash = argon2
@@ -388,6 +393,10 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
+		if !EmailAddress::is_valid(&new_email) {
+			return Err(GraphQLError::new("Invalid email format"));
+		}
+
 		// Check if email is taken
 		let count: i64 = client
 			.query_one("SELECT COUNT(*) FROM users WHERE email = $1", &[&new_email])
@@ -436,11 +445,13 @@ impl Mutation {
 			let token: String =
 				rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
 
+			let token_hash = blake3::hash(token.as_bytes()).to_string();
+
 			// Expires in 10 minutes
 			client
 				.execute(
 					"INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES ($1, $2, now() + interval '10 minutes')",
-					&[&token, &user.id.parse::<i64>().unwrap()],
+					&[&token_hash, &user.id.parse::<i64>().unwrap()],
 				)
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
@@ -467,10 +478,12 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
+		let token_hash = blake3::hash(token.as_bytes()).to_string();
+
 		let row_opt = client
 			.query_opt(
 				"SELECT user_id FROM password_reset_tokens WHERE token = $1 AND expires_at > now()",
-				&[&token],
+				&[&token_hash],
 			)
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
@@ -493,7 +506,7 @@ impl Mutation {
 				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
 
 			// Delete token
-			client.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token]).await?;
+			client.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token_hash]).await?;
 
 			Ok(true)
 		} else {
@@ -521,6 +534,10 @@ impl Mutation {
 		}
 
 		let target_id = id.parse::<i64>().map_err(|_| GraphQLError::new("Invalid ID"))?;
+
+		if !EmailAddress::is_valid(&email) {
+			return Err(GraphQLError::new("Invalid email format"));
+		}
 
 		// Check email uniqueness if changed
 		let count: i64 = client
