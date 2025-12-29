@@ -1,5 +1,10 @@
 use crate::components::header::Header;
-use crate::pages::{home::Home, objects::Objects};
+use crate::pages::{
+	account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
+	reset_password::ResetPassword, sign_in::SignIn,
+};
+use auth::UserContext;
+use graphql_queries::me::MeQuery;
 use leptos::{
 	ev, html,
 	prelude::*,
@@ -12,6 +17,7 @@ use std::ops::{Add, Deref, Rem, Sub};
 use thaw::{ConfigProvider, ToasterProvider};
 
 // Modules
+pub mod auth;
 mod components;
 pub mod graphql_queries;
 mod pages;
@@ -124,6 +130,17 @@ pub fn App() -> impl IntoView {
 	// Provides context that manages stylesheets, titles, meta tags, etc.
 	provide_meta_context();
 
+	let trigger = RwSignal::new(());
+	let user_resource = LocalResource::new(move || {
+		trigger.get();
+		async move { MeQuery::run().await.ok().flatten() }
+	});
+
+	provide_context(UserContext {
+		user: user_resource,
+		refetch: Callback::new(move |_| trigger.set(())),
+	});
+
 	view! {
 		<ConfigProvider>
 			<ToasterProvider>
@@ -141,6 +158,11 @@ pub fn App() -> impl IntoView {
 						<Routes fallback=|| view! { NotFound }>
 							<Route path=path!("/") view=Home />
 							<Route path=path!("/objects") view=Objects />
+							<Route path=path!("/sign-in") view=SignIn />
+							<Route path=path!("/register") view=Register />
+							<Route path=path!("/account") view=Account />
+							<Route path=path!("/reset-password") view=ResetPassword />
+							<Route path=path!("/admin/users") view=Users />
 						</Routes>
 					</Shell>
 				</Router>

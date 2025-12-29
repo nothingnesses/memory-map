@@ -1,8 +1,8 @@
-// pub mod account;
-// pub mod admin;
+pub mod account;
+pub mod admin;
 pub mod home;
 pub mod not_found;
 pub mod objects;
-// pub mod register;
-// pub mod reset_password;
+pub mod register;
+pub mod reset_password;
 pub mod sign_in;

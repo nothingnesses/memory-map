@@ -1,6 +1,7 @@
+use crate::auth::UserContext;
 use crate::graphql_queries::login::{LoginMutation, login_mutation};
 use crate::graphql_queries::request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation};
-use leptos::prelude::*;
+use leptos::{prelude::*, task::spawn_local};
 use leptos_router::hooks::use_navigate;
 use thaw::*;
 
@@ -15,6 +16,7 @@ pub fn SignIn() -> impl IntoView {
 	let on_sign_in = move |_| {
 		let email_val = email.get();
 		let password_val = password.get();
+		let navigate = navigate.clone();
 
 		spawn_local(async move {
 			let variables = login_mutation::Variables {
@@ -24,7 +26,9 @@ pub fn SignIn() -> impl IntoView {
 
 			match LoginMutation::run(variables).await {
 				Ok(_) => {
-					// Redirect to home
+					if let Some(ctx) = use_context::<UserContext>() {
+						ctx.refetch.run(());
+					}
 					navigate("/", Default::default());
 				}
 				Err(e) => {
@@ -72,7 +76,7 @@ pub fn SignIn() -> impl IntoView {
 					<label class="block text-gray-700 text-sm font-bold mb-2" for="password">
 						"Password"
 					</label>
-					<Input value=password placeholder="Password" attr:type="password" />
+					<Input value=password placeholder="Password" attr:r#type="password" />
 				</div>
 
 				<Show when=move || error_message.get().is_some()>
@@ -86,7 +90,7 @@ pub fn SignIn() -> impl IntoView {
 					<Button on_click=on_sign_in class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
 						"Sign In"
 					</Button>
-					<Button on_click=on_forgot_password appearance=ButtonAppearance::Link>
+					<Button on_click=on_forgot_password appearance=ButtonAppearance::Transparent>
 						"Forgot Password?"
 					</Button>
 				</div>
