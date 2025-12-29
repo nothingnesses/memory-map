@@ -20,6 +20,12 @@ pub mod graphql;
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
+	pub enable_registration: bool,
+	pub smtp_host: String,
+	pub smtp_user: String,
+	pub smtp_pass: String,
+	pub smtp_from: String,
+	pub cookie_secret: String,
 }
 
 impl Config {
