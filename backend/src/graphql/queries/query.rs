@@ -1,10 +1,30 @@
-use crate::graphql::objects::s3_object::S3Object;
+use crate::{UserId, graphql::objects::{s3_object::S3Object, user::{User, UserRole}}};
 use async_graphql::{Context, Error as GraphQLError, Object};
 
 pub struct Query;
 
 #[Object]
 impl Query {
+	async fn me(&self, ctx: &Context<'_>) -> Result<Option<User>, GraphQLError> {
+		if let Some(user_id) = ctx.data_opt::<UserId>() {
+			User::by_id(ctx, user_id.0).await
+		} else {
+			Ok(None)
+		}
+	}
+
+	async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>, GraphQLError> {
+		// Check if user is admin
+		if let Some(user_id) = ctx.data_opt::<UserId>() {
+			if let Some(user) = User::by_id(ctx, user_id.0).await? {
+				if user.role == UserRole::Admin {
+					return User::all(ctx).await;
+				}
+			}
+		}
+		Err(GraphQLError::new("Unauthorized"))
+	}
+
 	async fn s3_object_by_id(
 		&self,
 		ctx: &Context<'_>,

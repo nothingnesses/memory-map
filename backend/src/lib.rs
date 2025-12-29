@@ -42,6 +42,8 @@ pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
 refinery::embed_migrations!("migrations");
 
+pub struct UserId(pub i64);
+
 pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
 	pub minio_client: s3::Client,
