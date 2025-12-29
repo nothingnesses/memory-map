@@ -1,14 +1,14 @@
 use crate::{
 	ContextWrapper, SharedState, UserId,
 	email::send_password_reset_email,
-	graphql::objects::{location::Location, s3_object::S3Object, user::{User, UserRole}},
+	graphql::objects::{
+		location::Location,
+		s3_object::S3Object,
+		user::{User, UserRole},
+	},
 };
-use argon2::{
-	Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-	password_hash::SaltString,
-};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
-use axum::http::header::SET_COOKIE;
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use deadpool_postgres::{Client, Manager};
 use futures::future::join_all;
@@ -265,9 +265,7 @@ impl Mutation {
 			.to_string();
 
 		let statement = client
-			.prepare_cached(
-				"INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *",
-			)
+			.prepare_cached("INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *")
 			.await?;
 
 		let row = client
@@ -287,9 +285,7 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		let statement = client
-			.prepare_cached("SELECT * FROM users WHERE email = $1")
-			.await?;
+		let statement = client.prepare_cached("SELECT * FROM users WHERE email = $1").await?;
 
 		let row = client
 			.query_opt(&statement, &[&email])
@@ -299,7 +295,10 @@ impl Mutation {
 
 		let user = User::try_from(row)?;
 		let password_hash_str: String = client
-			.query_one("SELECT password_hash FROM users WHERE id = $1", &[&user.id.parse::<i64>().unwrap()])
+			.query_one(
+				"SELECT password_hash FROM users WHERE id = $1",
+				&[&user.id.parse::<i64>().unwrap()],
+			)
 			.await?
 			.get("password_hash");
 
@@ -323,7 +322,10 @@ impl Mutation {
 		Ok(user)
 	}
 
-	async fn logout(&self, ctx: &Context<'_>) -> Result<bool, GraphQLError> {
+	async fn logout(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<bool, GraphQLError> {
 		let cookie = Cookie::build(("auth_token", ""))
 			.http_only(true)
 			.same_site(SameSite::Lax)
@@ -399,10 +401,12 @@ impl Mutation {
 				.query_one("SELECT email FROM users WHERE id = $1", &[&user_id.0])
 				.await?
 				.get("email");
-			
+
 			if current_email == new_email {
 				// No change
-				return User::by_id(ctx, user_id.0).await?.ok_or_else(|| GraphQLError::new("User not found"));
+				return User::by_id(ctx, user_id.0)
+					.await?
+					.ok_or_else(|| GraphQLError::new("User not found"));
 			}
 			return Err(GraphQLError::new("Email already in use"));
 		}
@@ -429,11 +433,8 @@ impl Mutation {
 
 		let user_opt = User::by_email(ctx, &email).await?;
 		if let Some(user) = user_opt {
-			let token: String = rand::thread_rng()
-				.sample_iter(&Alphanumeric)
-				.take(32)
-				.map(char::from)
-				.collect();
+			let token: String =
+				rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
 
 			// Expires in 10 minutes
 			client
@@ -492,9 +493,7 @@ impl Mutation {
 				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
 
 			// Delete token
-			client
-				.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token])
-				.await?;
+			client.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token]).await?;
 
 			Ok(true)
 		} else {
@@ -514,7 +513,9 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 
 		// Check if current user is admin
-		let current_user = User::by_id(ctx, user_id.0).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let current_user = User::by_id(ctx, user_id.0)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
 		if current_user.role != UserRole::Admin {
 			return Err(GraphQLError::new("Forbidden"));
 		}
@@ -523,7 +524,10 @@ impl Mutation {
 
 		// Check email uniqueness if changed
 		let count: i64 = client
-			.query_one("SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2", &[&email, &target_id])
+			.query_one(
+				"SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2",
+				&[&email, &target_id],
+			)
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
 			.get(0);

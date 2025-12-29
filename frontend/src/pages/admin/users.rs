@@ -1,10 +1,8 @@
-use crate::graphql_queries::admin_update_user::{
-	AdminUpdateUserMutation, admin_update_user_mutation,
+use crate::graphql_queries::{
+	admin_update_user::{AdminUpdateUserMutation, admin_update_user_mutation},
+	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+	users::UsersQuery,
 };
-use crate::graphql_queries::request_password_reset::{
-	RequestPasswordResetMutation, request_password_reset_mutation,
-};
-use crate::graphql_queries::users::{UsersQuery, users_query::UsersQueryUsers as User};
 use leptos::{prelude::*, task::spawn_local};
 use thaw::*;
 

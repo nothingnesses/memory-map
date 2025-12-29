@@ -1,6 +1,6 @@
 mutation ChangeEmailMutation($newEmail: String!) {
-  changeEmail(newEmail: $newEmail) {
-    id
-    email
-  }
+	changeEmail(newEmail: $newEmail) {
+		id
+		email
+	}
 }

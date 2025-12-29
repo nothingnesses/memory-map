@@ -1,8 +1,8 @@
 query UsersQuery {
-  users {
-    id
-    email
-    role
-    createdAt
-  }
+	users {
+		id
+		email
+		role
+		createdAt
+	}
 }

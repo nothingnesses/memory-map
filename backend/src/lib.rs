@@ -1,5 +1,7 @@
-use async_graphql::http::GraphiQLSource;
-use async_graphql::{Context, Error as GraphQLError};
+use async_graphql::{
+	http::GraphiQLSource,
+	{Context, Error as GraphQLError},
+};
 use axum::{
 	body::Bytes,
 	extract::FromRef,
@@ -12,10 +14,7 @@ use minio::s3;
 use moka::future::Cache;
 use std::{
 	fmt,
-	sync::{
-		Arc,
-		atomic::AtomicU64,
-	},
+	sync::{Arc, atomic::AtomicU64},
 	time::{SystemTime, UNIX_EPOCH},
 };
 

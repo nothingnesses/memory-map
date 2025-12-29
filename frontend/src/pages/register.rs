@@ -23,10 +23,8 @@ pub fn Register() -> impl IntoView {
 		}
 
 		spawn_local(async move {
-			let variables = register_mutation::Variables {
-				email: email_val,
-				password: password_val,
-			};
+			let variables =
+				register_mutation::Variables { email: email_val, password: password_val };
 
 			match RegisterMutation::run(variables).await {
 				Ok(_) => {
@@ -56,10 +54,17 @@ pub fn Register() -> impl IntoView {
 					<Input value=password placeholder="Password" attr:r#type="password" />
 				</div>
 				<div class="mb-6">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="confirm_password">
+					<label
+						class="block text-gray-700 text-sm font-bold mb-2"
+						for="confirm_password"
+					>
 						"Confirm Password"
 					</label>
-					<Input value=confirm_password placeholder="Confirm Password" attr:r#type="password" />
+					<Input
+						value=confirm_password
+						placeholder="Confirm Password"
+						attr:r#type="password"
+					/>
 				</div>
 
 				<Show when=move || error_message.get().is_some()>
@@ -67,7 +72,10 @@ pub fn Register() -> impl IntoView {
 				</Show>
 
 				<div class="flex items-center justify-between">
-					<Button on_click=on_register class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+					<Button
+						on_click=on_register
+						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+					>
 						"Register"
 					</Button>
 				</div>

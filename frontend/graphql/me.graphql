@@ -1,7 +1,7 @@
 query MeQuery {
-  me {
-    id
-    email
-    role
-  }
+	me {
+		id
+		email
+		role
+	}
 }

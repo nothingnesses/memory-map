@@ -8,7 +8,7 @@ pub fn ResetPassword() -> impl IntoView {
 	let navigate = use_navigate();
 	let query = use_query_map();
 	let token = move || query.get().get("token").map(|s| s.clone()).unwrap_or_default();
-	
+
 	let new_password = RwSignal::new(String::new());
 	let confirm_password = RwSignal::new(String::new());
 	let error_message = RwSignal::new(Option::<String>::None);
@@ -31,14 +31,14 @@ pub fn ResetPassword() -> impl IntoView {
 		}
 
 		spawn_local(async move {
-			let variables = reset_password_mutation::Variables {
-				token: token_val,
-				new_password: password_val,
-			};
+			let variables =
+				reset_password_mutation::Variables { token: token_val, new_password: password_val };
 
 			match ResetPasswordMutation::run(variables).await {
 				Ok(_) => {
-					success_message.set(Some("Password reset successfully. Redirecting to sign in...".to_string()));
+					success_message.set(Some(
+						"Password reset successfully. Redirecting to sign in...".to_string(),
+					));
 					error_message.set(None);
 					navigate("/sign-in", Default::default());
 				}
@@ -60,10 +60,17 @@ pub fn ResetPassword() -> impl IntoView {
 					<Input value=new_password placeholder="New Password" attr:r#type="password" />
 				</div>
 				<div class="mb-6">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="confirm_password">
+					<label
+						class="block text-gray-700 text-sm font-bold mb-2"
+						for="confirm_password"
+					>
 						"Confirm Password"
 					</label>
-					<Input value=confirm_password placeholder="Confirm Password" attr:r#type="password" />
+					<Input
+						value=confirm_password
+						placeholder="Confirm Password"
+						attr:r#type="password"
+					/>
 				</div>
 
 				<Show when=move || error_message.get().is_some()>
@@ -74,7 +81,10 @@ pub fn ResetPassword() -> impl IntoView {
 				</Show>
 
 				<div class="flex items-center justify-between">
-					<Button on_click=on_reset class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+					<Button
+						on_click=on_reset
+						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+					>
 						"Reset Password"
 					</Button>
 				</div>

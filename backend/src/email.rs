@@ -1,7 +1,7 @@
 use crate::Config;
 use lettre::{
-	AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-	message::header::ContentType, transport::smtp::authentication::Credentials,
+	AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
+	transport::smtp::authentication::Credentials,
 };
 
 pub async fn send_password_reset_email(
@@ -21,9 +21,8 @@ pub async fn send_password_reset_email(
 
 	let creds = Credentials::new(config.smtp_user.clone(), config.smtp_pass.clone());
 
-	let mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)?
-		.credentials(creds)
-		.build();
+	let mailer =
+		AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)?.credentials(creds).build();
 
 	mailer.send(email).await?;
 

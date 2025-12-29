@@ -1,6 +1,8 @@
 use crate::auth::UserContext;
-use crate::graphql_queries::login::{LoginMutation, login_mutation};
-use crate::graphql_queries::request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation};
+use crate::graphql_queries::{
+	login::{LoginMutation, login_mutation},
+	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+};
 use leptos::{prelude::*, task::spawn_local};
 use leptos_router::hooks::use_navigate;
 use thaw::*;
@@ -19,10 +21,7 @@ pub fn SignIn() -> impl IntoView {
 		let navigate = navigate.clone();
 
 		spawn_local(async move {
-			let variables = login_mutation::Variables {
-				email: email_val,
-				password: password_val,
-			};
+			let variables = login_mutation::Variables { email: email_val, password: password_val };
 
 			match LoginMutation::run(variables).await {
 				Ok(_) => {
@@ -41,14 +40,13 @@ pub fn SignIn() -> impl IntoView {
 	let on_forgot_password = move |_| {
 		let email_val = email.get();
 		if email_val.is_empty() {
-			error_message.set(Some("Please enter your email address to reset password".to_string()));
+			error_message
+				.set(Some("Please enter your email address to reset password".to_string()));
 			return;
 		}
 
 		spawn_local(async move {
-			let variables = request_password_reset_mutation::Variables {
-				email: email_val,
-			};
+			let variables = request_password_reset_mutation::Variables { email: email_val };
 
 			match RequestPasswordResetMutation::run(variables).await {
 				Ok(_) => {
@@ -87,7 +85,10 @@ pub fn SignIn() -> impl IntoView {
 				</Show>
 
 				<div class="flex items-center justify-between">
-					<Button on_click=on_sign_in class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+					<Button
+						on_click=on_sign_in
+						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+					>
 						"Sign In"
 					</Button>
 					<Button on_click=on_forgot_password appearance=ButtonAppearance::Transparent>

@@ -1,6 +1,5 @@
-use crate::{ContextWrapper, SharedState};
-use async_graphql::{Context, Enum, Error as GraphQLError, Object, ID};
-use deadpool_postgres::Manager;
+use crate::ContextWrapper;
+use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use jiff::Timestamp;
 use tokio_postgres::Row;
 
@@ -56,15 +55,13 @@ impl User {
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached("SELECT * FROM users").await?;
-		client
-			.query(&statement, &[])
-			.await?
-			.into_iter()
-			.map(Self::try_from)
-			.collect()
+		client.query(&statement, &[]).await?.into_iter().map(Self::try_from).collect()
 	}
 
-	pub async fn by_id(ctx: &Context<'_>, id: i64) -> Result<Option<Self>, GraphQLError> {
+	pub async fn by_id(
+		ctx: &Context<'_>,
+		id: i64,
+	) -> Result<Option<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached("SELECT * FROM users WHERE id = $1").await?;
 		match client.query_opt(&statement, &[&id]).await? {
@@ -73,7 +70,10 @@ impl User {
 		}
 	}
 
-	pub async fn by_email(ctx: &Context<'_>, email: &str) -> Result<Option<Self>, GraphQLError> {
+	pub async fn by_email(
+		ctx: &Context<'_>,
+		email: &str,
+	) -> Result<Option<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached("SELECT * FROM users WHERE email = $1").await?;
 		match client.query_opt(&statement, &[&email]).await? {

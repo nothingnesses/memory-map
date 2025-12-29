@@ -1,5 +1,5 @@
 use async_graphql::{EmptySubscription, Schema};
-use async_graphql_axum::{GraphQL, GraphQLRequest, GraphQLResponse};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
 	Router,
 	body::{Body, to_bytes},
@@ -9,7 +9,7 @@ use axum::{
 	response::IntoResponse,
 	routing::{delete, get, post},
 };
-use axum_extra::extract::cookie::{Cookie, CookieJar, Key, PrivateCookieJar};
+use axum_extra::extract::cookie::{Cookie, Key, PrivateCookieJar};
 use backend::{
 	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
 	controllers::api::{

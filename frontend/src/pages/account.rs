@@ -1,5 +1,7 @@
-use crate::graphql_queries::change_email::{ChangeEmailMutation, change_email_mutation};
-use crate::graphql_queries::change_password::{ChangePasswordMutation, change_password_mutation};
+use crate::graphql_queries::{
+	change_email::{ChangeEmailMutation, change_email_mutation},
+	change_password::{ChangePasswordMutation, change_password_mutation},
+};
 use leptos::{prelude::*, task::spawn_local};
 use thaw::*;
 

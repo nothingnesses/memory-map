@@ -1,11 +1,20 @@
-use crate::{UserId, graphql::objects::{s3_object::S3Object, user::{User, UserRole}}};
+use crate::{
+	UserId,
+	graphql::objects::{
+		s3_object::S3Object,
+		user::{User, UserRole},
+	},
+};
 use async_graphql::{Context, Error as GraphQLError, Object};
 
 pub struct Query;
 
 #[Object]
 impl Query {
-	async fn me(&self, ctx: &Context<'_>) -> Result<Option<User>, GraphQLError> {
+	async fn me(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<Option<User>, GraphQLError> {
 		if let Some(user_id) = ctx.data_opt::<UserId>() {
 			User::by_id(ctx, user_id.0).await
 		} else {
@@ -13,7 +22,10 @@ impl Query {
 		}
 	}
 
-	async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>, GraphQLError> {
+	async fn users(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<Vec<User>, GraphQLError> {
 		// Check if user is admin
 		if let Some(user_id) = ctx.data_opt::<UserId>() {
 			if let Some(user) = User::by_id(ctx, user_id.0).await? {
