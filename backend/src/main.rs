@@ -1,16 +1,17 @@
 use async_graphql::{EmptySubscription, Schema};
-use async_graphql_axum::GraphQL;
+use async_graphql_axum::{GraphQL, GraphQLRequest, GraphQLResponse};
 use axum::{
 	Router,
 	body::{Body, to_bytes},
-	extract::{DefaultBodyLimit, State},
+	extract::{DefaultBodyLimit, Extension, State},
 	http::{HeaderMap, HeaderValue, Request, StatusCode},
 	middleware::{self, Next},
 	response::IntoResponse,
 	routing::{delete, get, post},
 };
+use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use backend::{
-	BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState,
+	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
 	controllers::api::{
 		locations::post as post_locations,
 		s3_objects::{delete as delete_s3_object, delete_many as delete_s3_objects},
@@ -47,7 +48,7 @@ const CACHE_TTL_SECONDS: u64 = 600;
 const GRAPHQL_BODY_LIMIT_BYTES: usize = 1024 * 1024;
 
 async fn caching_middleware(
-	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
+	State(state): State<AppState<Manager, Object<Manager>>>,
 	_headers: HeaderMap,
 	request: Request<Body>,
 	next: Next,
@@ -81,12 +82,12 @@ async fn caching_middleware(
 	let hash = hasher.finish();
 
 	// 3. Check cache
-	if let Some(cached_response) = state.response_cache.get(&hash).await {
+	if let Some(cached_response) = state.inner.response_cache.get(&hash).await {
 		tracing::info!("Cache hit for hash: {}", hash);
 		let mut response = axum::response::Response::new(Body::from(cached_response));
 		response.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
 
-		let last_modified = state.last_modified.load(Ordering::Relaxed);
+		let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
 		let etag = format!("\"{}\"", last_modified);
 		response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
 
@@ -104,15 +105,31 @@ async fn caching_middleware(
 		Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
 	};
 
-	state.response_cache.insert(hash, bytes.clone()).await;
+	state.inner.response_cache.insert(hash, bytes.clone()).await;
 
 	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));
 
-	let last_modified = state.last_modified.load(Ordering::Relaxed);
+	let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
 	let etag = format!("\"{}\"", last_modified);
 	response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
 
 	response
+}
+
+async fn graphql_handler(
+	Extension(schema): Extension<Schema<Query, Mutation, EmptySubscription>>,
+	jar: PrivateCookieJar,
+	req: GraphQLRequest,
+) -> GraphQLResponse {
+	let mut req = req.into_inner();
+
+	if let Some(cookie) = jar.get("auth_token") {
+		if let Ok(user_id) = cookie.value().parse::<i64>() {
+			req = req.data(UserId(user_id));
+		}
+	}
+
+	schema.execute(req).await.into()
 }
 
 #[tokio::main]
@@ -154,12 +171,17 @@ async fn main() {
 		.time_to_live(Duration::from_secs(CACHE_TTL_SECONDS))
 		.build();
 
-	let shared_state =
-		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache });
-
 	// Set up GraphQL
-	let schema =
-		Schema::build(Query, Mutation, EmptySubscription).data(shared_state.clone()).finish();
+	let key = Key::from(cfg.cookie_secret.as_bytes());
+	let shared_state =
+		Arc::new(SharedState { pool, minio_client, bucket_name, last_modified, response_cache, key: key.clone() });
+
+	let app_state = AppState { inner: shared_state.clone() };
+
+	let schema = Schema::build(Query, Mutation, EmptySubscription)
+		.data(shared_state.clone())
+		.data(key.clone())
+		.finish();
 
 	let permissive_cors = CorsLayer::permissive();
 
@@ -167,8 +189,9 @@ async fn main() {
 		.route(
 			"/",
 			get(graphiql)
-				.post_service(GraphQL::new(schema))
-				.layer(middleware::from_fn_with_state(shared_state.clone(), caching_middleware)),
+				.post(graphql_handler)
+				.with_state(app_state.clone())
+				.layer(middleware::from_fn_with_state(app_state.clone(), caching_middleware)),
 		)
 		.route(
 			"/api/locations/",
@@ -178,6 +201,8 @@ async fn main() {
 		)
 		.route("/api/s3-objects/{id}", delete(delete_s3_object).with_state(shared_state.clone()))
 		.route("/api/delete-s3-objects/", post(delete_s3_objects).with_state(shared_state.clone()))
+		.layer(Extension(schema))
+		.layer(Extension(key))
 		.route_layer(permissive_cors);
 
 	println!("GraphiQL IDE: http://localhost:8000");

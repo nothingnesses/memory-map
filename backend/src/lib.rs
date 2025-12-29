@@ -2,15 +2,20 @@ use async_graphql::http::GraphiQLSource;
 use async_graphql::{Context, Error as GraphQLError};
 use axum::{
 	body::Bytes,
+	extract::FromRef,
 	response::{self, IntoResponse},
 };
+use axum_extra::extract::cookie::Key;
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
 use moka::future::Cache;
 use std::{
 	fmt,
-	sync::atomic::AtomicU64,
+	sync::{
+		Arc,
+		atomic::AtomicU64,
+	},
 	time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -50,6 +55,13 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub bucket_name: String,
 	pub last_modified: AtomicU64,
 	pub response_cache: Cache<u64, Bytes>,
+	pub key: Key,
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {
+	fn from_ref(state: &SharedState<M, W>) -> Self {
+		state.key.clone()
+	}
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
@@ -57,6 +69,28 @@ impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
 		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
 		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
 		self.response_cache.invalidate_all();
+	}
+}
+
+pub struct AppState<M: ManagedManager, W: From<Object<M>>> {
+	pub inner: Arc<SharedState<M, W>>,
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> Clone for AppState<M, W> {
+	fn clone(&self) -> Self {
+		Self { inner: self.inner.clone() }
+	}
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> FromRef<AppState<M, W>> for Key {
+	fn from_ref(state: &AppState<M, W>) -> Self {
+		state.inner.key.clone()
+	}
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> FromRef<AppState<M, W>> for Arc<SharedState<M, W>> {
+	fn from_ref(state: &AppState<M, W>) -> Self {
+		state.inner.clone()
 	}
 }
 
