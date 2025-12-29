@@ -31,6 +31,7 @@ pub struct Config {
 	pub smtp_pass: String,
 	pub smtp_from: String,
 	pub cookie_secret: String,
+	pub frontend_url: String,
 }
 
 impl Config {
