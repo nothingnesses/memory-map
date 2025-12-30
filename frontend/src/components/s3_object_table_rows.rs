@@ -1,8 +1,15 @@
 use crate::{
-	CallbackAnyView, components::s3_object::S3Object as S3ObjectComponent,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	CallbackAnyView,
+	components::s3_object::S3Object as S3ObjectComponent,
+	graphql_queries::{
+		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+		update_s3_object::{
+			PublicityOverride, UpdateS3ObjectMutation,
+			update_s3_object_mutation::{LocationInput, Variables},
+		},
+	},
 };
-use leptos::prelude::*;
+use leptos::{logging::debug_error, prelude::*, task::spawn_local};
 use lucide_leptos::{Pencil, Trash};
 use std::collections::HashSet;
 use thaw::*;
@@ -35,6 +42,55 @@ pub fn S3ObjectTableRows(
 ) -> impl IntoView {
 	let viewing_object = RwSignal::new(None::<S3Object>);
 	let open_view = RwSignal::new(false);
+	let toaster = ToasterInjection::expect_context();
+
+	let on_change_publicity = move |s3_object: S3Object, new_publicity: PublicityOverride| {
+		spawn_local(async move {
+			let location = s3_object
+				.location
+				.map(|loc| LocationInput { latitude: loc.latitude, longitude: loc.longitude });
+
+			let made_on = s3_object.made_on; // Already string or Option<String>
+
+			let variables = Variables {
+				id: s3_object.id,
+				name: s3_object.name,
+				made_on,
+				location,
+				publicity: new_publicity,
+			};
+
+			match UpdateS3ObjectMutation::run(variables).await {
+				Ok(_) => {
+					toaster.dispatch_toast(
+						move || {
+							view! {
+								<Toast>
+									<ToastTitle>"Success"</ToastTitle>
+									<ToastBody>"Object publicity updated"</ToastBody>
+								</Toast>
+							}
+						},
+						ToastOptions::default().with_intent(ToastIntent::Success),
+					);
+				}
+				Err(e) => {
+					debug_error!("Failed to update object: {:?}", e);
+					toaster.dispatch_toast(
+						move || {
+							view! {
+								<Toast>
+									<ToastTitle>"Error"</ToastTitle>
+									<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
+								</Toast>
+							}
+						},
+						ToastOptions::default().with_intent(ToastIntent::Error),
+					);
+				}
+			}
+		});
+	};
 
 	view! {
 		<ForEnumerate
@@ -50,6 +106,9 @@ pub fn S3ObjectTableRows(
 				let s3_object_for_edit = s3_object.clone();
 				let s3_object_for_view = s3_object.clone();
 				let s3_object_for_thumbnail = s3_object.clone();
+				let s3_object_for_publicity = s3_object.clone();
+				let current_publicity = s3_object.publicity.clone();
+
 				view! {
 					<TableRow>
 						<TableCell class="wrap-anywhere">
@@ -90,6 +149,33 @@ pub fn S3ObjectTableRows(
 						</TableCell>
 						<TableCell class="wrap-anywhere">
 							{s3_object.content_type.clone()}
+						</TableCell>
+						<TableCell class="wrap-anywhere">
+							<select
+								class="p-2 border rounded bg-white"
+								on:change=move |ev| {
+									let val = event_target_value(&ev);
+									let new_publicity = match val.as_str() {
+										"Default" => PublicityOverride::Default,
+										"Public" => PublicityOverride::Public,
+										"Private" => PublicityOverride::Private,
+										_ => PublicityOverride::Default,
+									};
+									on_change_publicity(
+										s3_object_for_publicity.clone(),
+										new_publicity,
+									);
+								}
+								prop:value=move || match current_publicity {
+									PublicityOverride::Default => "Default",
+									PublicityOverride::Public => "Public",
+									PublicityOverride::Private => "Private",
+								}
+							>
+								<option value="Default">"Default"</option>
+								<option value="Public">"Public"</option>
+								<option value="Private">"Private"</option>
+							</select>
 						</TableCell>
 						<TableCell class="wrap-anywhere py-2">
 							<div class="relative grid gap-4">

@@ -1,13 +1,19 @@
 use crate::ContextWrapper;
 use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use jiff::Timestamp;
-use std::fmt;
+use std::{fmt, str::FromStr};
 use tokio_postgres::Row;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum UserRole {
 	User,
 	Admin,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum PublicityDefault {
+	Public,
+	Private,
 }
 
 impl fmt::Display for UserRole {
@@ -22,7 +28,19 @@ impl fmt::Display for UserRole {
 	}
 }
 
-impl std::str::FromStr for UserRole {
+impl fmt::Display for PublicityDefault {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		match self {
+			PublicityDefault::Public => write!(f, "public"),
+			PublicityDefault::Private => write!(f, "private"),
+		}
+	}
+}
+
+impl FromStr for UserRole {
 	type Err = ();
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -34,11 +52,24 @@ impl std::str::FromStr for UserRole {
 	}
 }
 
+impl FromStr for PublicityDefault {
+	type Err = ();
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"public" => Ok(PublicityDefault::Public),
+			"private" => Ok(PublicityDefault::Private),
+			_ => Err(()),
+		}
+	}
+}
+
 #[derive(Clone, Debug)]
 pub struct User {
 	pub id: ID,
 	pub email: String,
 	pub role: UserRole,
+	pub default_publicity: PublicityDefault,
 	pub created_at: Timestamp,
 	pub updated_at: Timestamp,
 }
@@ -47,10 +78,15 @@ impl User {
 	pub fn try_from(row: Row) -> Result<Self, GraphQLError> {
 		let role_str: String = row.try_get("role")?;
 		let role = role_str.parse().map_err(|_| GraphQLError::new("Invalid role"))?;
+		let default_publicity_str: String = row.try_get("default_publicity")?;
+		let default_publicity = default_publicity_str
+			.parse()
+			.map_err(|_| GraphQLError::new("Invalid default publicity"))?;
 		Ok(User {
 			id: Row::try_get::<_, i64>(&row, "id")?.into(),
 			email: row.try_get("email")?,
 			role,
+			default_publicity,
 			created_at: row.try_get("created_at")?,
 			updated_at: row.try_get("updated_at")?,
 		})
@@ -99,6 +135,10 @@ impl User {
 
 	async fn role(&self) -> UserRole {
 		self.role
+	}
+
+	async fn default_publicity(&self) -> PublicityDefault {
+		self.default_publicity
 	}
 
 	async fn created_at(&self) -> String {

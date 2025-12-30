@@ -21,7 +21,7 @@ pub fn ProtectedRoute(
 				let navigate = navigate.clone();
 				match user_opt {
 					Some(Some(user)) => {
-						if admin_only && user.role != UserRole::ADMIN {
+						if admin_only && user.role != UserRole::Admin {
 							request_animation_frame(move || {
 								navigate("/403", Default::default());
 							});

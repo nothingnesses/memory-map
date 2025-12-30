@@ -1,7 +1,10 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
 use crate::AppState;
-use crate::graphql::{objects::location::Location, queries::mutation::Mutation};
+use crate::graphql::{
+	objects::{location::Location, s3_object::PublicityOverride},
+	queries::mutation::Mutation,
+};
 use axum::{
 	body::Bytes,
 	extract::{Multipart, State},
@@ -19,6 +22,7 @@ struct FileData {
 	filename: String,
 	content_type: String,
 	bytes: Bytes,
+	// ...
 }
 
 // @todo Modify to return both status code and location and filenames added.
@@ -120,6 +124,7 @@ pub async fn post(
 			made_on.clone(),
 			location,
 			user_id,
+			PublicityOverride::Default,
 		)
 		.await;
 

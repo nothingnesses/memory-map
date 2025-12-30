@@ -3,5 +3,6 @@ query MeQuery {
 		id
 		email
 		role
+		defaultPublicity
 	}
 }

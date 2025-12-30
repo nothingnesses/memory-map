@@ -7,5 +7,6 @@ query S3ObjectByIdQuery($id: Int!) {
 			latitude
 			longitude
 		}
+		publicity
 	}
 }

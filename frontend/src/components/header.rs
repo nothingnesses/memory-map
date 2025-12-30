@@ -103,7 +103,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																	>
 																		"Account"
 																	</A>
-																	{if user.role == UserRole::ADMIN {
+																	{if user.role == UserRole::Admin {
 																		view! {
 																			<A
 																				attr:class="py-4 w-full grid place-items-center"

@@ -1,0 +1,6 @@
+mutation UpdateUserPublicityMutation($default_publicity: PublicityDefault!) {
+	updateUserPublicity(defaultPublicity: $default_publicity) {
+		id
+		defaultPublicity
+	}
+}

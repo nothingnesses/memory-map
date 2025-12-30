@@ -1,12 +1,45 @@
 use crate::{ContextWrapper, SharedState, graphql::objects::location::Location};
-use async_graphql::{Context, Error as GraphQLError, ID, Object};
+use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use axum::http::Method;
 use deadpool_postgres::Manager;
 use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::types::S3Api;
-use std::sync::Arc;
+use std::{fmt, str::FromStr, sync::Arc};
 use tokio_postgres::Row;
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum PublicityOverride {
+	Default,
+	Public,
+	Private,
+}
+
+impl fmt::Display for PublicityOverride {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		match self {
+			PublicityOverride::Default => write!(f, "default"),
+			PublicityOverride::Public => write!(f, "public"),
+			PublicityOverride::Private => write!(f, "private"),
+		}
+	}
+}
+
+impl FromStr for PublicityOverride {
+	type Err = ();
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"default" => Ok(PublicityOverride::Default),
+			"public" => Ok(PublicityOverride::Public),
+			"private" => Ok(PublicityOverride::Private),
+			_ => Err(()),
+		}
+	}
+}
 
 #[derive(Debug)]
 pub struct S3Object {
@@ -15,6 +48,7 @@ pub struct S3Object {
 	pub made_on: Option<Timestamp>,
 	pub location: Option<Location>,
 	pub user_id: Option<i64>,
+	pub publicity: PublicityOverride,
 }
 
 impl S3Object {
@@ -23,6 +57,9 @@ impl S3Object {
 		let id: i64 = row.try_get("id")?;
 		let made_on: Option<Timestamp> = row.try_get("made_on")?;
 		let user_id: Option<i64> = row.try_get("user_id").ok();
+		let publicity_str: String = row.try_get("publicity")?;
+		let publicity =
+			publicity_str.parse().map_err(|_| GraphQLError::new("Invalid publicity"))?;
 
 		Ok(S3Object {
 			id: id.into(),
@@ -30,6 +67,7 @@ impl S3Object {
 			made_on,
 			location: Location::try_from(row).ok(),
 			user_id,
+			publicity,
 		})
 	}
 
@@ -37,7 +75,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
 				FROM objects;",
 			)
 			.await?;
@@ -62,7 +100,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
 				FROM objects
 				WHERE id = $1;",
 			)
@@ -77,7 +115,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
 				FROM objects
 				WHERE name = $1;",
 			)
@@ -92,7 +130,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
 				FROM objects
 				WHERE id = ANY($1);",
 			)
@@ -118,9 +156,39 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
 				FROM objects
 				WHERE user_id = $1;",
+			)
+			.await?;
+		join_all(
+			client
+				.query(&statement, &[&user_id])
+				.await
+				.map_err(GraphQLError::from)?
+				.into_iter()
+				.map(Self::try_from)
+				.collect::<Vec<_>>(),
+		)
+		.await
+		.into_iter()
+		.collect::<Result<Vec<_>, _>>()
+	}
+
+	pub async fn visible_to_user(
+		ctx: &Context<'_>,
+		user_id: Option<i64>,
+	) -> Result<Vec<Self>, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity
+				FROM objects o
+				JOIN users u ON o.user_id = u.id
+				WHERE
+					($1::BIGINT IS NOT NULL AND o.user_id = $1)
+					OR o.publicity = 'public'
+					OR (o.publicity = 'default' AND u.default_publicity = 'public');",
 			)
 			.await?;
 		join_all(
@@ -154,6 +222,10 @@ impl S3Object {
 
 	async fn location(&self) -> Option<Location> {
 		self.location.clone()
+	}
+
+	async fn publicity(&self) -> PublicityOverride {
+		self.publicity
 	}
 
 	async fn url(

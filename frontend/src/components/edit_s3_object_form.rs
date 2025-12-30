@@ -3,6 +3,7 @@ use crate::{
 	graphql_queries::{
 		s3_object_by_id::S3ObjectByIdQuery,
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
+		types::PublicityOverride,
 		update_s3_object::{
 			UpdateS3ObjectMutation,
 			update_s3_object_mutation::{LocationInput, Variables},
@@ -56,6 +57,7 @@ pub fn EditS3ObjectForm(
 	let (latitude, set_latitude) = signal(None::<f64>);
 	let (longitude, set_longitude) = signal(None::<f64>);
 	let (made_on, set_made_on) = signal(String::new());
+	let (publicity, set_publicity) = signal(PublicityOverride::Default);
 
 	// Populate form from initial data (Optimistic UI)
 	Effect::new(move |_| {
@@ -70,6 +72,7 @@ pub fn EditS3ObjectForm(
 			{
 				set_made_on.set(local_str);
 			}
+			set_publicity.set(s3_object.publicity);
 		}
 	});
 
@@ -86,6 +89,7 @@ pub fn EditS3ObjectForm(
 			{
 				set_made_on.set(local_str);
 			}
+			set_publicity.set(s3_object.publicity);
 		}
 	});
 
@@ -96,6 +100,7 @@ pub fn EditS3ObjectForm(
 		let lat_val = latitude.get();
 		let lon_val = longitude.get();
 		let made_on_val = made_on.get();
+		let publicity_val = publicity.get();
 
 		let location = if let (Some(lat), Some(lon)) = (lat_val, lon_val) {
 			Some(LocationInput { latitude: lat, longitude: lon })
@@ -111,6 +116,7 @@ pub fn EditS3ObjectForm(
 				name: name_val,
 				made_on: made_on_iso,
 				location,
+				publicity: publicity_val,
 			};
 
 			match UpdateS3ObjectMutation::run(variables).await {
@@ -169,6 +175,23 @@ pub fn EditS3ObjectForm(
 														readonly
 														class="bg-gray-200 cursor-not-allowed"
 													/>
+												</label>
+												<label>
+													<div class="font-bold">"Publicity"</div>
+													<select
+														class="p-2 border rounded bg-white"
+														on:change=move |ev| {
+															let val = event_target_value(&ev);
+															if let Ok(new_publicity) = val.parse() {
+																set_publicity.set(new_publicity);
+															}
+														}
+														prop:value=move || publicity.get().to_string()
+													>
+														<option value="Default">"Default"</option>
+														<option value="Public">"Public"</option>
+														<option value="Private">"Private"</option>
+													</select>
 												</label>
 												<label>
 													<div class="font-bold">"Set latitude"</div>

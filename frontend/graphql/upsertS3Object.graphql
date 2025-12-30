@@ -2,13 +2,20 @@ mutation UpsertS3ObjectMutation(
 	$name: String!
 	$made_on: String
 	$location: LocationInput
+	$publicity: PublicityOverride!
 ) {
-	upsertS3Object(name: $name, madeOn: $made_on, location: $location) {
+	upsertS3Object(
+		name: $name
+		madeOn: $made_on
+		location: $location
+		publicity: $publicity
+	) {
 		name
 		madeOn
 		location {
 			latitude
 			longitude
 		}
+		publicity
 	}
 }
