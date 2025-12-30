@@ -26,12 +26,12 @@ const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETUR
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
-SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), publicity = $5
+SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), publicity = $5::text::publicity_override
 WHERE id = $1
 RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity::text AS publicity;";
 
 const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id, publicity)
-VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5)
+VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5::text::publicity_override)
 ON CONFLICT (name) DO UPDATE
 SET made_on = EXCLUDED.made_on, location = EXCLUDED.location, publicity = EXCLUDED.publicity
 RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity::text AS publicity;";
@@ -416,7 +416,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET default_publicity = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity::text AS default_publicity",
+				"UPDATE users SET default_publicity = $1::text::publicity_default, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity::text AS default_publicity",
 				&[&default_publicity.to_string(), &user_id],
 			)
 			.await

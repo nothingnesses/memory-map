@@ -50,13 +50,13 @@
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
---fontWeight-bold: 700;
---radius-DEFAULT: 0.25rem;
---colors-gray-200: oklch(92.8% 0.006 264.531);
---colors-white: #fff;
 --radius-none: 0;
 --default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
 --default-transition-duration: 150ms;
+--colors-white: #fff;
+--fontWeight-bold: 700;
+--radius-DEFAULT: 0.25rem;
+--colors-gray-200: oklch(92.8% 0.006 264.531);
 --colors-black: #000;
 --container-md: 28rem;
 --colors-gray-700: oklch(37.3% 0.034 259.733);
