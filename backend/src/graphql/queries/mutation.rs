@@ -1,5 +1,5 @@
 use crate::{
-	ContextWrapper, SharedState, UserId,
+	CasbinObject, CasbinUser, ContextWrapper, SharedState, UserId,
 	email::send_password_reset_email,
 	graphql::objects::{
 		location::Location,
@@ -20,17 +20,6 @@ use rand::{Rng, distributions::Alphanumeric, rngs::OsRng};
 use std::sync::{Arc, Mutex};
 use time::Duration;
 use tracing;
-
-#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
-struct CasbinUser {
-	id: i64,
-	role: String,
-}
-
-#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
-struct CasbinObject {
-	user_id: i64,
-}
 
 const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
 
@@ -432,6 +421,19 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user = User::by_id(ctx, user_id.0)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let casbin_user = CasbinUser { id: user_id.0, role: user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id: user_id.0 };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+			return Err(GraphQLError::new("Forbidden"));
+		}
+
 		validate_password(&new_password)?;
 
 		let password_hash_str: String = client
@@ -472,6 +474,19 @@ impl Mutation {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
+
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user = User::by_id(ctx, user_id.0)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let casbin_user = CasbinUser { id: user_id.0, role: user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id: user_id.0 };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+			return Err(GraphQLError::new("Forbidden"));
+		}
 
 		if !EmailAddress::is_valid(&new_email) {
 			return Err(GraphQLError::new("Invalid email format"));
@@ -600,15 +615,20 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		// Check if current user is admin
+		let target_id = id.parse::<i64>().map_err(|_| GraphQLError::new("Invalid ID"))?;
+
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
 		let current_user = User::by_id(ctx, user_id.0)
 			.await?
 			.ok_or_else(|| GraphQLError::new("User not found"))?;
-		if current_user.role != UserRole::Admin {
+		let casbin_user = CasbinUser { id: user_id.0, role: current_user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id: target_id };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "manage_user"))? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
-
-		let target_id = id.parse::<i64>().map_err(|_| GraphQLError::new("Invalid ID"))?;
 
 		let mut target_user = User::by_id(ctx, target_id)
 			.await?

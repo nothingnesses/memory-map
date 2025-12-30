@@ -1,5 +1,5 @@
 use crate::{
-	SharedState, UserId,
+	CasbinObject, CasbinUser, SharedState, UserId,
 	graphql::objects::{
 		config::PublicConfig,
 		s3_object::S3Object,
@@ -7,6 +7,7 @@ use crate::{
 	},
 };
 use async_graphql::{Context, Error as GraphQLError, Object};
+use casbin::CoreApi;
 use deadpool_postgres::{Client, Manager};
 use std::sync::Arc;
 
@@ -37,14 +38,23 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<User>, GraphQLError> {
-		// Check if user is admin
-		if let Some(user_id) = ctx.data_opt::<UserId>()
-			&& let Some(user) = User::by_id(ctx, user_id.0).await?
-			&& user.role == UserRole::Admin
-		{
-			return User::all(ctx).await;
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		// Dummy object for system-level permission
+		let casbin_obj = CasbinObject { user_id: 0 };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "read_all_users"))? {
+			return Err(GraphQLError::new("Forbidden"));
 		}
-		Err(GraphQLError::new("Unauthorized"))
+
+		User::all(ctx).await
 	}
 
 	async fn s3_object_by_id(
@@ -57,11 +67,17 @@ impl Query {
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let object = S3Object::where_id(ctx, id).await?;
 
-		if user.role == UserRole::Admin || object.user_id == Some(user_id) {
-			Ok(object)
-		} else {
-			Err(GraphQLError::new("Forbidden"))
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id: object.user_id.unwrap_or(0) };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "read"))? {
+			return Err(GraphQLError::new("Forbidden"));
 		}
+
+		Ok(object)
 	}
 
 	async fn s3_object_by_name(
@@ -74,11 +90,17 @@ impl Query {
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let object = S3Object::where_name(ctx, name).await?;
 
-		if user.role == UserRole::Admin || object.user_id == Some(user_id) {
-			Ok(object)
-		} else {
-			Err(GraphQLError::new("Forbidden"))
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id: object.user_id.unwrap_or(0) };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "read"))? {
+			return Err(GraphQLError::new("Forbidden"));
 		}
+
+		Ok(object)
 	}
 
 	async fn s3_objects(

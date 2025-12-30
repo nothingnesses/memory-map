@@ -157,3 +157,14 @@ pub fn parse_longitude(longitude: f64) -> Result<f64, Box<dyn std::error::Error>
 	}
 	Err(format!("{longitude} is not a valid longitude value.").into())
 }
+
+#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+pub struct CasbinUser {
+	pub id: i64,
+	pub role: String,
+}
+
+#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+pub struct CasbinObject {
+	pub user_id: i64,
+}
