@@ -13,6 +13,7 @@ pub enum PublicityOverride {
 	Default,
 	Public,
 	Private,
+	SelectedUsers,
 }
 
 impl fmt::Display for PublicityOverride {
@@ -24,6 +25,7 @@ impl fmt::Display for PublicityOverride {
 			PublicityOverride::Default => write!(f, "default"),
 			PublicityOverride::Public => write!(f, "public"),
 			PublicityOverride::Private => write!(f, "private"),
+			PublicityOverride::SelectedUsers => write!(f, "selected_users"),
 		}
 	}
 }
@@ -36,6 +38,7 @@ impl FromStr for PublicityOverride {
 			"default" => Ok(PublicityOverride::Default),
 			"public" => Ok(PublicityOverride::Public),
 			"private" => Ok(PublicityOverride::Private),
+			"selected_users" => Ok(PublicityOverride::SelectedUsers),
 			_ => Err(()),
 		}
 	}
@@ -49,6 +52,7 @@ pub struct S3Object {
 	pub location: Option<Location>,
 	pub user_id: Option<i64>,
 	pub publicity: PublicityOverride,
+	pub allowed_users: Vec<String>,
 }
 
 impl S3Object {
@@ -60,6 +64,8 @@ impl S3Object {
 		let publicity_str: String = row.try_get("publicity")?;
 		let publicity =
 			publicity_str.parse().map_err(|_| GraphQLError::new("Invalid publicity"))?;
+		// allowed_users might be null if no join, but we will ensure join
+		let allowed_users: Vec<String> = row.try_get("allowed_users").unwrap_or_default();
 
 		Ok(S3Object {
 			id: id.into(),
@@ -68,6 +74,7 @@ impl S3Object {
 			location: Location::try_from(row).ok(),
 			user_id,
 			publicity,
+			allowed_users,
 		})
 	}
 
@@ -75,8 +82,12 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
-				FROM objects;",
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
+				FROM objects o
+				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
+				LEFT JOIN users u ON oau.user_id = u.id
+				GROUP BY o.id;",
 			)
 			.await?;
 		join_all(
@@ -100,9 +111,13 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
-				FROM objects
-				WHERE id = $1;",
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
+				FROM objects o
+				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
+				LEFT JOIN users u ON oau.user_id = u.id
+				WHERE o.id = $1
+				GROUP BY o.id;",
 			)
 			.await?;
 		Self::try_from(client.query_one(&statement, &[&id]).await?).await
@@ -115,9 +130,13 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
-				FROM objects
-				WHERE name = $1;",
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
+				FROM objects o
+				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
+				LEFT JOIN users u ON oau.user_id = u.id
+				WHERE o.name = $1
+				GROUP BY o.id;",
 			)
 			.await?;
 		Self::try_from(client.query_one(&statement, &[&name]).await?).await
@@ -130,9 +149,13 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
-				FROM objects
-				WHERE id = ANY($1);",
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
+				FROM objects o
+				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
+				LEFT JOIN users u ON oau.user_id = u.id
+				WHERE o.id = ANY($1)
+				GROUP BY o.id;",
 			)
 			.await?;
 		join_all(
@@ -156,9 +179,13 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity
-				FROM objects
-				WHERE user_id = $1;",
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
+				FROM objects o
+				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
+				LEFT JOIN users u ON oau.user_id = u.id
+				WHERE o.user_id = $1
+				GROUP BY o.id;",
 			)
 			.await?;
 		join_all(
@@ -182,13 +209,18 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity
+				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+				COALESCE(array_agg(u_allowed.email) FILTER (WHERE u_allowed.email IS NOT NULL), '{}') AS allowed_users
 				FROM objects o
 				JOIN users u ON o.user_id = u.id
+				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
+				LEFT JOIN users u_allowed ON oau.user_id = u_allowed.id
 				WHERE
 					($1::BIGINT IS NOT NULL AND o.user_id = $1)
 					OR o.publicity = 'public'
-					OR (o.publicity = 'default' AND u.default_publicity = 'public');",
+					OR (o.publicity = 'default' AND u.default_publicity = 'public')
+					OR (o.publicity = 'selected_users' AND $1::BIGINT IS NOT NULL AND $1 IN (SELECT user_id FROM object_allowed_users WHERE object_id = o.id))
+				GROUP BY o.id;",
 			)
 			.await?;
 		join_all(
@@ -226,6 +258,10 @@ impl S3Object {
 
 	async fn publicity(&self) -> PublicityOverride {
 		self.publicity
+	}
+
+	async fn allowed_users(&self) -> Vec<String> {
+		self.allowed_users.clone()
 	}
 
 	async fn url(

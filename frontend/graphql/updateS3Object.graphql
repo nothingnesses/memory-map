@@ -4,6 +4,7 @@ mutation UpdateS3ObjectMutation(
 	$made_on: String
 	$location: LocationInput
 	$publicity: PublicityOverride!
+	$allowedUsers: [String!]
 ) {
 	updateS3Object(
 		id: $id
@@ -11,6 +12,7 @@ mutation UpdateS3ObjectMutation(
 		madeOn: $made_on
 		location: $location
 		publicity: $publicity
+		allowedUsers: $allowedUsers
 	) {
 		id
 		name
@@ -20,5 +22,6 @@ mutation UpdateS3ObjectMutation(
 			longitude
 		}
 		publicity
+		allowedUsers
 	}
 }

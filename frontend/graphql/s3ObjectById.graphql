@@ -8,5 +8,6 @@ query S3ObjectByIdQuery($id: Int!) {
 			longitude
 		}
 		publicity
+		allowedUsers
 	}
 }

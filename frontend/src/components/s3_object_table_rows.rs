@@ -53,11 +53,12 @@ pub fn S3ObjectTableRows(
 			let made_on = s3_object.made_on; // Already string or Option<String>
 
 			let variables = Variables {
-				id: s3_object.id,
-				name: s3_object.name,
+				id: s3_object.id.clone(),
+				name: s3_object.name.clone(),
 				made_on,
 				location,
 				publicity: new_publicity,
+				allowed_users: Some(s3_object.allowed_users.clone()),
 			};
 
 			match UpdateS3ObjectMutation::run(variables).await {
@@ -170,11 +171,13 @@ pub fn S3ObjectTableRows(
 									PublicityOverride::Default => "Default",
 									PublicityOverride::Public => "Public",
 									PublicityOverride::Private => "Private",
+									PublicityOverride::SelectedUsers => "Selected Users",
 								}
 							>
 								<option value="Default">"Default"</option>
 								<option value="Public">"Public"</option>
 								<option value="Private">"Private"</option>
+								<option value="Selected Users">"Selected Users"</option>
 							</select>
 						</TableCell>
 						<TableCell class="wrap-anywhere py-2">

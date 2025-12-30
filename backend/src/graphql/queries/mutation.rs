@@ -97,6 +97,7 @@ impl Mutation {
 		made_on: Option<String>,
 		location: Option<Location>,
 		publicity: PublicityOverride,
+		allowed_users: Vec<String>,
 	) -> Result<S3Object, GraphQLError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
 			Some(timestamp_string) => match timestamp_string.parse() {
@@ -124,7 +125,7 @@ impl Mutation {
 			location_geometry,
 			publicity
 		);
-		S3Object::try_from(
+		let mut s3_object = S3Object::try_from(
 			client
 				.query_one(
 					&client.prepare_cached(UPDATE_OBJECT_QUERY).await?,
@@ -136,7 +137,33 @@ impl Mutation {
 					GraphQLError::new(format!("Database error: {e}"))
 				})?,
 		)
-		.await
+		.await?;
+
+		// Update allowed users
+		client
+			.execute("DELETE FROM object_allowed_users WHERE object_id = $1", &[&id])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+		if !allowed_users.is_empty() {
+			let rows = client
+				.query("SELECT id FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+			for row in rows {
+				let user_id: i64 = row.get(0);
+				client
+					.execute(
+						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
+						&[&id, &user_id],
+					)
+					.await
+					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			}
+		}
+		s3_object.allowed_users = allowed_users;
+		Ok(s3_object)
 	}
 
 	pub async fn upsert_s3_object_worker(
@@ -146,6 +173,7 @@ impl Mutation {
 		location: Option<Location>,
 		user_id: i64,
 		publicity: PublicityOverride,
+		allowed_users: Vec<String>,
 	) -> Result<S3Object, GraphQLError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
 			Some(timestamp_string) => match timestamp_string.parse() {
@@ -173,7 +201,7 @@ impl Mutation {
 			user_id,
 			publicity
 		);
-		S3Object::try_from(
+		let mut s3_object = S3Object::try_from(
 			client
 				.query_one(
 					&client.prepare_cached(UPSERT_OBJECT_QUERY).await?,
@@ -185,7 +213,35 @@ impl Mutation {
 					GraphQLError::new(format!("Database error: {e}"))
 				})?,
 		)
-		.await
+		.await?;
+
+		let id: i64 = s3_object.id.parse().unwrap();
+
+		// Update allowed users
+		client
+			.execute("DELETE FROM object_allowed_users WHERE object_id = $1", &[&id])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+		if !allowed_users.is_empty() {
+			let rows = client
+				.query("SELECT id FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+			for row in rows {
+				let user_id: i64 = row.get(0);
+				client
+					.execute(
+						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
+						&[&id, &user_id],
+					)
+					.await
+					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			}
+		}
+		s3_object.allowed_users = allowed_users;
+		Ok(s3_object)
 	}
 }
 
@@ -242,6 +298,7 @@ impl Mutation {
 		made_on: Option<String>,
 		location: Option<Location>,
 		publicity: PublicityOverride,
+		allowed_users: Option<Vec<String>>,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
@@ -261,9 +318,18 @@ impl Mutation {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
-		let result =
-			Self::update_s3_object_worker(&client, id_int, name, made_on, location, publicity)
-				.await?;
+		let allowed_users = allowed_users.unwrap_or_default();
+
+		let result = Self::update_s3_object_worker(
+			&client,
+			id_int,
+			name,
+			made_on,
+			location,
+			publicity,
+			allowed_users,
+		)
+		.await?;
 
 		state.update_last_modified();
 
@@ -277,6 +343,7 @@ impl Mutation {
 		made_on: Option<String>,
 		location: Option<Location>,
 		publicity: PublicityOverride,
+		allowed_users: Option<Vec<String>>,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
@@ -300,9 +367,18 @@ impl Mutation {
 			}
 		}
 
-		let result =
-			Self::upsert_s3_object_worker(&client, name, made_on, location, user_id, publicity)
-				.await?;
+		let allowed_users = allowed_users.unwrap_or_default();
+
+		let result = Self::upsert_s3_object_worker(
+			&client,
+			name,
+			made_on,
+			location,
+			user_id,
+			publicity,
+			allowed_users,
+		)
+		.await?;
 
 		state.update_last_modified();
 

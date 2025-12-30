@@ -125,6 +125,7 @@ pub async fn post(
 			location,
 			user_id,
 			PublicityOverride::Default,
+			vec![],
 		)
 		.await;
 

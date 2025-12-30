@@ -7,7 +7,7 @@ use crate::{
 		update_user_publicity::{UpdateUserPublicityMutation, update_user_publicity_mutation},
 	},
 };
-use leptos::{prelude::*, task::spawn_local, web_sys::HtmlSelectElement};
+use leptos::{prelude::*, task::spawn_local};
 use thaw::*;
 
 #[component]

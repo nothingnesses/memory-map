@@ -9,6 +9,8 @@ pub enum PublicityOverride {
 	Public,
 	#[serde(rename = "PRIVATE")]
 	Private,
+	#[serde(rename = "SELECTED_USERS")]
+	SelectedUsers,
 }
 
 impl fmt::Display for PublicityOverride {
@@ -20,6 +22,7 @@ impl fmt::Display for PublicityOverride {
 			PublicityOverride::Default => write!(f, "Default"),
 			PublicityOverride::Public => write!(f, "Public"),
 			PublicityOverride::Private => write!(f, "Private"),
+			PublicityOverride::SelectedUsers => write!(f, "Selected Users"),
 		}
 	}
 }
@@ -32,6 +35,7 @@ impl std::str::FromStr for PublicityOverride {
 			"Default" => Ok(PublicityOverride::Default),
 			"Public" => Ok(PublicityOverride::Public),
 			"Private" => Ok(PublicityOverride::Private),
+			"Selected Users" => Ok(PublicityOverride::SelectedUsers),
 			_ => Err(()),
 		}
 	}

@@ -58,6 +58,7 @@ pub fn EditS3ObjectForm(
 	let (longitude, set_longitude) = signal(None::<f64>);
 	let (made_on, set_made_on) = signal(String::new());
 	let (publicity, set_publicity) = signal(PublicityOverride::Default);
+	let (allowed_users, set_allowed_users) = signal(String::new());
 
 	// Populate form from initial data (Optimistic UI)
 	Effect::new(move |_| {
@@ -73,6 +74,9 @@ pub fn EditS3ObjectForm(
 				set_made_on.set(local_str);
 			}
 			set_publicity.set(s3_object.publicity);
+			if !s3_object.allowed_users.is_empty() {
+				set_allowed_users.set(s3_object.allowed_users.join(", "));
+			}
 		}
 	});
 
@@ -90,6 +94,9 @@ pub fn EditS3ObjectForm(
 				set_made_on.set(local_str);
 			}
 			set_publicity.set(s3_object.publicity);
+			if !s3_object.allowed_users.is_empty() {
+				set_allowed_users.set(s3_object.allowed_users.join(", "));
+			}
 		}
 	});
 
@@ -101,6 +108,7 @@ pub fn EditS3ObjectForm(
 		let lon_val = longitude.get();
 		let made_on_val = made_on.get();
 		let publicity_val = publicity.get();
+		let allowed_users_val = allowed_users.get();
 
 		let location = if let (Some(lat), Some(lon)) = (lat_val, lon_val) {
 			Some(LocationInput { latitude: lat, longitude: lon })
@@ -110,6 +118,12 @@ pub fn EditS3ObjectForm(
 
 		let made_on_iso = js_date_value_to_iso(&made_on_val);
 
+		let allowed_users_vec: Vec<String> = allowed_users_val
+			.split(',')
+			.map(|s| s.trim().to_string())
+			.filter(|s| !s.is_empty())
+			.collect();
+
 		spawn_local(async move {
 			let variables = Variables {
 				id: id.get().to_string(),
@@ -117,6 +131,7 @@ pub fn EditS3ObjectForm(
 				made_on: made_on_iso,
 				location,
 				publicity: publicity_val,
+				allowed_users: Some(allowed_users_vec),
 			};
 
 			match UpdateS3ObjectMutation::run(variables).await {
@@ -191,8 +206,23 @@ pub fn EditS3ObjectForm(
 														<option value="Default">"Default"</option>
 														<option value="Public">"Public"</option>
 														<option value="Private">"Private"</option>
+														<option value="Selected Users">"Selected Users"</option>
 													</select>
 												</label>
+												<Show when=move || {
+													publicity.get() == PublicityOverride::SelectedUsers
+												}>
+													<label>
+														<div class="font-bold">"Allowed Users (comma separated emails)"</div>
+														<input
+															type="text"
+															name="allowed_users"
+															prop:value=allowed_users
+															on:input=move |ev| set_allowed_users.set(event_target_value(&ev))
+															placeholder="user1@example.com, user2@example.com"
+														/>
+													</label>
+												</Show>
 												<label>
 													<div class="font-bold">"Set latitude"</div>
 													<input
