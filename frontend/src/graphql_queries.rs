@@ -1,5 +1,6 @@
 pub mod admin_update_user;
 pub mod change_email;
+pub mod config;
 pub mod change_password;
 pub mod login;
 pub mod logout;

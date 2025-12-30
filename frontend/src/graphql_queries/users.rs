@@ -9,9 +9,11 @@ use leptos::error::Error;
 #[graphql(
 	schema_path = "graphql/schema.json",
 	query_path = "graphql/users.graphql",
-	response_derives = "Clone,Debug"
+	response_derives = "Clone,Debug,PartialEq"
 )]
 pub struct UsersQuery;
+
+pub use users_query::UserRole;
 
 impl UsersQuery {
 	pub async fn run() -> Result<Vec<User>, Error> {

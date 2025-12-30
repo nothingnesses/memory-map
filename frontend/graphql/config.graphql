@@ -1,0 +1,5 @@
+query ConfigQuery {
+	config {
+		enableRegistration
+	}
+}

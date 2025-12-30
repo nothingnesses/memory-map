@@ -1,7 +1,8 @@
 use crate::components::header::Header;
+use crate::components::protected_route::ProtectedRoute;
 use crate::pages::{
-	account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
-	reset_password::ResetPassword, sign_in::SignIn,
+	account::Account, admin::users::Users, forbidden::Forbidden, home::Home, objects::Objects,
+	register::Register, reset_password::ResetPassword, sign_in::SignIn,
 };
 use auth::UserContext;
 use graphql_queries::me::MeQuery;

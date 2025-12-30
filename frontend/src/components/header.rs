@@ -1,5 +1,6 @@
 use crate::auth::UserContext;
 use crate::graphql_queries::logout::LogoutMutation;
+use crate::graphql_queries::me::UserRole;
 use leptos::{prelude::*, task::spawn_local};
 use leptos_router::{components::A, hooks::use_navigate};
 use lucide_leptos::{Menu, X};
@@ -106,7 +107,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																	>
 																		"Account"
 																	</A>
-																	{if format!("{:?}", user.role) == "Admin" {
+																	{if user.role == UserRole::ADMIN {
 																		view! {
 																			<A
 																				attr:class="py-4 w-full grid place-items-center"

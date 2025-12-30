@@ -1,4 +1,7 @@
-use crate::graphql_queries::register::{RegisterMutation, register_mutation};
+use crate::graphql_queries::{
+	config::ConfigQuery,
+	register::{RegisterMutation, register_mutation},
+};
 use leptos::{ev, prelude::*, task::spawn_local};
 use leptos_router::hooks::use_navigate;
 use thaw::*;
@@ -11,6 +14,17 @@ pub fn Register() -> impl IntoView {
 	let confirm_password = RwSignal::new(String::new());
 	let error_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
+
+	let config_resource = LocalResource::new(move || async move { ConfigQuery::run().await.ok() });
+
+	let navigate_effect = navigate.clone();
+	Effect::new(move |_| {
+		if let Some(config) = config_resource.get().flatten() {
+			if !config.enable_registration {
+				navigate_effect("/sign-in", Default::default());
+			}
+		}
+	});
 
 	let on_register = move |_| {
 		let email_val = email.get();

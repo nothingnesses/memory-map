@@ -1,5 +1,6 @@
 pub mod account;
 pub mod admin;
+pub mod forbidden;
 pub mod home;
 pub mod not_found;
 pub mod objects;

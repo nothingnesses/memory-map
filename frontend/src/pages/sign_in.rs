@@ -1,6 +1,7 @@
 use crate::{
 	auth::UserContext,
 	graphql_queries::{
+		config::ConfigQuery,
 		login::{LoginMutation, login_mutation},
 		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
 	},
@@ -22,6 +23,8 @@ pub fn SignIn() -> impl IntoView {
 	let error_message = RwSignal::new(Option::<String>::None);
 	let success_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
+
+	let config_resource = LocalResource::new(move || async move { ConfigQuery::run().await.ok() });
 
 	let on_sign_in = move |_| {
 		let email_val = email.get();
@@ -123,9 +126,25 @@ pub fn SignIn() -> impl IntoView {
 					</Button>
 				</div>
 				<div class="mt-4 text-center">
-					<A href="/register" attr:class="text-blue-500 hover:text-blue-700">
-						"Don't have an account? Register"
-					</A>
+					<Suspense fallback=|| view! {}>
+						{move || {
+							config_resource
+								.get()
+								.flatten()
+								.map(|config| {
+									if config.enable_registration {
+										view! {
+											<A href="/register" attr:class="text-blue-500 hover:text-blue-700">
+												"Don't have an account? Register"
+											</A>
+										}
+											.into_any()
+									} else {
+										view! {}.into_any()
+									}
+								})
+						}}
+					</Suspense>
 				</div>
 			</form>
 		</div>

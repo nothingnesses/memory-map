@@ -1,7 +1,7 @@
 use crate::graphql_queries::{
 	admin_update_user::{AdminUpdateUserMutation, admin_update_user_mutation},
 	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
-	users::UsersQuery,
+	users::{UserRole, UsersQuery},
 };
 use leptos::{prelude::*, task::spawn_local};
 use thaw::*;
@@ -118,7 +118,7 @@ pub fn Users() -> impl IntoView {
 															<Button
 																disabled=move || is_loading.get()
 																on_click=move |_| {
-																	let r = if format!("{:?}", user_role) == "Admin" {
+																	let r = if user_role == UserRole::ADMIN {
 																		"user"
 																	} else {
 																		"admin"
