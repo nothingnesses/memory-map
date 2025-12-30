@@ -52,7 +52,16 @@ impl Query {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<S3Object, GraphQLError> {
-		S3Object::where_id(ctx, id).await
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let object = S3Object::where_id(ctx, id).await?;
+
+		if user.role == UserRole::Admin || object.user_id == Some(user_id) {
+			Ok(object)
+		} else {
+			Err(GraphQLError::new("Forbidden"))
+		}
 	}
 
 	async fn s3_object_by_name(
@@ -60,7 +69,16 @@ impl Query {
 		ctx: &Context<'_>,
 		name: String,
 	) -> Result<S3Object, GraphQLError> {
-		S3Object::where_name(ctx, name).await
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let object = S3Object::where_name(ctx, name).await?;
+
+		if user.role == UserRole::Admin || object.user_id == Some(user_id) {
+			Ok(object)
+		} else {
+			Err(GraphQLError::new("Forbidden"))
+		}
 	}
 
 	async fn s3_objects(

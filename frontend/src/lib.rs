@@ -1,5 +1,5 @@
 use crate::{
-	components::header::Header,
+	components::{header::Header, protected_route::ProtectedRoute},
 	pages::{
 		account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
 		reset_password::ResetPassword, sign_in::SignIn,
@@ -167,9 +167,12 @@ pub fn App() -> impl IntoView {
 							<Route path=path!("/objects") view=Objects />
 							<Route path=path!("/sign-in") view=SignIn />
 							<Route path=path!("/register") view=Register />
-							<Route path=path!("/account") view=Account />
+							<Route path=path!("/account") view=|| view! { <ProtectedRoute><Account /></ProtectedRoute> } />
 							<Route path=path!("/reset-password") view=ResetPassword />
-							<Route path=path!("/admin/users") view=Users />
+							<Route
+								path=path!("/admin/users")
+								view=|| view! { <ProtectedRoute admin_only=true><Users /></ProtectedRoute> }
+							/>
 						</Routes>
 					</Shell>
 				</Router>
