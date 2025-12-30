@@ -1,6 +1,7 @@
 use crate::ContextWrapper;
 use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use jiff::Timestamp;
+use postgres_types::{FromSql, ToSql};
 use std::{fmt, str::FromStr};
 use tokio_postgres::Row;
 
@@ -10,9 +11,12 @@ pub enum UserRole {
 	Admin,
 }
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, ToSql, FromSql)]
+#[postgres(name = "publicity_default")]
 pub enum PublicityDefault {
+	#[postgres(name = "public")]
 	Public,
+	#[postgres(name = "private")]
 	Private,
 }
 
@@ -78,10 +82,7 @@ impl User {
 	pub fn try_from(row: Row) -> Result<Self, GraphQLError> {
 		let role_str: String = row.try_get("role")?;
 		let role = role_str.parse().map_err(|_| GraphQLError::new("Invalid role"))?;
-		let default_publicity_str: String = row.try_get("default_publicity")?;
-		let default_publicity = default_publicity_str
-			.parse()
-			.map_err(|_| GraphQLError::new("Invalid default publicity"))?;
+		let default_publicity: PublicityDefault = row.try_get("default_publicity")?;
 		Ok(User {
 			id: Row::try_get::<_, i64>(&row, "id")?.into(),
 			email: row.try_get("email")?,
@@ -94,7 +95,11 @@ impl User {
 
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client.prepare_cached("SELECT id, email, role, created_at, updated_at, default_publicity::text AS default_publicity FROM users").await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, email, role, created_at, updated_at, default_publicity FROM users",
+			)
+			.await?;
 		client.query(&statement, &[]).await?.into_iter().map(Self::try_from).collect()
 	}
 
@@ -103,7 +108,11 @@ impl User {
 		id: i64,
 	) -> Result<Option<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client.prepare_cached("SELECT id, email, role, created_at, updated_at, default_publicity::text AS default_publicity FROM users WHERE id = $1").await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, email, role, created_at, updated_at, default_publicity FROM users WHERE id = $1",
+			)
+			.await?;
 		match client.query_opt(&statement, &[&id]).await? {
 			Some(row) => Ok(Some(Self::try_from(row)?)),
 			None => Ok(None),
@@ -115,7 +124,11 @@ impl User {
 		email: &str,
 	) -> Result<Option<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client.prepare_cached("SELECT id, email, role, created_at, updated_at, default_publicity::text AS default_publicity FROM users WHERE email = $1").await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, email, role, created_at, updated_at, default_publicity FROM users WHERE email = $1",
+			)
+			.await?;
 		match client.query_opt(&statement, &[&email]).await? {
 			Some(row) => Ok(Some(Self::try_from(row)?)),
 			None => Ok(None),

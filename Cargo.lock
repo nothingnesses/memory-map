@@ -514,6 +514,7 @@ dependencies = [
  "lettre",
  "minio",
  "moka",
+ "postgres-types",
  "rand 0.8.5",
  "refinery",
  "serde",
@@ -3094,6 +3095,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "postgres-derive"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56df96f5394370d1b20e49de146f9e6c25aa9ae750f449c9d665eafecb3ccae6"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "postgres-protocol"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3120,6 +3133,7 @@ dependencies = [
  "bytes",
  "fallible-iterator",
  "jiff",
+ "postgres-derive",
  "postgres-protocol",
 ]
 
