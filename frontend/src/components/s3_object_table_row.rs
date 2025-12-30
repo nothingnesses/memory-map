@@ -11,6 +11,7 @@ use crate::{
 };
 use email_address::EmailAddress;
 use leptos::{html::Select, logging::debug_error, prelude::*, task::spawn_local};
+use lucide_leptos::Users;
 use std::{collections::HashSet, str::FromStr};
 use thaw::*;
 
@@ -58,11 +59,11 @@ pub fn S3ObjectTableRow(
 				made_on,
 				location,
 				publicity: new_publicity,
-				allowed_users: new_allowed_users.or(Some(s3_object.allowed_users.clone())),
+				allowed_users: new_allowed_users.clone().or(Some(s3_object.allowed_users.clone())),
 			};
 
 			match UpdateS3ObjectMutation::run(variables).await {
-				Ok(_) => {
+				Ok(updated_obj) => {
 					toaster.dispatch_toast(
 						move || {
 							view! {
@@ -74,6 +75,35 @@ pub fn S3ObjectTableRow(
 						},
 						ToastOptions::default().with_intent(ToastIntent::Success),
 					);
+
+					// Check for missing users if we explicitly set them
+					if let Some(requested_users) = new_allowed_users {
+						let returned_users: HashSet<String> =
+							updated_obj.allowed_users.into_iter().collect();
+						let missing_users: Vec<String> = requested_users
+							.into_iter()
+							.filter(|u| !returned_users.contains(u))
+							.collect();
+
+						if !missing_users.is_empty() {
+							toaster.dispatch_toast(
+								move || {
+									view! {
+										<Toast>
+											<ToastTitle>"Warning"</ToastTitle>
+											<ToastBody>
+												{format!(
+													"The following users were not found: {}",
+													missing_users.join(", "),
+												)}
+											</ToastBody>
+										</Toast>
+									}
+								},
+								ToastOptions::default().with_intent(ToastIntent::Warning),
+							);
+						}
+					}
 				}
 				Err(e) => {
 					debug_error!("Failed to update object: {:?}", e);
@@ -180,17 +210,29 @@ pub fn S3ObjectTableRow(
 			</TableCell>
 			<TableCell class="wrap-anywhere">{move || s3_object.get().content_type}</TableCell>
 			<TableCell class="wrap-anywhere">
-				<select
-					node_ref=select_ref
-					class="p-2 border rounded bg-white"
-					on:change=on_change_publicity
-					prop:value=move || s3_object.get().publicity.to_string()
-				>
-					<option value="Default">"Default"</option>
-					<option value="Public">"Public"</option>
-					<option value="Private">"Private"</option>
-					<option value="Selected Users">"Selected Users"</option>
-				</select>
+				<div class="flex items-center gap-2">
+					<select
+						node_ref=select_ref
+						class="p-2 border rounded bg-white"
+						on:change=on_change_publicity
+						prop:value=move || s3_object.get().publicity.to_string()
+					>
+						<option value="Default">"Default"</option>
+						<option value="Public">"Public"</option>
+						<option value="Private">"Private"</option>
+						<option value="Selected Users">"Selected Users"</option>
+					</select>
+					<Show when=move || s3_object.get().publicity == PublicityOverride::SelectedUsers>
+						<Button
+							class="p-2 h-auto"
+							appearance=ButtonAppearance::Subtle
+							on_click=move |_| show_allowed_users_dialog.set(true)
+							attr:title="Manage Allowed Users"
+						>
+							<Users attr:class="w-4 h-4" />
+						</Button>
+					</Show>
+				</div>
 			</TableCell>
 			<TableCell class="wrap-anywhere py-2">
 				<div class="relative grid gap-4">

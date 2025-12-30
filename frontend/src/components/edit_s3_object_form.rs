@@ -18,7 +18,7 @@ use leptos::{
 	task::spawn_local,
 	web_sys::{MouseEvent, SubmitEvent},
 };
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 use thaw::*;
 
 /// Component for editing an existing S3 object.
@@ -157,11 +157,11 @@ pub fn EditS3ObjectForm(
 				made_on: made_on_iso,
 				location,
 				publicity: publicity_val,
-				allowed_users: Some(allowed_users_vec),
+				allowed_users: Some(allowed_users_vec.clone()),
 			};
 
 			match UpdateS3ObjectMutation::run(variables).await {
-				Ok(_) => {
+				Ok(updated_obj) => {
 					toaster.dispatch_toast(
 						move || {
 							view! {
@@ -173,6 +173,34 @@ pub fn EditS3ObjectForm(
 						},
 						ToastOptions::default().with_intent(ToastIntent::Success),
 					);
+
+					// Check for missing users
+					let returned_users: HashSet<String> =
+						updated_obj.allowed_users.into_iter().collect();
+					let missing_users: Vec<String> = allowed_users_vec
+						.into_iter()
+						.filter(|u| !returned_users.contains(u))
+						.collect();
+
+					if !missing_users.is_empty() {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Warning"</ToastTitle>
+										<ToastBody>
+											{format!(
+												"The following users were not found: {}",
+												missing_users.join(", "),
+											)}
+										</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Warning),
+						);
+					}
+
 					on_success.run(());
 				}
 				Err(e) => {
@@ -239,12 +267,16 @@ pub fn EditS3ObjectForm(
 													publicity.get() == PublicityOverride::SelectedUsers
 												}>
 													<label>
-														<div class="font-bold">"Allowed Users (comma separated emails)"</div>
+														<div class="font-bold">
+															"Allowed Users (comma separated emails)"
+														</div>
 														<input
 															type="text"
 															name="allowed_users"
 															prop:value=allowed_users
-															on:input=move |ev| set_allowed_users.set(event_target_value(&ev))
+															on:input=move |ev| {
+																set_allowed_users.set(event_target_value(&ev))
+															}
 															placeholder="user1@example.com, user2@example.com"
 														/>
 													</label>

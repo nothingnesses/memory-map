@@ -18,6 +18,7 @@ leptos_meta = { version = "0.8" }
 leptos_router = { version = "0.8" }
 log = "0.4"
 lucide-leptos = { version = "2", features = [
+	"account",
 	"arrows",
 	"files",
 	"layout",
