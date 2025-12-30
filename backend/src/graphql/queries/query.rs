@@ -1,16 +1,27 @@
 use crate::{
-	UserId,
+	SharedState, UserId,
 	graphql::objects::{
+		config::PublicConfig,
 		s3_object::S3Object,
 		user::{User, UserRole},
 	},
 };
 use async_graphql::{Context, Error as GraphQLError, Object};
+use deadpool_postgres::{Client, Manager};
+use std::sync::Arc;
 
 pub struct Query;
 
 #[Object]
 impl Query {
+	async fn config(
+		&self,
+		ctx: &Context<'_>,
+	) -> Result<PublicConfig, GraphQLError> {
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		Ok(PublicConfig { enable_registration: state.config.enable_registration })
+	}
+
 	async fn me(
 		&self,
 		ctx: &Context<'_>,

@@ -326,6 +326,7 @@ impl Mutation {
 		// Set cookie
 		let cookie = Cookie::build(("auth_token", user.id.to_string()))
 			.http_only(true)
+			.secure(true)
 			.same_site(SameSite::Lax)
 			.path("/")
 			.build();
@@ -342,6 +343,7 @@ impl Mutation {
 	) -> Result<bool, GraphQLError> {
 		let cookie = Cookie::build(("auth_token", ""))
 			.http_only(true)
+			.secure(true)
 			.same_site(SameSite::Lax)
 			.path("/")
 			.max_age(Duration::seconds(0))
