@@ -1,7 +1,7 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
+use crate::AppState;
 use crate::graphql::{objects::location::Location, queries::mutation::Mutation};
-use crate::{AppState, SharedState};
 use axum::{
 	body::Bytes,
 	extract::{Multipart, State},
@@ -13,7 +13,6 @@ use axum_macros::debug_handler;
 use deadpool::managed::Object;
 use deadpool_postgres::Manager;
 use shared::ALLOWED_MIME_TYPES;
-use std::sync::Arc;
 
 #[derive(Debug)]
 struct FileData {

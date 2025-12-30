@@ -218,9 +218,8 @@ impl Mutation {
 		// Check permissions
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id)
-			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 
 		let objects = S3Object::where_ids(ctx, &ids).await?;
@@ -258,9 +257,8 @@ impl Mutation {
 		// Check permissions
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id)
-			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 
 		let obj = S3Object::where_id(ctx, id_int).await?;
@@ -290,9 +288,8 @@ impl Mutation {
 		// Check permissions
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id)
-			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 
 		if let Ok(obj) = S3Object::where_name(ctx, name.clone()).await {

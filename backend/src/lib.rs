@@ -8,7 +8,7 @@ use axum::{
 	response::{self, IntoResponse},
 };
 use axum_extra::extract::cookie::Key;
-use casbin::{CoreApi, Enforcer};
+use casbin::Enforcer;
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
