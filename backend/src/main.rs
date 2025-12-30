@@ -119,6 +119,7 @@ async fn caching_middleware(
 }
 
 async fn graphql_handler(
+	State(state): State<AppState<Manager, Object<Manager>>>,
 	Extension(schema): Extension<Schema<Query, Mutation, EmptySubscription>>,
 	jar: PrivateCookieJar,
 	req: GraphQLRequest,
@@ -128,7 +129,19 @@ async fn graphql_handler(
 	if let Some(cookie) = jar.get("auth_token")
 		&& let Ok(user_id) = cookie.value().parse::<i64>()
 	{
-		req = req.data(UserId(user_id));
+		// Verify user exists in database
+		let user_exists = if let Ok(client) = state.inner.pool.get().await {
+			match client.prepare_cached("SELECT 1 FROM users WHERE id = $1").await {
+				Ok(stmt) => matches!(client.query_opt(&stmt, &[&user_id]).await, Ok(Some(_))),
+				Err(_) => false,
+			}
+		} else {
+			false
+		};
+
+		if user_exists {
+			req = req.data(UserId(user_id));
+		}
 	}
 
 	let cookies = Arc::new(Mutex::new(Vec::<Cookie<'static>>::new()));
