@@ -145,14 +145,17 @@ impl Mutation {
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
+		let mut valid_allowed_users = Vec::new();
+
 		if !allowed_users.is_empty() {
 			let rows = client
-				.query("SELECT id FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.query("SELECT id, email FROM users WHERE email = ANY($1)", &[&allowed_users])
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 			for row in rows {
-				let user_id: i64 = row.get(0);
+				let user_id: i64 = row.get("id");
+				let email: String = row.get("email");
 				client
 					.execute(
 						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
@@ -160,9 +163,10 @@ impl Mutation {
 					)
 					.await
 					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+				valid_allowed_users.push(email);
 			}
 		}
-		s3_object.allowed_users = allowed_users;
+		s3_object.allowed_users = valid_allowed_users;
 		Ok(s3_object)
 	}
 
@@ -223,14 +227,17 @@ impl Mutation {
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
+		let mut valid_allowed_users = Vec::new();
+
 		if !allowed_users.is_empty() {
 			let rows = client
-				.query("SELECT id FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.query("SELECT id, email FROM users WHERE email = ANY($1)", &[&allowed_users])
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 			for row in rows {
-				let user_id: i64 = row.get(0);
+				let user_id: i64 = row.get("id");
+				let email: String = row.get("email");
 				client
 					.execute(
 						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
@@ -238,9 +245,10 @@ impl Mutation {
 					)
 					.await
 					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+				valid_allowed_users.push(email);
 			}
 		}
-		s3_object.allowed_users = allowed_users;
+		s3_object.allowed_users = valid_allowed_users;
 		Ok(s3_object)
 	}
 }
