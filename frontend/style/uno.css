@@ -51,6 +51,10 @@
 :root, :host {
 --spacing: 0.25rem;
 --fontWeight-bold: 700;
+--text-4xl-fontSize: 2.25rem;
+--text-4xl-lineHeight: 2.5rem;
+--text-xl-fontSize: 1.25rem;
+--text-xl-lineHeight: 1.75rem;
 --container-md: 28rem;
 --radius-DEFAULT: 0.25rem;
 --colors-white: #fff;
@@ -61,15 +65,11 @@
 --colors-blue-500: oklch(62.3% 0.214 259.815);
 --text-2xl-fontSize: 1.5rem;
 --text-2xl-lineHeight: 2rem;
---text-xl-fontSize: 1.25rem;
---text-xl-lineHeight: 1.75rem;
 --text-sm-fontSize: 0.875rem;
 --text-sm-lineHeight: 1.25rem;
 --text-xs-fontSize: 0.75rem;
 --text-xs-lineHeight: 1rem;
 --colors-blue-700: oklch(48.8% 0.243 264.376);
---text-4xl-fontSize: 2.25rem;
---text-4xl-lineHeight: 2.5rem;
 --radius-none: 0;
 --default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
 --default-transition-duration: 150ms;
