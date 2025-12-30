@@ -67,6 +67,14 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
-		S3Object::all(ctx).await
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+
+		if user.role == UserRole::Admin {
+			S3Object::all(ctx).await
+		} else {
+			S3Object::where_user_id(ctx, user_id).await
+		}
 	}
 }

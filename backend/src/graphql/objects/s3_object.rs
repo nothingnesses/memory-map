@@ -14,16 +14,22 @@ pub struct S3Object {
 	pub name: String,
 	pub made_on: Option<Timestamp>,
 	pub location: Option<Location>,
+	pub user_id: Option<i64>,
 }
 
 impl S3Object {
 	pub async fn try_from(row: Row) -> Result<Self, GraphQLError> {
 		let name: String = row.try_get("name")?;
+		let id: i64 = row.try_get("id")?;
+		let made_on: Option<Timestamp> = row.try_get("made_on")?;
+		let user_id: Option<i64> = row.try_get("user_id").ok();
+
 		Ok(S3Object {
-			id: Row::try_get::<_, i64>(&row, "id")?.into(),
-			name: name.clone(),
-			made_on: row.try_get("made_on")?,
+			id: id.into(),
+			name,
+			made_on,
 			location: Location::try_from(row).ok(),
+			user_id,
 		})
 	}
 
@@ -31,7 +37,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
 				FROM objects;",
 			)
 			.await?;
@@ -56,7 +62,7 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
 				FROM objects
 				WHERE id = $1;",
 			)
@@ -71,12 +77,64 @@ impl S3Object {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client
 			.prepare_cached(
-				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
 				FROM objects
 				WHERE name = $1;",
 			)
 			.await?;
 		Self::try_from(client.query_one(&statement, &[&name]).await?).await
+	}
+
+	pub async fn where_ids(
+		ctx: &Context<'_>,
+		ids: &[i64],
+	) -> Result<Vec<Self>, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				FROM objects
+				WHERE id = ANY($1);",
+			)
+			.await?;
+		join_all(
+			client
+				.query(&statement, &[&ids])
+				.await
+				.map_err(GraphQLError::from)?
+				.into_iter()
+				.map(Self::try_from)
+				.collect::<Vec<_>>(),
+		)
+		.await
+		.into_iter()
+		.collect::<Result<Vec<_>, _>>()
+	}
+
+	pub async fn where_user_id(
+		ctx: &Context<'_>,
+		user_id: i64,
+	) -> Result<Vec<Self>, GraphQLError> {
+		let client = ContextWrapper(ctx).get_db_client().await?;
+		let statement = client
+			.prepare_cached(
+				"SELECT id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id
+				FROM objects
+				WHERE user_id = $1;",
+			)
+			.await?;
+		join_all(
+			client
+				.query(&statement, &[&user_id])
+				.await
+				.map_err(GraphQLError::from)?
+				.into_iter()
+				.map(Self::try_from)
+				.collect::<Vec<_>>(),
+		)
+		.await
+		.into_iter()
+		.collect::<Result<Vec<_>, _>>()
 	}
 }
 

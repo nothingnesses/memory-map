@@ -10,6 +10,7 @@ use crate::{
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
 use axum_extra::extract::cookie::{Cookie, SameSite};
+use casbin::CoreApi;
 use deadpool_postgres::{Client, Manager};
 use email_address::EmailAddress;
 use futures::future::join_all;
@@ -20,20 +21,31 @@ use std::sync::{Arc, Mutex};
 use time::Duration;
 use tracing;
 
-const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
+#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+struct CasbinUser {
+	id: i64,
+	role: String,
+}
+
+#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+struct CasbinObject {
+	user_id: i64,
+}
+
+const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
 
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
 SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4)
 WHERE id = $1
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
 
-const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location)
-VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3))
+const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id)
+VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4)
 ON CONFLICT (name) DO UPDATE
 SET made_on = EXCLUDED.made_on, location = EXCLUDED.location
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude;";
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
 
 fn validate_password(password: &str) -> Result<(), GraphQLError> {
 	if password.len() < 8 {
@@ -141,6 +153,7 @@ impl Mutation {
 		name: String,
 		made_on: Option<String>,
 		location: Option<Location>,
+		user_id: i64,
 	) -> Result<S3Object, GraphQLError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
 			Some(timestamp_string) => match timestamp_string.parse() {
@@ -161,16 +174,17 @@ impl Mutation {
 			location_geometry
 		});
 		tracing::debug!(
-			"Executing upsert with: name={}, made_on={:?}, location={:?}",
+			"Executing upsert with: name={}, made_on={:?}, location={:?}, user_id={}",
 			name,
 			parsed_made_on.as_ref().map(|ts| ts.to_string()),
-			location_geometry
+			location_geometry,
+			user_id
 		);
 		S3Object::try_from(
 			client
 				.query_one(
 					&client.prepare_cached(UPSERT_OBJECT_QUERY).await?,
-					&[&name, &parsed_made_on, &location_geometry],
+					&[&name, &parsed_made_on, &location_geometry, &user_id],
 				)
 				.await
 				.map_err(|e| {
@@ -189,6 +203,7 @@ impl Mutation {
 		ctx: &Context<'_>,
 		ids: Vec<ID>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let wrapper = ContextWrapper(ctx);
 		let bucket_name = wrapper.get_bucket_name()?;
 		let minio_client = wrapper.get_minio_client()?;
@@ -200,10 +215,25 @@ impl Mutation {
 			})
 			.collect::<Result<Vec<i64>, _>>()?;
 
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+
+		let objects = S3Object::where_ids(ctx, &ids).await?;
+		for obj in &objects {
+			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
+			if !enforcer.enforce((casbin_user.clone(), casbin_obj, "delete"))? {
+				return Err(GraphQLError::new("Forbidden"));
+			}
+		}
+
 		let result =
 			Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids).await?;
 
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 		state.update_last_modified();
 
 		Ok(result)
@@ -220,12 +250,28 @@ impl Mutation {
 		made_on: Option<String>,
 		location: Option<Location>,
 	) -> Result<S3Object, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let id =
+		let id_int =
 			id.parse::<i64>().map_err(|e| GraphQLError::new(format!("Invalid ID format: {e}")))?;
-		let result = Self::update_s3_object_worker(&client, id, name, made_on, location).await?;
 
+		// Check permissions
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+
+		let obj = S3Object::where_id(ctx, id_int).await?;
+		let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
+		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+			return Err(GraphQLError::new("Forbidden"));
+		}
+
+		let result =
+			Self::update_s3_object_worker(&client, id_int, name, made_on, location).await?;
+
 		state.update_last_modified();
 
 		Ok(result)
@@ -238,10 +284,27 @@ impl Mutation {
 		made_on: Option<String>,
 		location: Option<Location>,
 	) -> Result<S3Object, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let result = Self::upsert_s3_object_worker(&client, name, made_on, location).await?;
 
+		// Check permissions
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+
+		if let Ok(obj) = S3Object::where_name(ctx, name.clone()).await {
+			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
+			if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+				return Err(GraphQLError::new("Forbidden"));
+			}
+		}
+
+		let result =
+			Self::upsert_s3_object_worker(&client, name, made_on, location, user_id).await?;
+
 		state.update_last_modified();
 
 		Ok(result)

@@ -20,6 +20,7 @@ use backend::{
 	graphql::queries::{mutation::Mutation, query::Query},
 	migrations,
 };
+use casbin::{CoreApi, Enforcer};
 use deadpool::managed::Object;
 use deadpool_postgres::{Manager, Runtime};
 use dotenvy::dotenv;
@@ -35,7 +36,7 @@ use std::{
 	},
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 use tokio_postgres::NoTls;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
@@ -199,6 +200,10 @@ async fn main() {
 		.time_to_live(Duration::from_secs(CACHE_TTL_SECONDS))
 		.build();
 
+	// Initialise Casbin Enforcer
+	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await.unwrap();
+	let enforcer = Arc::new(RwLock::new(enforcer));
+
 	// Set up GraphQL
 	let key = Key::from(cfg.cookie_secret.as_bytes());
 	let shared_state = Arc::new(SharedState {
@@ -209,6 +214,7 @@ async fn main() {
 		response_cache,
 		key: key.clone(),
 		config: cfg,
+		enforcer,
 	});
 
 	let app_state = AppState { inner: shared_state.clone() };
@@ -241,7 +247,7 @@ async fn main() {
 			"/api/locations/",
 			post(post_locations)
 				.route_layer(DefaultBodyLimit::max(BODY_MAX_SIZE_LIMIT_BYTES))
-				.with_state(shared_state.clone()),
+				.with_state(app_state.clone()),
 		)
 		.route("/api/s3-objects/{id}", delete(delete_s3_object).with_state(shared_state.clone()))
 		.route("/api/delete-s3-objects/", post(delete_s3_objects).with_state(shared_state.clone()))

@@ -1,13 +1,14 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
-use crate::SharedState;
 use crate::graphql::{objects::location::Location, queries::mutation::Mutation};
+use crate::{AppState, SharedState};
 use axum::{
 	body::Bytes,
 	extract::{Multipart, State},
 	http::StatusCode,
 	response::{IntoResponse, Response},
 };
+use axum_extra::extract::cookie::PrivateCookieJar;
 use axum_macros::debug_handler;
 use deadpool::managed::Object;
 use deadpool_postgres::Manager;
@@ -24,9 +25,18 @@ struct FileData {
 // @todo Modify to return both status code and location and filenames added.
 #[debug_handler]
 pub async fn post(
-	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
+	State(state): State<AppState<Manager, Object<Manager>>>,
+	jar: PrivateCookieJar,
 	mut multipart: Multipart,
 ) -> Response {
+	let user_id = if let Some(cookie) = jar.get("auth_token")
+		&& let Ok(id) = cookie.value().parse::<i64>()
+	{
+		id
+	} else {
+		return StatusCode::UNAUTHORIZED.into_response();
+	};
+
 	let mut latitude: Option<f64> = None;
 	let mut longitude: Option<f64> = None;
 	let mut made_on: Option<String> = None;
@@ -91,24 +101,30 @@ pub async fn post(
 		);
 
 		let _ = state
+			.inner
 			.minio_client
-			.put_object_content(&state.bucket_name, &file.filename, file.bytes)
+			.put_object_content(&state.inner.bucket_name, &file.filename, file.bytes)
 			.content_type(file.content_type)
 			.send()
 			.await;
 
-		let client = state.pool.get().await.unwrap();
+		let client = state.inner.pool.get().await.unwrap();
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
 			Some(Location { latitude, longitude })
 		} else {
 			None
 		};
 
-		let _ =
-			Mutation::upsert_s3_object_worker(&client, file.filename, made_on.clone(), location)
-				.await;
+		let _ = Mutation::upsert_s3_object_worker(
+			&client,
+			file.filename,
+			made_on.clone(),
+			location,
+			user_id,
+		)
+		.await;
 
-		state.update_last_modified();
+		state.inner.update_last_modified();
 	}
 
 	StatusCode::OK.into_response()

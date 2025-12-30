@@ -8,6 +8,7 @@ use axum::{
 	response::{self, IntoResponse},
 };
 use axum_extra::extract::cookie::Key;
+use casbin::{CoreApi, Enforcer};
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
@@ -17,6 +18,7 @@ use std::{
 	sync::{Arc, atomic::AtomicU64},
 	time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::RwLock;
 
 pub mod controllers;
 pub mod email;
@@ -58,6 +60,7 @@ pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub response_cache: Cache<u64, Bytes>,
 	pub key: Key,
 	pub config: Config,
+	pub enforcer: Arc<RwLock<Enforcer>>,
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {
@@ -107,6 +110,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 			.field("bucket_name", &self.bucket_name)
 			.field("last_modified", &self.last_modified)
 			.field("response_cache", &"Cache<u64, Bytes>")
+			.field("enforcer", &"Enforcer")
 			.finish()
 	}
 }

@@ -1,5 +1,5 @@
 /* layer: properties */
-@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-border-opacity:100%;--un-text-opacity:100%;--un-translate-x:initial;--un-translate-y:initial;--un-translate-z:initial;--un-from-opacity:100%;--un-to-opacity:100%;}}
+@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-text-opacity:100%;--un-translate-x:initial;--un-translate-y:initial;--un-translate-z:initial;--un-from-opacity:100%;--un-to-opacity:100%;--un-border-opacity:100%;}}
 @property --un-text-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-border-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-bg-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
@@ -50,15 +50,19 @@
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
+--radius-none: 0;
+--default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
+--default-transition-duration: 150ms;
+--colors-white: #fff;
 --fontWeight-bold: 700;
+--colors-gray-200: oklch(92.8% 0.006 264.531);
+--colors-black: #000;
 --text-4xl-fontSize: 2.25rem;
 --text-4xl-lineHeight: 2.5rem;
 --text-xl-fontSize: 1.25rem;
 --text-xl-lineHeight: 1.75rem;
 --container-md: 28rem;
 --radius-DEFAULT: 0.25rem;
---colors-white: #fff;
---colors-gray-200: oklch(92.8% 0.006 264.531);
 --colors-gray-700: oklch(37.3% 0.034 259.733);
 --colors-green-500: oklch(72.3% 0.219 149.579);
 --colors-red-500: oklch(63.7% 0.237 25.331);
@@ -70,10 +74,6 @@
 --text-xs-fontSize: 0.75rem;
 --text-xs-lineHeight: 1rem;
 --colors-blue-700: oklch(48.8% 0.243 264.376);
---radius-none: 0;
---default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
---default-transition-duration: 150ms;
---colors-black: #000;
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);
