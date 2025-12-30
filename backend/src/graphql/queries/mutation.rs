@@ -283,7 +283,12 @@ impl Mutation {
 
 		if let Ok(obj) = S3Object::where_name(ctx, name.clone()).await {
 			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
-			if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+			if !enforcer.enforce((casbin_user.clone(), casbin_obj, "update"))? {
+				return Err(GraphQLError::new("Forbidden"));
+			}
+		} else {
+			let casbin_obj = CasbinObject { user_id };
+			if !enforcer.enforce((casbin_user, casbin_obj, "create"))? {
 				return Err(GraphQLError::new("Forbidden"));
 			}
 		}

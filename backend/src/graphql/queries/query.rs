@@ -111,7 +111,13 @@ impl Query {
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 
-		if user.role == UserRole::Admin {
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id: 0 }; // System level object
+
+		if enforcer.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))? {
 			S3Object::all(ctx).await
 		} else {
 			S3Object::where_user_id(ctx, user_id).await

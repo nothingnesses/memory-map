@@ -3,3 +3,5 @@ p, user, *, delete
 p, user, *, read
 p, admin, *, manage_user
 p, admin, *, read_all_users
+p, user, *, create
+p, admin, *, read_all_s3_objects
