@@ -267,6 +267,17 @@ impl Mutation {
 			return Err(GraphQLError::new("Invalid email format"));
 		}
 
+		// Check if email is taken
+		let count: i64 = client
+			.query_one("SELECT COUNT(*) FROM users WHERE email = $1", &[&email])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
+			.get(0);
+
+		if count > 0 {
+			return Err(GraphQLError::new("Email already in use"));
+		}
+
 		let salt = SaltString::generate(&mut OsRng);
 		let argon2 = Argon2::default();
 		let password_hash = argon2
