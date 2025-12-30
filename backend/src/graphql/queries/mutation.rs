@@ -380,10 +380,13 @@ impl Mutation {
 			.verify_password(password.as_bytes(), &parsed_hash)
 			.map_err(|_| GraphQLError::new("Invalid email or password"))?;
 
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let secure_cookie = state.config.frontend_url.starts_with("https");
+
 		// Set cookie
 		let cookie = Cookie::build(("auth_token", user.id.to_string()))
 			.http_only(true)
-			.secure(true)
+			.secure(secure_cookie)
 			.same_site(SameSite::Lax)
 			.path("/")
 			.build();

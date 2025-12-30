@@ -72,21 +72,6 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 							font-bold
 							mt-100px
 							">
-								<A
-									attr:class="py-4 w-full grid place-items-center"
-									href="/"
-									on:click=move |_| close_header_menu()
-								>
-									"Map"
-								</A>
-								<A
-									attr:class="py-4 w-full grid place-items-center"
-									href="/objects"
-									on:click=move |_| close_header_menu()
-								>
-									"Objects"
-								</A>
-
 								<Suspense>
 									{move || {
 										user_ctx
@@ -97,6 +82,20 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 														match user_opt {
 															Some(user) => {
 																view! {
+																	<A
+																		attr:class="py-4 w-full grid place-items-center"
+																		href="/"
+																		on:click=move |_| close_header_menu()
+																	>
+																		"Map"
+																	</A>
+																	<A
+																		attr:class="py-4 w-full grid place-items-center"
+																		href="/objects"
+																		on:click=move |_| close_header_menu()
+																	>
+																		"Objects"
+																	</A>
 																	<A
 																		attr:class="py-4 w-full grid place-items-center"
 																		href="/account"

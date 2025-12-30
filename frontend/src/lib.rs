@@ -163,8 +163,33 @@ pub fn App() -> impl IntoView {
 				<Router>
 					<Shell>
 						<Routes fallback=|| view! { NotFound }>
-							<Route path=path!("/") view=Home />
-							<Route path=path!("/objects") view=Objects />
+							<Route
+								path=path!("/")
+								view=|| {
+									view! {
+										<Suspense fallback=|| view! { "Loading..." }>
+											{move || {
+												let user_ctx = use_context::<UserContext>();
+												user_ctx
+													.map(|ctx| {
+														ctx.user
+															.get()
+															.map(|user_opt| {
+																match user_opt {
+																	Some(_) => view! { <Home /> }.into_any(),
+																	None => view! { <SignIn /> }.into_any(),
+																}
+															})
+													})
+											}}
+										</Suspense>
+									}
+								}
+							/>
+							<Route
+								path=path!("/objects")
+								view=|| view! { <ProtectedRoute><Objects /></ProtectedRoute> }
+							/>
 							<Route path=path!("/sign-in") view=SignIn />
 							<Route path=path!("/register") view=Register />
 							<Route path=path!("/account") view=|| view! { <ProtectedRoute><Account /></ProtectedRoute> } />
