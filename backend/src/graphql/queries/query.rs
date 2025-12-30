@@ -103,20 +103,24 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user_id_opt = ctx.data_opt::<UserId>().map(|u| u.0);
 
-		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
-		let enforcer = state.enforcer.read().await;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id: 0 }; // System level object
+		if let Some(user_id) = user_id_opt {
+			let user = User::by_id(ctx, user_id)
+				.await?
+				.ok_or_else(|| GraphQLError::new("User not found"))?;
 
-		if enforcer.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))? {
-			S3Object::all(ctx).await
-		} else {
-			S3Object::where_user_id(ctx, user_id).await
+			// Check permissions
+			let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+			let enforcer = state.enforcer.read().await;
+			let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+			let casbin_obj = CasbinObject { user_id: 0 }; // System level object
+
+			if enforcer.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))? {
+				return S3Object::all(ctx).await;
+			}
 		}
+
+		S3Object::visible_to_user(ctx, user_id_opt).await
 	}
 }

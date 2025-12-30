@@ -3,6 +3,7 @@ use crate::{
 	graphql_queries::{
 		s3_object_by_id::S3ObjectByIdQuery,
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
+		types::PublicityOverride,
 		update_s3_object::{
 			UpdateS3ObjectMutation,
 			update_s3_object_mutation::{LocationInput, Variables},
@@ -10,12 +11,14 @@ use crate::{
 	},
 	iso_to_local_datetime_value, js_date_value_to_iso,
 };
+use email_address::EmailAddress;
 use leptos::{
 	logging::debug_error,
 	prelude::*,
 	task::spawn_local,
 	web_sys::{MouseEvent, SubmitEvent},
 };
+use std::{collections::HashSet, str::FromStr};
 use thaw::*;
 
 /// Component for editing an existing S3 object.
@@ -56,6 +59,8 @@ pub fn EditS3ObjectForm(
 	let (latitude, set_latitude) = signal(None::<f64>);
 	let (longitude, set_longitude) = signal(None::<f64>);
 	let (made_on, set_made_on) = signal(String::new());
+	let (publicity, set_publicity) = signal(PublicityOverride::Default);
+	let (allowed_users, set_allowed_users) = signal(String::new());
 
 	// Populate form from initial data (Optimistic UI)
 	Effect::new(move |_| {
@@ -69,6 +74,10 @@ pub fn EditS3ObjectForm(
 				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
 			{
 				set_made_on.set(local_str);
+			}
+			set_publicity.set(s3_object.publicity);
+			if !s3_object.allowed_users.is_empty() {
+				set_allowed_users.set(s3_object.allowed_users.join(", "));
 			}
 		}
 	});
@@ -86,6 +95,10 @@ pub fn EditS3ObjectForm(
 			{
 				set_made_on.set(local_str);
 			}
+			set_publicity.set(s3_object.publicity);
+			if !s3_object.allowed_users.is_empty() {
+				set_allowed_users.set(s3_object.allowed_users.join(", "));
+			}
 		}
 	});
 
@@ -96,6 +109,8 @@ pub fn EditS3ObjectForm(
 		let lat_val = latitude.get();
 		let lon_val = longitude.get();
 		let made_on_val = made_on.get();
+		let publicity_val = publicity.get();
+		let allowed_users_val = allowed_users.get();
 
 		let location = if let (Some(lat), Some(lon)) = (lat_val, lon_val) {
 			Some(LocationInput { latitude: lat, longitude: lon })
@@ -105,16 +120,48 @@ pub fn EditS3ObjectForm(
 
 		let made_on_iso = js_date_value_to_iso(&made_on_val);
 
+		let allowed_users_vec: Vec<String> = allowed_users_val
+			.split(',')
+			.map(|s| s.trim().to_string())
+			.filter(|s| !s.is_empty())
+			.collect();
+
+		// Validate emails
+		let invalid_emails: Vec<String> = allowed_users_vec
+			.iter()
+			.filter(|email| EmailAddress::from_str(email).is_err())
+			.map(|s| s.to_string())
+			.collect();
+
+		if !invalid_emails.is_empty() {
+			toaster.dispatch_toast(
+				move || {
+					view! {
+						<Toast>
+							<ToastTitle>"Invalid Emails"</ToastTitle>
+							<ToastBody>
+								{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
+							</ToastBody>
+						</Toast>
+					}
+				},
+				ToastOptions::default().with_intent(ToastIntent::Error),
+			);
+			return;
+		}
+
 		spawn_local(async move {
 			let variables = Variables {
 				id: id.get().to_string(),
 				name: name_val,
 				made_on: made_on_iso,
 				location,
+				publicity: publicity_val,
+				allowed_users: Some(allowed_users_vec.clone()),
 			};
 
 			match UpdateS3ObjectMutation::run(variables).await {
-				Ok(_) => {
+				Ok(updated_obj) => {
 					toaster.dispatch_toast(
 						move || {
 							view! {
@@ -126,6 +173,34 @@ pub fn EditS3ObjectForm(
 						},
 						ToastOptions::default().with_intent(ToastIntent::Success),
 					);
+
+					// Check for missing users
+					let returned_users: HashSet<String> =
+						updated_obj.allowed_users.into_iter().collect();
+					let missing_users: Vec<String> = allowed_users_vec
+						.into_iter()
+						.filter(|u| !returned_users.contains(u))
+						.collect();
+
+					if !missing_users.is_empty() {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Warning"</ToastTitle>
+										<ToastBody>
+											{format!(
+												"The following users were not found: {}",
+												missing_users.join(", "),
+											)}
+										</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Warning),
+						);
+					}
+
 					on_success.run(());
 				}
 				Err(e) => {
@@ -170,6 +245,42 @@ pub fn EditS3ObjectForm(
 														class="bg-gray-200 cursor-not-allowed"
 													/>
 												</label>
+												<label>
+													<div class="font-bold">"Publicity"</div>
+													<select
+														class="p-2 border rounded bg-white"
+														on:change=move |ev| {
+															let val = event_target_value(&ev);
+															if let Ok(new_publicity) = val.parse() {
+																set_publicity.set(new_publicity);
+															}
+														}
+														prop:value=move || publicity.get().to_string()
+													>
+														<option value="Default">"Default"</option>
+														<option value="Public">"Public"</option>
+														<option value="Private">"Private"</option>
+														<option value="Selected Users">"Selected Users"</option>
+													</select>
+												</label>
+												<Show when=move || {
+													publicity.get() == PublicityOverride::SelectedUsers
+												}>
+													<label>
+														<div class="font-bold">
+															"Allowed Users (comma separated emails)"
+														</div>
+														<input
+															type="text"
+															name="allowed_users"
+															prop:value=allowed_users
+															on:input=move |ev| {
+																set_allowed_users.set(event_target_value(&ev))
+															}
+															placeholder="user1@example.com, user2@example.com"
+														/>
+													</label>
+												</Show>
 												<label>
 													<div class="font-bold">"Set latitude"</div>
 													<input

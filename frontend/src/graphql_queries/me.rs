@@ -9,11 +9,12 @@ use leptos::error::Error;
 #[graphql(
 	schema_path = "graphql/schema.json",
 	query_path = "graphql/me.graphql",
+	extern_enums("PublicityDefault", "UserRole"),
 	response_derives = "Clone,Debug,PartialEq"
 )]
 pub struct MeQuery;
 
-pub use me_query::UserRole;
+pub use crate::graphql_queries::types::{PublicityDefault, UserRole};
 
 impl MeQuery {
 	pub async fn run() -> Result<Option<User>, Error> {

@@ -11,9 +11,12 @@ use leptos::error::Error;
 #[graphql(
 	schema_path = "graphql/schema.json",
 	query_path = "graphql/s3Objects.graphql",
+	extern_enums("PublicityOverride"),
 	response_derives = "Clone,Debug"
 )]
 pub struct S3ObjectsQuery;
+
+pub use crate::graphql_queries::types::PublicityOverride;
 
 impl S3ObjectsQuery {
 	// @todo Add better error-handling

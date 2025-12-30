@@ -9,5 +9,7 @@ query S3ObjectsQuery {
 		madeOn
 		url
 		contentType
+		publicity
+		allowedUsers
 	}
 }

@@ -8,5 +8,6 @@ pub mod location_marker;
 pub mod location_markers;
 pub mod protected_route;
 pub mod s3_object;
+pub mod s3_object_table_row;
 pub mod s3_object_table_rows;
 pub mod s3_objects_table;

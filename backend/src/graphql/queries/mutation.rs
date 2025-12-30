@@ -1,7 +1,11 @@
 use crate::{
 	CasbinObject, CasbinUser, ContextWrapper, SharedState, UserId,
 	email::send_password_reset_email,
-	graphql::objects::{location::Location, s3_object::S3Object, user::User},
+	graphql::objects::{
+		location::Location,
+		s3_object::{PublicityOverride, S3Object},
+		user::{PublicityDefault, User},
+	},
 };
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
@@ -17,20 +21,20 @@ use std::sync::{Arc, Mutex};
 use time::Duration;
 use tracing;
 
-const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
+const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
-SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4)
+SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), publicity = $5
 WHERE id = $1
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
-const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id)
-VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4)
+const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id, publicity)
+VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5)
 ON CONFLICT (name) DO UPDATE
-SET made_on = EXCLUDED.made_on, location = EXCLUDED.location
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id;";
+SET made_on = EXCLUDED.made_on, location = EXCLUDED.location, publicity = EXCLUDED.publicity
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
 fn validate_password(password: &str) -> Result<(), GraphQLError> {
 	if password.len() < 8 {
@@ -92,6 +96,8 @@ impl Mutation {
 		name: String,
 		made_on: Option<String>,
 		location: Option<Location>,
+		publicity: PublicityOverride,
+		allowed_users: Vec<String>,
 	) -> Result<S3Object, GraphQLError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
 			Some(timestamp_string) => match timestamp_string.parse() {
@@ -112,17 +118,18 @@ impl Mutation {
 			location_geometry
 		});
 		tracing::debug!(
-			"Executing update with: id={}, name={}, made_on={:?}, location={:?}",
+			"Executing update with: id={}, name={}, made_on={:?}, location={:?}, publicity={:?}",
 			id,
 			name,
 			parsed_made_on.as_ref().map(|ts| ts.to_string()),
-			location_geometry
+			location_geometry,
+			publicity
 		);
-		S3Object::try_from(
+		let mut s3_object = S3Object::try_from(
 			client
 				.query_one(
 					&client.prepare_cached(UPDATE_OBJECT_QUERY).await?,
-					&[&id, &name, &parsed_made_on, &location_geometry],
+					&[&id, &name, &parsed_made_on, &location_geometry, &publicity],
 				)
 				.await
 				.map_err(|e| {
@@ -130,7 +137,37 @@ impl Mutation {
 					GraphQLError::new(format!("Database error: {e}"))
 				})?,
 		)
-		.await
+		.await?;
+
+		// Update allowed users
+		client
+			.execute("DELETE FROM object_allowed_users WHERE object_id = $1", &[&id])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+		let mut valid_allowed_users = Vec::new();
+
+		if !allowed_users.is_empty() {
+			let rows = client
+				.query("SELECT id, email FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+			for row in rows {
+				let user_id: i64 = row.get("id");
+				let email: String = row.get("email");
+				client
+					.execute(
+						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
+						&[&id, &user_id],
+					)
+					.await
+					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+				valid_allowed_users.push(email);
+			}
+		}
+		s3_object.allowed_users = valid_allowed_users;
+		Ok(s3_object)
 	}
 
 	pub async fn upsert_s3_object_worker(
@@ -139,6 +176,8 @@ impl Mutation {
 		made_on: Option<String>,
 		location: Option<Location>,
 		user_id: i64,
+		publicity: PublicityOverride,
+		allowed_users: Vec<String>,
 	) -> Result<S3Object, GraphQLError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
 			Some(timestamp_string) => match timestamp_string.parse() {
@@ -159,17 +198,18 @@ impl Mutation {
 			location_geometry
 		});
 		tracing::debug!(
-			"Executing upsert with: name={}, made_on={:?}, location={:?}, user_id={}",
+			"Executing upsert with: name={}, made_on={:?}, location={:?}, user_id={}, publicity={:?}",
 			name,
 			parsed_made_on.as_ref().map(|ts| ts.to_string()),
 			location_geometry,
-			user_id
+			user_id,
+			publicity
 		);
-		S3Object::try_from(
+		let mut s3_object = S3Object::try_from(
 			client
 				.query_one(
 					&client.prepare_cached(UPSERT_OBJECT_QUERY).await?,
-					&[&name, &parsed_made_on, &location_geometry, &user_id],
+					&[&name, &parsed_made_on, &location_geometry, &user_id, &publicity],
 				)
 				.await
 				.map_err(|e| {
@@ -177,7 +217,39 @@ impl Mutation {
 					GraphQLError::new(format!("Database error: {e}"))
 				})?,
 		)
-		.await
+		.await?;
+
+		let id: i64 = s3_object.id.parse().unwrap();
+
+		// Update allowed users
+		client
+			.execute("DELETE FROM object_allowed_users WHERE object_id = $1", &[&id])
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+		let mut valid_allowed_users = Vec::new();
+
+		if !allowed_users.is_empty() {
+			let rows = client
+				.query("SELECT id, email FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.await
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+			for row in rows {
+				let user_id: i64 = row.get("id");
+				let email: String = row.get("email");
+				client
+					.execute(
+						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
+						&[&id, &user_id],
+					)
+					.await
+					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+				valid_allowed_users.push(email);
+			}
+		}
+		s3_object.allowed_users = valid_allowed_users;
+		Ok(s3_object)
 	}
 }
 
@@ -233,6 +305,8 @@ impl Mutation {
 		name: String,
 		made_on: Option<String>,
 		location: Option<Location>,
+		publicity: PublicityOverride,
+		allowed_users: Option<Vec<String>>,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
@@ -252,8 +326,18 @@ impl Mutation {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
-		let result =
-			Self::update_s3_object_worker(&client, id_int, name, made_on, location).await?;
+		let allowed_users = allowed_users.unwrap_or_default();
+
+		let result = Self::update_s3_object_worker(
+			&client,
+			id_int,
+			name,
+			made_on,
+			location,
+			publicity,
+			allowed_users,
+		)
+		.await?;
 
 		state.update_last_modified();
 
@@ -266,6 +350,8 @@ impl Mutation {
 		name: String,
 		made_on: Option<String>,
 		location: Option<Location>,
+		publicity: PublicityOverride,
+		allowed_users: Option<Vec<String>>,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
@@ -289,12 +375,54 @@ impl Mutation {
 			}
 		}
 
-		let result =
-			Self::upsert_s3_object_worker(&client, name, made_on, location, user_id).await?;
+		let allowed_users = allowed_users.unwrap_or_default();
+
+		let result = Self::upsert_s3_object_worker(
+			&client,
+			name,
+			made_on,
+			location,
+			user_id,
+			publicity,
+			allowed_users,
+		)
+		.await?;
 
 		state.update_last_modified();
 
 		Ok(result)
+	}
+
+	async fn update_user_publicity(
+		&self,
+		ctx: &Context<'_>,
+		default_publicity: PublicityDefault,
+	) -> Result<User, GraphQLError> {
+		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let wrapper = ContextWrapper(ctx);
+		let client = wrapper.get_db_client().await?;
+
+		// Check permissions
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let enforcer = state.enforcer.read().await;
+		let user =
+			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_obj = CasbinObject { user_id };
+
+		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+			return Err(GraphQLError::new("Forbidden"));
+		}
+
+		let row = client
+			.query_one(
+				"UPDATE users SET default_publicity = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity",
+				&[&default_publicity, &user_id],
+			)
+			.await
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+
+		User::try_from(row)
 	}
 
 	async fn register(
@@ -336,7 +464,7 @@ impl Mutation {
 			.to_string();
 
 		let statement = client
-			.prepare_cached("INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *")
+			.prepare_cached("INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, created_at, updated_at, default_publicity")
 			.await?;
 
 		let row = client
@@ -356,7 +484,7 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		let statement = client.prepare_cached("SELECT * FROM users WHERE email = $1").await?;
+		let statement = client.prepare_cached("SELECT id, email, password_hash, role, created_at, updated_at, default_publicity FROM users WHERE email = $1").await?;
 
 		let row = client
 			.query_opt(&statement, &[&email])
@@ -364,14 +492,10 @@ impl Mutation {
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.ok_or_else(|| GraphQLError::new("Invalid email or password"))?;
 
+		let password_hash_str: String = row
+			.try_get("password_hash")
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 		let user = User::try_from(row)?;
-		let password_hash_str: String = client
-			.query_one(
-				"SELECT password_hash FROM users WHERE id = $1",
-				&[&user.id.parse::<i64>().unwrap()],
-			)
-			.await?
-			.get("password_hash");
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
 			.map_err(|e| GraphQLError::new(format!("Hash parse error: {e}")))?;
@@ -512,7 +636,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET email = $1, updated_at = now() WHERE id = $2 RETURNING *",
+				"UPDATE users SET email = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity",
 				&[&new_email, &user_id.0],
 			)
 			.await
@@ -666,7 +790,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING *",
+				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING id, email, role, created_at, updated_at, default_publicity",
 				&[&target_user.role.to_string(), &target_user.email, &target_id],
 			)
 			.await

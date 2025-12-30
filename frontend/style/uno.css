@@ -50,15 +50,15 @@
 /* layer: theme */
 :root, :host {
 --spacing: 0.25rem;
---fontWeight-bold: 700;
---colors-gray-200: oklch(92.8% 0.006 264.531);
 --radius-none: 0;
 --default-transition-timingFunction: cubic-bezier(0.4, 0, 0.2, 1);
 --default-transition-duration: 150ms;
 --colors-white: #fff;
+--fontWeight-bold: 700;
+--radius-DEFAULT: 0.25rem;
+--colors-gray-200: oklch(92.8% 0.006 264.531);
 --colors-black: #000;
 --container-md: 28rem;
---radius-DEFAULT: 0.25rem;
 --colors-gray-700: oklch(37.3% 0.034 259.733);
 --colors-green-500: oklch(72.3% 0.219 149.579);
 --colors-red-500: oklch(63.7% 0.237 25.331);
@@ -561,6 +561,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .h-100px{height:100px;}
 .h-150px{height:150px;}
 .h-20{height:calc(var(--spacing) * 20);}
+.h-4{height:calc(var(--spacing) * 4);}
 .h-auto{height:auto;}
 .h-full{height:100%;}
 .max-h-\[80vh\]{max-height:80vh;}
@@ -576,6 +577,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .min-w-unset{min-width:unset;}
 .w-100px{width:100px;}
 .w-20{width:calc(var(--spacing) * 20);}
+.w-4{width:calc(var(--spacing) * 4);}
 .w-40px{width:40px;}
 .w-dvh{width:100dvh;}
 .w-dvw{width:100dvw;}
