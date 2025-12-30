@@ -166,19 +166,7 @@ pub fn App() -> impl IntoView {
 							<Route
 								path=path!("/")
 								view=|| {
-									view! {
-										<Suspense fallback=|| {
-											view! { "Loading..." }
-										}>
-											{move || {
-												let user_ctx = use_context::<UserContext>();
-												user_ctx
-													.map(|ctx| {
-														ctx.user.get().map(|_| { view! { <Home /> }.into_any() })
-													})
-											}}
-										</Suspense>
-									}
+									view! { <Home /> }
 								}
 							/>
 							<Route
