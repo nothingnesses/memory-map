@@ -32,6 +32,11 @@ pub fn S3ObjectTableRow(
 	let show_allowed_users_dialog = RwSignal::new(false);
 	let allowed_users_input = RwSignal::new(String::new());
 	let select_ref = NodeRef::<Select>::new();
+	let local_publicity = RwSignal::new(s3_object.get().publicity);
+
+	Effect::new(move |_| {
+		local_publicity.set(s3_object.get().publicity);
+	});
 
 	// Initialize allowed_users_input when the dialog opens or object changes
 	Effect::new(move |_| {
@@ -118,6 +123,8 @@ pub fn S3ObjectTableRow(
 						},
 						ToastOptions::default().with_intent(ToastIntent::Error),
 					);
+					// Revert local state on error
+					local_publicity.set(s3_object.publicity);
 				}
 			}
 		});
@@ -126,6 +133,7 @@ pub fn S3ObjectTableRow(
 	let on_change_publicity = move |ev| {
 		let val = event_target_value(&ev);
 		if let Ok(new_publicity) = val.parse::<PublicityOverride>() {
+			local_publicity.set(new_publicity.clone());
 			if new_publicity == PublicityOverride::SelectedUsers {
 				show_allowed_users_dialog.set(true);
 			} else {
@@ -137,6 +145,7 @@ pub fn S3ObjectTableRow(
 	let on_cancel_allowed_users = move |_| {
 		show_allowed_users_dialog.set(false);
 		// Reset the select to the current value
+		local_publicity.set(s3_object.get().publicity);
 		if let Some(select) = select_ref.get() {
 			select.set_value(&s3_object.get().publicity.to_string());
 		}
@@ -210,19 +219,19 @@ pub fn S3ObjectTableRow(
 			</TableCell>
 			<TableCell class="wrap-anywhere">{move || s3_object.get().content_type}</TableCell>
 			<TableCell class="wrap-anywhere">
-				<div class="flex items-center gap-2">
+				<div class="grid place-items-center gap-2">
 					<select
 						node_ref=select_ref
 						class="p-2 border rounded bg-white"
 						on:change=on_change_publicity
-						prop:value=move || s3_object.get().publicity.to_string()
+						prop:value=move || local_publicity.get().to_string()
 					>
 						<option value="Default">"Default"</option>
 						<option value="Public">"Public"</option>
 						<option value="Private">"Private"</option>
 						<option value="Selected Users">"Selected Users"</option>
 					</select>
-					<Show when=move || s3_object.get().publicity == PublicityOverride::SelectedUsers>
+					<Show when=move || local_publicity.get() == PublicityOverride::SelectedUsers>
 						<Button
 							class="p-2 h-auto"
 							appearance=ButtonAppearance::Subtle
