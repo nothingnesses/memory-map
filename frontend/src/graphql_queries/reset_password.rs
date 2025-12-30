@@ -1,4 +1,6 @@
-use crate::{graphql_queries::reset_password::reset_password_mutation::Variables, post_graphql_with_auth};
+use crate::{
+	graphql_queries::reset_password::reset_password_mutation::Variables, post_graphql_with_auth,
+};
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
 

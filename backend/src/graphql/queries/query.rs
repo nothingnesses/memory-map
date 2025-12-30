@@ -38,12 +38,11 @@ impl Query {
 		ctx: &Context<'_>,
 	) -> Result<Vec<User>, GraphQLError> {
 		// Check if user is admin
-		if let Some(user_id) = ctx.data_opt::<UserId>() {
-			if let Some(user) = User::by_id(ctx, user_id.0).await? {
-				if user.role == UserRole::Admin {
-					return User::all(ctx).await;
-				}
-			}
+		if let Some(user_id) = ctx.data_opt::<UserId>()
+			&& let Some(user) = User::by_id(ctx, user_id.0).await?
+			&& user.role == UserRole::Admin
+		{
+			return User::all(ctx).await;
 		}
 		Err(GraphQLError::new("Unauthorized"))
 	}

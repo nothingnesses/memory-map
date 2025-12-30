@@ -1,8 +1,9 @@
-use crate::components::header::Header;
-use crate::components::protected_route::ProtectedRoute;
-use crate::pages::{
-	account::Account, admin::users::Users, forbidden::Forbidden, home::Home, objects::Objects,
-	register::Register, reset_password::ResetPassword, sign_in::SignIn,
+use crate::{
+	components::header::Header,
+	pages::{
+		account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
+		reset_password::ResetPassword, sign_in::SignIn,
+	},
 };
 use auth::UserContext;
 use graphql_queries::me::MeQuery;
@@ -14,8 +15,10 @@ use leptos::{
 };
 use leptos_meta::*;
 use leptos_router::{components::*, path};
-use std::ops::{Add, Deref, Rem, Sub};
-use std::{error, io};
+use std::{
+	error, io,
+	ops::{Add, Deref, Rem, Sub},
+};
 use thaw::{ConfigProvider, ToasterProvider};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
@@ -45,13 +48,13 @@ fn Shell(children: Children) -> impl IntoView {
 		translate_y.set_value(current);
 
 		// Only update the CSS variable if the menu is closed
-		if !menu_open.get() {
-			if let Some(el) = page_wrapper_ref.get() {
-				let _ = el
-					.deref()
-					.style()
-					.set_property("--hide-on-scroll-translate-y", &format!("{}px", current));
-			}
+		if !menu_open.get()
+			&& let Some(el) = page_wrapper_ref.get()
+		{
+			let _ = el
+				.deref()
+				.style()
+				.set_property("--hide-on-scroll-translate-y", &format!("{current}px"));
 		}
 	};
 
@@ -59,7 +62,7 @@ fn Shell(children: Children) -> impl IntoView {
 		// Initialize last_scroll_y
 		last_scroll_y.set_value(window().scroll_y().unwrap_or(0.0).max(0.0));
 
-		let update_pos = update_header_position.clone();
+		let update_pos = update_header_position;
 
 		// Handle scroll events to hide/show header
 		let on_scroll = move |_| {
@@ -82,7 +85,7 @@ fn Shell(children: Children) -> impl IntoView {
 			last_scroll_y.set_value(current_scroll_y);
 		};
 
-		let update_pos_end = update_header_position.clone();
+		let update_pos_end = update_header_position;
 
 		// Handle scroll end to snap header to open/closed state
 		let on_scroll_end = move |_: web_sys::CustomEvent| {
@@ -203,44 +206,38 @@ pub async fn post_graphql_with_auth<Q: graphql_client::GraphQLQuery, U: reqwest:
 	opts.set_credentials(RequestCredentials::Include);
 	opts.set_body(&JsValue::from_str(&body_str));
 
-	let headers = web_sys::Headers::new().map_err(|e| {
-		io::Error::new(io::ErrorKind::Other, format!("Failed to create headers: {:?}", e))
-	})?;
-	headers.set("Content-Type", "application/json").map_err(|e| {
-		io::Error::new(io::ErrorKind::Other, format!("Failed to set header: {:?}", e))
-	})?;
+	let headers = web_sys::Headers::new()
+		.map_err(|e| io::Error::other(format!("Failed to create headers: {e:?}")))?;
+	headers
+		.set("Content-Type", "application/json")
+		.map_err(|e| io::Error::other(format!("Failed to set header: {e:?}")))?;
 	opts.set_headers(&headers);
 
 	let url_str = url.into_url()?.to_string();
 
-	let request = web_sys::Request::new_with_str_and_init(&url_str, &opts).map_err(|e| {
-		io::Error::new(io::ErrorKind::Other, format!("Failed to create request: {:?}", e))
-	})?;
+	let request = web_sys::Request::new_with_str_and_init(&url_str, &opts)
+		.map_err(|e| io::Error::other(format!("Failed to create request: {e:?}")))?;
 
-	let window = web_sys::window()
-		.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Window not found"))?;
+	let window = web_sys::window().ok_or_else(|| io::Error::other("Window not found"))?;
 	let resp_value = JsFuture::from(window.fetch_with_request(&request))
 		.await
-		.map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Fetch failed: {:?}", e)))?;
+		.map_err(|e| io::Error::other(format!("Fetch failed: {e:?}")))?;
 
-	let resp: Response = resp_value.dyn_into().map_err(|e| {
-		io::Error::new(io::ErrorKind::Other, format!("Response cast failed: {:?}", e))
-	})?;
+	let resp: Response = resp_value
+		.dyn_into()
+		.map_err(|e| io::Error::other(format!("Response cast failed: {e:?}")))?;
 
 	if !resp.ok() {
-		return Err(Box::new(io::Error::new(
-			io::ErrorKind::Other,
-			format!("Network error: {}", resp.status()),
-		)));
+		return Err(Box::new(io::Error::other(format!("Network error: {}", resp.status()))));
 	}
 
-	let text = JsFuture::from(resp.text().map_err(|e| {
-		io::Error::new(io::ErrorKind::Other, format!("Failed to get text promise: {:?}", e))
-	})?)
+	let text = JsFuture::from(
+		resp.text().map_err(|e| io::Error::other(format!("Failed to get text promise: {e:?}")))?,
+	)
 	.await
-	.map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to get text: {:?}", e)))?
+	.map_err(|e| io::Error::other(format!("Failed to get text: {e:?}")))?
 	.as_string()
-	.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Response is not text"))?;
+	.ok_or_else(|| io::Error::other("Response is not text"))?;
 
 	let response_data: graphql_client::Response<Q::ResponseData> = serde_json::from_str(&text)?;
 

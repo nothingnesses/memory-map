@@ -23,10 +23,10 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 		menu_open.set(false);
 	};
 
-	let user_ctx_logout = user_ctx.clone();
+	let user_ctx_logout = user_ctx;
 	let on_logout = move |_| {
 		close_header_menu();
-		let user_ctx = user_ctx_logout.clone();
+		let user_ctx = user_ctx_logout;
 		let navigate = navigate.clone();
 		spawn_local(async move {
 			let _ = LogoutMutation::run().await;
@@ -87,12 +87,9 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 									"Objects"
 								</A>
 
-								<Suspense fallback=|| {
-									view! {}
-								}>
+								<Suspense>
 									{move || {
 										user_ctx
-											.clone()
 											.map(|ctx| {
 												ctx.user
 													.get()
@@ -119,7 +116,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																		}
 																			.into_any()
 																	} else {
-																		view! {}.into_any()
+																		().into_any()
 																	}}
 																	<button
 																		class="py-4 w-full grid place-items-center cursor-pointer"

@@ -1,23 +1,14 @@
-use crate::{
-	auth::UserContext,
-	graphql_queries::{
-		config::ConfigQuery,
-		login::{LoginMutation, login_mutation},
-		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
-	},
+use crate::graphql_queries::{
+	config::ConfigQuery,
+	login::{LoginMutation, login_mutation},
+	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
 };
-use leptos::{
-	ev,
-	prelude::*,
-	task::spawn_local,
-	wasm_bindgen::{JsCast, closure::Closure},
-};
-use leptos_router::{components::A, hooks::use_navigate};
+use leptos::{ev, prelude::*, task::spawn_local};
+use leptos_router::components::A;
 use thaw::*;
 
 #[component]
 pub fn SignIn() -> impl IntoView {
-	let navigate = use_navigate();
 	let email = RwSignal::new(String::new());
 	let password = RwSignal::new(String::new());
 	let error_message = RwSignal::new(Option::<String>::None);
@@ -29,7 +20,6 @@ pub fn SignIn() -> impl IntoView {
 	let on_sign_in = move |_| {
 		let email_val = email.get();
 		let password_val = password.get();
-		let navigate = navigate.clone();
 
 		is_loading.set(true);
 		spawn_local(async move {
@@ -126,7 +116,7 @@ pub fn SignIn() -> impl IntoView {
 					</Button>
 				</div>
 				<div class="mt-4 text-center">
-					<Suspense fallback=|| view! {}>
+					<Suspense>
 						{move || {
 							config_resource
 								.get()
@@ -134,13 +124,16 @@ pub fn SignIn() -> impl IntoView {
 								.map(|config| {
 									if config.enable_registration {
 										view! {
-											<A href="/register" attr:class="text-blue-500 hover:text-blue-700">
+											<A
+												href="/register"
+												attr:class="text-blue-500 hover:text-blue-700"
+											>
 												"Don't have an account? Register"
 											</A>
 										}
 											.into_any()
 									} else {
-										view! {}.into_any()
+										().into_any()
 									}
 								})
 						}}

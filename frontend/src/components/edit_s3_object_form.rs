@@ -65,10 +65,10 @@ pub fn EditS3ObjectForm(
 				set_latitude.set(Some(loc.latitude));
 				set_longitude.set(Some(loc.longitude));
 			}
-			if let Some(iso_str) = s3_object.made_on {
-				if let Some(local_str) = iso_to_local_datetime_value(&iso_str) {
-					set_made_on.set(local_str);
-				}
+			if let Some(iso_str) = s3_object.made_on
+				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
+			{
+				set_made_on.set(local_str);
 			}
 		}
 	});
@@ -81,10 +81,10 @@ pub fn EditS3ObjectForm(
 				set_latitude.set(Some(loc.latitude));
 				set_longitude.set(Some(loc.longitude));
 			}
-			if let Some(iso_str) = s3_object.made_on {
-				if let Some(local_str) = iso_to_local_datetime_value(&iso_str) {
-					set_made_on.set(local_str);
-				}
+			if let Some(iso_str) = s3_object.made_on
+				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
+			{
+				set_made_on.set(local_str);
 			}
 		}
 	});
@@ -135,9 +135,7 @@ pub fn EditS3ObjectForm(
 							view! {
 								<Toast>
 									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>
-										{format!("Failed to update object: {}", e)}
-									</ToastBody>
+									<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
 								</Toast>
 							}
 						},

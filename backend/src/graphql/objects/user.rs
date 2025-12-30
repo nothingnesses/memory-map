@@ -1,6 +1,7 @@
 use crate::ContextWrapper;
 use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use jiff::Timestamp;
+use std::fmt;
 use tokio_postgres::Row;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
@@ -9,11 +10,14 @@ pub enum UserRole {
 	Admin,
 }
 
-impl ToString for UserRole {
-	fn to_string(&self) -> String {
+impl fmt::Display for UserRole {
+	fn fmt(
+		&self,
+		f: &mut std::fmt::Formatter<'_>,
+	) -> std::fmt::Result {
 		match self {
-			UserRole::User => "user".to_string(),
-			UserRole::Admin => "admin".to_string(),
+			UserRole::User => write!(f, "user"),
+			UserRole::Admin => write!(f, "admin"),
 		}
 	}
 }

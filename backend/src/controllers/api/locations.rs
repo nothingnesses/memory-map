@@ -37,25 +37,25 @@ pub async fn post(
 
 		match name.as_str() {
 			"latitude" => {
-				if let Ok(txt) = field.text().await {
-					if let Ok(val) = txt.parse::<f64>() {
-						latitude = Some(val);
-					}
+				if let Ok(txt) = field.text().await
+					&& let Ok(val) = txt.parse::<f64>()
+				{
+					latitude = Some(val);
 				}
 			}
 			"longitude" => {
-				if let Ok(txt) = field.text().await {
-					if let Ok(val) = txt.parse::<f64>() {
-						longitude = Some(val);
-					}
+				if let Ok(txt) = field.text().await
+					&& let Ok(val) = txt.parse::<f64>()
+				{
+					longitude = Some(val);
 				}
 			}
 			"made_on" => {
-				if let Ok(txt) = field.text().await {
-					if !txt.is_empty() {
-						// Store the ISO 8601 UTC timestamp string
-						made_on = Some(txt);
-					}
+				if let Ok(txt) = field.text().await
+					&& !txt.is_empty()
+				{
+					// Store the ISO 8601 UTC timestamp string
+					made_on = Some(txt);
 				}
 			}
 			"files" => {
@@ -65,7 +65,7 @@ pub async fn post(
 				if !ALLOWED_MIME_TYPES.contains(&content_type.as_str()) {
 					return (
 						StatusCode::BAD_REQUEST,
-						format!("Unsupported file type: {}", content_type),
+						format!("Unsupported file type: {content_type}"),
 					)
 						.into_response();
 				}

@@ -19,10 +19,10 @@ pub fn Register() -> impl IntoView {
 
 	let navigate_effect = navigate.clone();
 	Effect::new(move |_| {
-		if let Some(config) = config_resource.get().flatten() {
-			if !config.enable_registration {
-				navigate_effect("/sign-in", Default::default());
-			}
+		if let Some(config) = config_resource.get().flatten()
+			&& !config.enable_registration
+		{
+			navigate_effect("/sign-in", Default::default());
 		}
 	});
 

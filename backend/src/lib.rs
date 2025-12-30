@@ -128,7 +128,7 @@ impl<'a> ContextWrapper<'a> {
 	}
 
 	pub fn get_bucket_name(&self) -> Result<&str, GraphQLError> {
-		Ok(&self
+		Ok(self
 			.0
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
 			.bucket_name
@@ -141,15 +141,15 @@ pub async fn graphiql() -> impl IntoResponse {
 }
 
 pub fn parse_latitude(latitude: f64) -> Result<f64, Box<dyn std::error::Error>> {
-	if latitude >= -90.0 && latitude <= 90.0 {
+	if (-90.0..=90.0).contains(&latitude) {
 		return Ok(latitude);
 	}
-	return Err(format!("{latitude} is not a valid latitude value.").into());
+	Err(format!("{latitude} is not a valid latitude value.").into())
 }
 
 pub fn parse_longitude(longitude: f64) -> Result<f64, Box<dyn std::error::Error>> {
-	if longitude >= -180.0 && longitude <= 180.0 {
+	if (-180.0..=180.0).contains(&longitude) {
 		return Ok(longitude);
 	}
-	return Err(format!("{longitude} is not a valid longitude value.").into());
+	Err(format!("{longitude} is not a valid longitude value.").into())
 }

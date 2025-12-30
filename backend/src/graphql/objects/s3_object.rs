@@ -41,7 +41,7 @@ impl S3Object {
 				.await
 				.map_err(GraphQLError::from)?
 				.into_iter()
-				.map(|row| Self::try_from(row))
+				.map(Self::try_from)
 				.collect::<Vec<_>>(),
 		)
 		.await

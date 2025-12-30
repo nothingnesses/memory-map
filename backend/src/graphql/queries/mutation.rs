@@ -54,16 +54,16 @@ impl Mutation {
 		tracing::debug!("IDs to delete: {:?}", ids);
 		let statement = db_client.prepare_cached(DELETE_OBJECTS_QUERY).await.map_err(|e| {
 			tracing::error!("Failed to prepare query: {}", e);
-			GraphQLError::new(format!("Database error: {}", e))
+			GraphQLError::new(format!("Database error: {e}"))
 		})?;
 		tracing::debug!("Delete DB query: {:?}", statement);
 
 		let rows = db_client.query(&statement, &[&ids]).await.map_err(|e| {
 			tracing::error!("Database query failed: {}", e);
-			GraphQLError::new(format!("Database error: {}", e))
+			GraphQLError::new(format!("Database error: {e}"))
 		})?;
 
-		let objects = join_all(rows.into_iter().map(|row| S3Object::try_from(row)))
+		let objects = join_all(rows.into_iter().map(S3Object::try_from))
 			.await
 			.into_iter()
 			.collect::<Result<Vec<_>, _>>()?;
@@ -80,7 +80,7 @@ impl Mutation {
 				.await
 				.map_err(|e| {
 					tracing::error!("Failed to delete objects from MinIO: {}", e);
-					GraphQLError::new(format!("MinIO error: {}", e))
+					GraphQLError::new(format!("MinIO error: {e}"))
 				})?;
 		}
 
@@ -102,8 +102,7 @@ impl Mutation {
 				Err(error) => {
 					tracing::error!("Failed to parse timestamp '{}': {}", timestamp_string, error);
 					return Err(GraphQLError::new(format!(
-						"Invalid timestamp format: {}",
-						timestamp_string
+						"Invalid timestamp format: {timestamp_string}"
 					)));
 				}
 			},
@@ -131,7 +130,7 @@ impl Mutation {
 				.await
 				.map_err(|e| {
 					tracing::error!("Database query failed: {}", e);
-					GraphQLError::new(format!("Database error: {}", e))
+					GraphQLError::new(format!("Database error: {e}"))
 				})?,
 		)
 		.await
@@ -149,8 +148,7 @@ impl Mutation {
 				Err(error) => {
 					tracing::error!("Failed to parse timestamp '{}': {}", timestamp_string, error);
 					return Err(GraphQLError::new(format!(
-						"Invalid timestamp format: {}",
-						timestamp_string
+						"Invalid timestamp format: {timestamp_string}"
 					)));
 				}
 			},
@@ -177,7 +175,7 @@ impl Mutation {
 				.await
 				.map_err(|e| {
 					tracing::error!("Database query failed: {}", e);
-					GraphQLError::new(format!("Database error: {}", e))
+					GraphQLError::new(format!("Database error: {e}"))
 				})?,
 		)
 		.await
@@ -198,8 +196,7 @@ impl Mutation {
 		let ids: Vec<i64> = ids
 			.into_iter()
 			.map(|id| {
-				id.parse::<i64>()
-					.map_err(|e| GraphQLError::new(format!("Invalid ID format: {}", e)))
+				id.parse::<i64>().map_err(|e| GraphQLError::new(format!("Invalid ID format: {e}")))
 			})
 			.collect::<Result<Vec<i64>, _>>()?;
 
@@ -224,9 +221,8 @@ impl Mutation {
 		location: Option<Location>,
 	) -> Result<S3Object, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let id = id
-			.parse::<i64>()
-			.map_err(|e| GraphQLError::new(format!("Invalid ID format: {}", e)))?;
+		let id =
+			id.parse::<i64>().map_err(|e| GraphQLError::new(format!("Invalid ID format: {e}")))?;
 		let result = Self::update_s3_object_worker(&client, id, name, made_on, location).await?;
 
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
@@ -275,7 +271,7 @@ impl Mutation {
 		let argon2 = Argon2::default();
 		let password_hash = argon2
 			.hash_password(password.as_bytes(), &salt)
-			.map_err(|e| GraphQLError::new(format!("Hashing error: {}", e)))?
+			.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
 			.to_string();
 
 		let statement = client
@@ -285,7 +281,7 @@ impl Mutation {
 		let row = client
 			.query_one(&statement, &[&email, &password_hash])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 		User::try_from(row)
 	}
@@ -304,7 +300,7 @@ impl Mutation {
 		let row = client
 			.query_opt(&statement, &[&email])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.ok_or_else(|| GraphQLError::new("Invalid email or password"))?;
 
 		let user = User::try_from(row)?;
@@ -317,7 +313,7 @@ impl Mutation {
 			.get("password_hash");
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
-			.map_err(|e| GraphQLError::new(format!("Hash parse error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Hash parse error: {e}")))?;
 
 		Argon2::default()
 			.verify_password(password.as_bytes(), &parsed_hash)
@@ -370,11 +366,11 @@ impl Mutation {
 		let password_hash_str: String = client
 			.query_one("SELECT password_hash FROM users WHERE id = $1", &[&user_id.0])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.get("password_hash");
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
-			.map_err(|e| GraphQLError::new(format!("Hash parse error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Hash parse error: {e}")))?;
 
 		Argon2::default()
 			.verify_password(old_password.as_bytes(), &parsed_hash)
@@ -383,7 +379,7 @@ impl Mutation {
 		let salt = SaltString::generate(&mut OsRng);
 		let new_hash = Argon2::default()
 			.hash_password(new_password.as_bytes(), &salt)
-			.map_err(|e| GraphQLError::new(format!("Hashing error: {}", e)))?
+			.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
 			.to_string();
 
 		client
@@ -392,7 +388,7 @@ impl Mutation {
 				&[&new_hash, &user_id.0],
 			)
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 		Ok(true)
 	}
@@ -417,7 +413,7 @@ impl Mutation {
 				&[&new_email, &user_id.0],
 			)
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.get(0);
 
 		if count > 0 {
@@ -430,7 +426,7 @@ impl Mutation {
 				&[&new_email, &user_id.0],
 			)
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 		User::try_from(row)
 	}
@@ -458,7 +454,7 @@ impl Mutation {
 					&[&token_hash, &user.id.parse::<i64>().unwrap()],
 				)
 				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 			// Send email
 			// We spawn this to not block the request, but we need to handle errors.
@@ -492,7 +488,7 @@ impl Mutation {
 				&[&token_hash],
 			)
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 		if let Some(row) = row_opt {
 			let user_id: i64 = row.get("user_id");
@@ -500,7 +496,7 @@ impl Mutation {
 			let salt = SaltString::generate(&mut OsRng);
 			let new_hash = Argon2::default()
 				.hash_password(new_password.as_bytes(), &salt)
-				.map_err(|e| GraphQLError::new(format!("Hashing error: {}", e)))?
+				.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
 				.to_string();
 
 			client
@@ -509,10 +505,12 @@ impl Mutation {
 					&[&new_hash, &user_id],
 				)
 				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 			// Delete token
-			client.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token_hash]).await?;
+			client
+				.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token_hash])
+				.await?;
 
 			Ok(true)
 		} else {
@@ -557,7 +555,7 @@ impl Mutation {
 					&[&new_email, &target_id],
 				)
 				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?
+				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 				.get(0);
 
 			if count > 0 {
@@ -577,7 +575,7 @@ impl Mutation {
 				&[&target_user.role.to_string(), &target_user.email, &target_id],
 			)
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {}", e)))?;
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 		User::try_from(row)
 	}

@@ -7,7 +7,7 @@ use thaw::*;
 pub fn ResetPassword() -> impl IntoView {
 	let navigate = use_navigate();
 	let query = use_query_map();
-	let token = move || query.get().get("token").map(|s| s.clone()).unwrap_or_default();
+	let token = move || query.get().get("token").unwrap_or_default();
 
 	let new_password = RwSignal::new(String::new());
 	let confirm_password = RwSignal::new(String::new());

@@ -17,11 +17,8 @@ pub fn Users() -> impl IntoView {
 	let on_update_email = move |id: String, email: String, loading: RwSignal<bool>| {
 		loading.set(true);
 		spawn_local(async move {
-			let variables = admin_update_user_mutation::Variables {
-				id: id.into(),
-				role: None,
-				email: Some(email),
-			};
+			let variables =
+				admin_update_user_mutation::Variables { id, role: None, email: Some(email) };
 			let _ = AdminUpdateUserMutation::run(variables).await;
 			loading.set(false);
 			trigger.update(|n| *n = n.wrapping_add(1));
@@ -31,11 +28,8 @@ pub fn Users() -> impl IntoView {
 	let on_toggle_role = move |id: String, new_role: String, loading: RwSignal<bool>| {
 		loading.set(true);
 		spawn_local(async move {
-			let variables = admin_update_user_mutation::Variables {
-				id: id.into(),
-				role: Some(new_role),
-				email: None,
-			};
+			let variables =
+				admin_update_user_mutation::Variables { id, role: Some(new_role), email: None };
 			let _ = AdminUpdateUserMutation::run(variables).await;
 			loading.set(false);
 			trigger.update(|n| *n = n.wrapping_add(1));
@@ -83,9 +77,9 @@ pub fn Users() -> impl IntoView {
 											let email = RwSignal::new(user.email.clone());
 											let current_role = format!("{:?}", user.role);
 											let created_at = user.created_at.clone();
-											let update_email_action = on_update_email.clone();
-											let toggle_role_action = on_toggle_role.clone();
-											let reset_action = on_reset_password.clone();
+											let update_email_action = on_update_email;
+											let toggle_role_action = on_toggle_role;
+											let reset_action = on_reset_password;
 											let user_role = user.role.clone();
 											let is_loading = RwSignal::new(false);
 											let id_for_email = id.clone();

@@ -64,13 +64,12 @@ async fn caching_middleware(
 	// Return early if it's a mutation.
 	// Mutations change state and should not be cached. Caching them would prevent
 	// the server from executing the mutation on subsequent requests.
-	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-		if let Some(query) = json.get("query").and_then(|q| q.as_str()) {
-			if query.trim().to_lowercase().starts_with("mutation") {
-				let req = Request::from_parts(parts, Body::from(bytes));
-				return next.run(req).await.into_response();
-			}
-		}
+	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes)
+		&& let Some(query) = json.get("query").and_then(|q| q.as_str())
+		&& query.trim().to_lowercase().starts_with("mutation")
+	{
+		let req = Request::from_parts(parts, Body::from(bytes));
+		return next.run(req).await.into_response();
 	}
 
 	// 2. Hash body
@@ -91,7 +90,7 @@ async fn caching_middleware(
 		response.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
 
 		let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
-		let etag = format!("\"{}\"", last_modified);
+		let etag = format!("\"{last_modified}\"");
 		response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
 
 		return response;
@@ -113,7 +112,7 @@ async fn caching_middleware(
 	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));
 
 	let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
-	let etag = format!("\"{}\"", last_modified);
+	let etag = format!("\"{last_modified}\"");
 	response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
 
 	response
@@ -126,10 +125,10 @@ async fn graphql_handler(
 ) -> (PrivateCookieJar, GraphQLResponse) {
 	let mut req = req.into_inner();
 
-	if let Some(cookie) = jar.get("auth_token") {
-		if let Ok(user_id) = cookie.value().parse::<i64>() {
-			req = req.data(UserId(user_id));
-		}
+	if let Some(cookie) = jar.get("auth_token")
+		&& let Ok(user_id) = cookie.value().parse::<i64>()
+	{
+		req = req.data(UserId(user_id));
 	}
 
 	let cookies = Arc::new(Mutex::new(Vec::<Cookie<'static>>::new()));

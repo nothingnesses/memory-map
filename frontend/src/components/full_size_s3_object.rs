@@ -50,10 +50,10 @@ pub fn FullSizeS3Object(
 							class=("rotate-180", move || rotation.get() == 2)
 							class=("rotate-270", move || rotation.get() == 3)
 							// Swap the width and height of the element in the flow of the document to prevent overflowing layout issue
-							class=("max-w-full", move || rotation.get() % 2 == 0)
-							class=("max-h-full", move || rotation.get() % 2 == 0)
-							class=("max-w-dvh", move || rotation.get() % 2 != 0)
-							class=("max-h-dvw", move || rotation.get() % 2 != 0)
+							class=("max-w-full", move || rotation.get().is_multiple_of(2))
+							class=("max-h-full", move || rotation.get().is_multiple_of(2))
+							class=("max-w-dvh", move || !rotation.get().is_multiple_of(2))
+							class=("max-h-dvw", move || !rotation.get().is_multiple_of(2))
 						>
 							<Button
 								class="p-unset rounded-none border-none"
