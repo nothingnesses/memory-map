@@ -8,13 +8,16 @@ use graphql_queries::me::MeQuery;
 use leptos::{
 	ev, html,
 	prelude::*,
-	wasm_bindgen::JsValue,
+	wasm_bindgen::{JsCast, JsValue},
 	web_sys::{self, js_sys},
 };
 use leptos_meta::*;
 use leptos_router::{components::*, path};
 use std::ops::{Add, Deref, Rem, Sub};
+use std::{error, io};
 use thaw::{ConfigProvider, ToasterProvider};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 
 // Modules
 pub mod auth;
@@ -183,6 +186,64 @@ pub async fn post_graphql<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
 	let reqwest_response = client.post(url).json(&body).send().await?;
 
 	reqwest_response.json().await
+}
+
+pub async fn post_graphql_with_auth<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
+	_client: &reqwest::Client,
+	url: U,
+	variables: Q::Variables,
+) -> Result<graphql_client::Response<Q::ResponseData>, Box<dyn error::Error + Send + Sync>> {
+	let body = Q::build_query(variables);
+	let body_str = serde_json::to_string(&body)?;
+
+	let opts = RequestInit::new();
+	opts.set_method("POST");
+	opts.set_mode(RequestMode::Cors);
+	opts.set_credentials(RequestCredentials::Include);
+	opts.set_body(&JsValue::from_str(&body_str));
+
+	let headers = web_sys::Headers::new().map_err(|e| {
+		io::Error::new(io::ErrorKind::Other, format!("Failed to create headers: {:?}", e))
+	})?;
+	headers.set("Content-Type", "application/json").map_err(|e| {
+		io::Error::new(io::ErrorKind::Other, format!("Failed to set header: {:?}", e))
+	})?;
+	opts.set_headers(&headers);
+
+	let url_str = url.into_url()?.to_string();
+
+	let request = web_sys::Request::new_with_str_and_init(&url_str, &opts).map_err(|e| {
+		io::Error::new(io::ErrorKind::Other, format!("Failed to create request: {:?}", e))
+	})?;
+
+	let window = web_sys::window()
+		.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Window not found"))?;
+	let resp_value = JsFuture::from(window.fetch_with_request(&request))
+		.await
+		.map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Fetch failed: {:?}", e)))?;
+
+	let resp: Response = resp_value.dyn_into().map_err(|e| {
+		io::Error::new(io::ErrorKind::Other, format!("Response cast failed: {:?}", e))
+	})?;
+
+	if !resp.ok() {
+		return Err(Box::new(io::Error::new(
+			io::ErrorKind::Other,
+			format!("Network error: {}", resp.status()),
+		)));
+	}
+
+	let text = JsFuture::from(resp.text().map_err(|e| {
+		io::Error::new(io::ErrorKind::Other, format!("Failed to get text promise: {:?}", e))
+	})?)
+	.await
+	.map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to get text: {:?}", e)))?
+	.as_string()
+	.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Response is not text"))?;
+
+	let response_data: graphql_client::Response<Q::ResponseData> = serde_json::from_str(&text)?;
+
+	Ok(response_data)
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

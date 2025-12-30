@@ -2,7 +2,7 @@ use crate::{
 	graphql_queries::s3_object_by_id::s3_object_by_id_query::{
 		S3ObjectByIdQueryS3ObjectById as S3Object, Variables,
 	},
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -18,9 +18,9 @@ pub struct S3ObjectByIdQuery;
 impl S3ObjectByIdQuery {
 	// @todo Add better error-handling
 	pub async fn run(id: i64) -> Result<S3Object, Error> {
-		Ok(post_graphql::<S3ObjectByIdQuery, _>(
+		Ok(post_graphql_with_auth::<S3ObjectByIdQuery, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables { id },
 		)
 		.await?

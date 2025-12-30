@@ -1,6 +1,6 @@
 use crate::{
 	graphql_queries::login::login_mutation::{LoginMutationLogin as User, Variables},
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -15,9 +15,9 @@ pub struct LoginMutation;
 
 impl LoginMutation {
 	pub async fn run(variables: Variables) -> Result<User, Error> {
-		Ok(post_graphql::<LoginMutation, _>(
+		Ok(post_graphql_with_auth::<LoginMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

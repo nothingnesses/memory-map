@@ -42,7 +42,13 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
 	"Blob",
 	"Document",
+	"Headers",
 	"MediaQueryList",
+	"Request",
+	"RequestCredentials",
+	"RequestInit",
+	"RequestMode",
+	"Response",
 	"Window"
 ] }
 

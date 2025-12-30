@@ -2,7 +2,7 @@ use crate::{
 	graphql_queries::change_email::change_email_mutation::{
 		ChangeEmailMutationChangeEmail as User, Variables,
 	},
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -17,9 +17,9 @@ pub struct ChangeEmailMutation;
 
 impl ChangeEmailMutation {
 	pub async fn run(variables: Variables) -> Result<User, Error> {
-		Ok(post_graphql::<ChangeEmailMutation, _>(
+		Ok(post_graphql_with_auth::<ChangeEmailMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

@@ -2,7 +2,7 @@ use crate::{
 	graphql_queries::upsert_s3_object::upsert_s3_object_mutation::{
 		UpsertS3ObjectMutationUpsertS3Object as S3Object, Variables,
 	},
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -18,9 +18,9 @@ pub struct UpsertS3ObjectMutation;
 impl UpsertS3ObjectMutation {
 	// @todo Add better error-handling
 	pub async fn run(variables: Variables) -> Result<S3Object, Error> {
-		Ok(post_graphql::<UpsertS3ObjectMutation, _>(
+		Ok(post_graphql_with_auth::<UpsertS3ObjectMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

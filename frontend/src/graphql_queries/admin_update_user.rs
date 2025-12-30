@@ -2,7 +2,7 @@ use crate::{
 	graphql_queries::admin_update_user::admin_update_user_mutation::{
 		AdminUpdateUserMutationAdminUpdateUser as User, Variables,
 	},
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -17,9 +17,9 @@ pub struct AdminUpdateUserMutation;
 
 impl AdminUpdateUserMutation {
 	pub async fn run(variables: Variables) -> Result<User, Error> {
-		Ok(post_graphql::<AdminUpdateUserMutation, _>(
+		Ok(post_graphql_with_auth::<AdminUpdateUserMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

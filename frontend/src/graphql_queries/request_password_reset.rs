@@ -1,6 +1,6 @@
 use crate::{
 	graphql_queries::request_password_reset::request_password_reset_mutation::Variables,
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -15,9 +15,9 @@ pub struct RequestPasswordResetMutation;
 
 impl RequestPasswordResetMutation {
 	pub async fn run(variables: Variables) -> Result<bool, Error> {
-		Ok(post_graphql::<RequestPasswordResetMutation, _>(
+		Ok(post_graphql_with_auth::<RequestPasswordResetMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			variables,
 		)
 		.await?

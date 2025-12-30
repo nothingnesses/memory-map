@@ -1,6 +1,6 @@
 use crate::{
 	graphql_queries::users::users_query::{UsersQueryUsers as User, Variables},
-	post_graphql,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
@@ -15,9 +15,9 @@ pub struct UsersQuery;
 
 impl UsersQuery {
 	pub async fn run() -> Result<Vec<User>, Error> {
-		Ok(post_graphql::<UsersQuery, _>(
+		Ok(post_graphql_with_auth::<UsersQuery, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables {},
 		)
 		.await?

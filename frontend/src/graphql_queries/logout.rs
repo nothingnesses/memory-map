@@ -1,4 +1,4 @@
-use crate::{graphql_queries::logout::logout_mutation::Variables, post_graphql};
+use crate::{graphql_queries::logout::logout_mutation::Variables, post_graphql_with_auth};
 use graphql_client::GraphQLQuery;
 use leptos::error::Error;
 
@@ -12,9 +12,9 @@ pub struct LogoutMutation;
 
 impl LogoutMutation {
 	pub async fn run() -> Result<bool, Error> {
-		Ok(post_graphql::<LogoutMutation, _>(
+		Ok(post_graphql_with_auth::<LogoutMutation, _>(
 			&reqwest::Client::new(),
-			"http://localhost:8000/",
+			"http://127.0.0.1:8000/",
 			Variables {},
 		)
 		.await?
