@@ -131,17 +131,16 @@ pub fn Carousel(
 	let local_autoplay_duration = RwSignal::new(autoplay_duration.get_untracked());
 
 	Effect::new(move |_| {
-		if is_playing.get() {
-			if let Ok(handle) = set_interval_with_handle(
+		if is_playing.get()
+			&& let Ok(handle) = set_interval_with_handle(
 				move || {
 					next_slide();
 				},
 				time::Duration::from_millis(local_autoplay_duration.get()),
 			) {
-				on_cleanup(move || {
-					handle.clear();
-				});
-			}
+			on_cleanup(move || {
+				handle.clear();
+			});
 		}
 	});
 

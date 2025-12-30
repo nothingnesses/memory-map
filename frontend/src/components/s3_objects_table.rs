@@ -225,7 +225,7 @@ pub fn S3ObjectsTable(
 					}}
 				</TableBody>
 			</Table>
-			<Show when=move || { !selected_ids.get().is_empty() } fallback=|| view! {}>
+			<Show when=move || { !selected_ids.get().is_empty() } fallback=|| ()>
 				<Button class="w-fit" on_click=open_delete_selected_dialog>
 					{delete_selected_button_content.run(())}
 				</Button>

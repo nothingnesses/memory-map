@@ -1,25 +1,39 @@
-use async_graphql::http::GraphiQLSource;
-use async_graphql::{Context, Error as GraphQLError};
+use async_graphql::{
+	http::GraphiQLSource,
+	{Context, Error as GraphQLError},
+};
 use axum::{
 	body::Bytes,
+	extract::FromRef,
 	response::{self, IntoResponse},
 };
+use axum_extra::extract::cookie::Key;
+use casbin::Enforcer;
 use deadpool::managed::{Manager as ManagedManager, Object, Pool};
 use deadpool_postgres::Manager;
 use minio::s3;
 use moka::future::Cache;
 use std::{
 	fmt,
-	sync::atomic::AtomicU64,
+	sync::{Arc, atomic::AtomicU64},
 	time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::RwLock;
 
 pub mod controllers;
+pub mod email;
 pub mod graphql;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, Clone)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
+	pub enable_registration: bool,
+	pub smtp_host: String,
+	pub smtp_user: String,
+	pub smtp_pass: String,
+	pub smtp_from: String,
+	pub cookie_secret: String,
+	pub frontend_url: String,
 }
 
 impl Config {
@@ -36,12 +50,23 @@ pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
 refinery::embed_migrations!("migrations");
 
+pub struct UserId(pub i64);
+
 pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
 	pub minio_client: s3::Client,
 	pub bucket_name: String,
 	pub last_modified: AtomicU64,
 	pub response_cache: Cache<u64, Bytes>,
+	pub key: Key,
+	pub config: Config,
+	pub enforcer: Arc<RwLock<Enforcer>>,
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {
+	fn from_ref(state: &SharedState<M, W>) -> Self {
+		state.key.clone()
+	}
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
@@ -49,6 +74,28 @@ impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
 		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
 		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
 		self.response_cache.invalidate_all();
+	}
+}
+
+pub struct AppState<M: ManagedManager, W: From<Object<M>>> {
+	pub inner: Arc<SharedState<M, W>>,
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> Clone for AppState<M, W> {
+	fn clone(&self) -> Self {
+		Self { inner: self.inner.clone() }
+	}
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> FromRef<AppState<M, W>> for Key {
+	fn from_ref(state: &AppState<M, W>) -> Self {
+		state.inner.key.clone()
+	}
+}
+
+impl<M: ManagedManager, W: From<Object<M>>> FromRef<AppState<M, W>> for Arc<SharedState<M, W>> {
+	fn from_ref(state: &AppState<M, W>) -> Self {
+		state.inner.clone()
 	}
 }
 
@@ -63,6 +110,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 			.field("bucket_name", &self.bucket_name)
 			.field("last_modified", &self.last_modified)
 			.field("response_cache", &"Cache<u64, Bytes>")
+			.field("enforcer", &"Enforcer")
 			.finish()
 	}
 }
@@ -84,7 +132,7 @@ impl<'a> ContextWrapper<'a> {
 	}
 
 	pub fn get_bucket_name(&self) -> Result<&str, GraphQLError> {
-		Ok(&self
+		Ok(self
 			.0
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
 			.bucket_name
@@ -97,15 +145,26 @@ pub async fn graphiql() -> impl IntoResponse {
 }
 
 pub fn parse_latitude(latitude: f64) -> Result<f64, Box<dyn std::error::Error>> {
-	if latitude >= -90.0 && latitude <= 90.0 {
+	if (-90.0..=90.0).contains(&latitude) {
 		return Ok(latitude);
 	}
-	return Err(format!("{latitude} is not a valid latitude value.").into());
+	Err(format!("{latitude} is not a valid latitude value.").into())
 }
 
 pub fn parse_longitude(longitude: f64) -> Result<f64, Box<dyn std::error::Error>> {
-	if longitude >= -180.0 && longitude <= 180.0 {
+	if (-180.0..=180.0).contains(&longitude) {
 		return Ok(longitude);
 	}
-	return Err(format!("{longitude} is not a valid longitude value.").into());
+	Err(format!("{longitude} is not a valid longitude value.").into())
+}
+
+#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+pub struct CasbinUser {
+	pub id: i64,
+	pub role: String,
+}
+
+#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+pub struct CasbinObject {
+	pub user_id: i64,
 }

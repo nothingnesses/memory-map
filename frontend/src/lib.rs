@@ -1,17 +1,30 @@
-use crate::components::header::Header;
-use crate::pages::{home::Home, objects::Objects};
+use crate::{
+	components::{header::Header, protected_route::ProtectedRoute},
+	pages::{
+		account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
+		reset_password::ResetPassword, sign_in::SignIn,
+	},
+};
+use auth::UserContext;
+use graphql_queries::me::MeQuery;
 use leptos::{
 	ev, html,
 	prelude::*,
-	wasm_bindgen::JsValue,
+	wasm_bindgen::{JsCast, JsValue},
 	web_sys::{self, js_sys},
 };
 use leptos_meta::*;
 use leptos_router::{components::*, path};
-use std::ops::{Add, Deref, Rem, Sub};
+use std::{
+	error, io,
+	ops::{Add, Deref, Rem, Sub},
+};
 use thaw::{ConfigProvider, ToasterProvider};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 
 // Modules
+pub mod auth;
 mod components;
 pub mod graphql_queries;
 mod pages;
@@ -35,13 +48,13 @@ fn Shell(children: Children) -> impl IntoView {
 		translate_y.set_value(current);
 
 		// Only update the CSS variable if the menu is closed
-		if !menu_open.get() {
-			if let Some(el) = page_wrapper_ref.get() {
-				let _ = el
-					.deref()
-					.style()
-					.set_property("--hide-on-scroll-translate-y", &format!("{}px", current));
-			}
+		if !menu_open.get()
+			&& let Some(el) = page_wrapper_ref.get()
+		{
+			let _ = el
+				.deref()
+				.style()
+				.set_property("--hide-on-scroll-translate-y", &format!("{current}px"));
 		}
 	};
 
@@ -49,7 +62,7 @@ fn Shell(children: Children) -> impl IntoView {
 		// Initialize last_scroll_y
 		last_scroll_y.set_value(window().scroll_y().unwrap_or(0.0).max(0.0));
 
-		let update_pos = update_header_position.clone();
+		let update_pos = update_header_position;
 
 		// Handle scroll events to hide/show header
 		let on_scroll = move |_| {
@@ -72,7 +85,7 @@ fn Shell(children: Children) -> impl IntoView {
 			last_scroll_y.set_value(current_scroll_y);
 		};
 
-		let update_pos_end = update_header_position.clone();
+		let update_pos_end = update_header_position;
 
 		// Handle scroll end to snap header to open/closed state
 		let on_scroll_end = move |_: web_sys::CustomEvent| {
@@ -124,6 +137,17 @@ pub fn App() -> impl IntoView {
 	// Provides context that manages stylesheets, titles, meta tags, etc.
 	provide_meta_context();
 
+	let trigger: RwSignal<usize> = RwSignal::new(0);
+	let user_resource = LocalResource::new(move || {
+		trigger.get();
+		async move { MeQuery::run().await.ok().flatten() }
+	});
+
+	provide_context(UserContext {
+		user: user_resource,
+		refetch: Callback::new(move |_| trigger.update(|n| *n = n.wrapping_add(1))),
+	});
+
 	view! {
 		<ConfigProvider>
 			<ToasterProvider>
@@ -139,8 +163,41 @@ pub fn App() -> impl IntoView {
 				<Router>
 					<Shell>
 						<Routes fallback=|| view! { NotFound }>
-							<Route path=path!("/") view=Home />
-							<Route path=path!("/objects") view=Objects />
+							<Route
+								path=path!("/")
+								view=|| {
+									view! {
+										<Suspense fallback=|| view! { "Loading..." }>
+											{move || {
+												let user_ctx = use_context::<UserContext>();
+												user_ctx
+													.map(|ctx| {
+														ctx.user
+															.get()
+															.map(|user_opt| {
+																match user_opt {
+																	Some(_) => view! { <Home /> }.into_any(),
+																	None => view! { <SignIn /> }.into_any(),
+																}
+															})
+													})
+											}}
+										</Suspense>
+									}
+								}
+							/>
+							<Route
+								path=path!("/objects")
+								view=|| view! { <ProtectedRoute><Objects /></ProtectedRoute> }
+							/>
+							<Route path=path!("/sign-in") view=SignIn />
+							<Route path=path!("/register") view=Register />
+							<Route path=path!("/account") view=|| view! { <ProtectedRoute><Account /></ProtectedRoute> } />
+							<Route path=path!("/reset-password") view=ResetPassword />
+							<Route
+								path=path!("/admin/users")
+								view=|| view! { <ProtectedRoute admin_only=true><Users /></ProtectedRoute> }
+							/>
 						</Routes>
 					</Shell>
 				</Router>
@@ -161,6 +218,58 @@ pub async fn post_graphql<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
 	let reqwest_response = client.post(url).json(&body).send().await?;
 
 	reqwest_response.json().await
+}
+
+pub async fn post_graphql_with_auth<Q: graphql_client::GraphQLQuery, U: reqwest::IntoUrl>(
+	_client: &reqwest::Client,
+	url: U,
+	variables: Q::Variables,
+) -> Result<graphql_client::Response<Q::ResponseData>, Box<dyn error::Error + Send + Sync>> {
+	let body = Q::build_query(variables);
+	let body_str = serde_json::to_string(&body)?;
+
+	let opts = RequestInit::new();
+	opts.set_method("POST");
+	opts.set_mode(RequestMode::Cors);
+	opts.set_credentials(RequestCredentials::Include);
+	opts.set_body(&JsValue::from_str(&body_str));
+
+	let headers = web_sys::Headers::new()
+		.map_err(|e| io::Error::other(format!("Failed to create headers: {e:?}")))?;
+	headers
+		.set("Content-Type", "application/json")
+		.map_err(|e| io::Error::other(format!("Failed to set header: {e:?}")))?;
+	opts.set_headers(&headers);
+
+	let url_str = url.into_url()?.to_string();
+
+	let request = web_sys::Request::new_with_str_and_init(&url_str, &opts)
+		.map_err(|e| io::Error::other(format!("Failed to create request: {e:?}")))?;
+
+	let window = web_sys::window().ok_or_else(|| io::Error::other("Window not found"))?;
+	let resp_value = JsFuture::from(window.fetch_with_request(&request))
+		.await
+		.map_err(|e| io::Error::other(format!("Fetch failed: {e:?}")))?;
+
+	let resp: Response = resp_value
+		.dyn_into()
+		.map_err(|e| io::Error::other(format!("Response cast failed: {e:?}")))?;
+
+	if !resp.ok() {
+		return Err(Box::new(io::Error::other(format!("Network error: {}", resp.status()))));
+	}
+
+	let text = JsFuture::from(
+		resp.text().map_err(|e| io::Error::other(format!("Failed to get text promise: {e:?}")))?,
+	)
+	.await
+	.map_err(|e| io::Error::other(format!("Failed to get text: {e:?}")))?
+	.as_string()
+	.ok_or_else(|| io::Error::other("Response is not text"))?;
+
+	let response_data: graphql_client::Response<Q::ResponseData> = serde_json::from_str(&text)?;
+
+	Ok(response_data)
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

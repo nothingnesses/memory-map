@@ -1,5 +1,8 @@
-use leptos::prelude::*;
-use leptos_router::components::A;
+use crate::auth::UserContext;
+use crate::graphql_queries::logout::LogoutMutation;
+use crate::graphql_queries::me::UserRole;
+use leptos::{prelude::*, task::spawn_local};
+use leptos_router::{components::A, hooks::use_navigate};
 use lucide_leptos::{Menu, X};
 
 /// The Header component containing the navigation menu.
@@ -7,6 +10,9 @@ use lucide_leptos::{Menu, X};
 /// the visual state when the menu is open or closed.
 #[component]
 pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
+	let navigate = use_navigate();
+	let user_ctx = use_context::<UserContext>();
+
 	// Toggle the menu open state
 	let toggle_header_menu = move || {
 		menu_open.update(|n| *n = !*n);
@@ -16,6 +22,21 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 	let close_header_menu = move || {
 		menu_open.set(false);
 	};
+
+	let user_ctx_logout = user_ctx;
+	let on_logout = move |_| {
+		close_header_menu();
+		let user_ctx = user_ctx_logout;
+		let navigate = navigate.clone();
+		spawn_local(async move {
+			let _ = LogoutMutation::run().await;
+			if let Some(ctx) = user_ctx {
+				ctx.refetch.run(());
+			}
+			navigate("/", Default::default());
+		});
+	};
+	let on_logout = StoredValue::new(on_logout);
 
 	// CSS classes for the header layer, including the hide-on-scroll transition logic
 	const HEADER_LAYER_CLASSES: &str = "hide-on-scroll inset-0 h-100px w-dvw translate-y-[--hide-on-scroll-translate-y] group-[:not(.scrolling)]/page:transition-all";
@@ -51,20 +72,77 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 							font-bold
 							mt-100px
 							">
-								<A
-									attr:class="py-4 w-full grid place-items-center"
-									href="/"
-									on:click=move |_| close_header_menu()
-								>
-									"Map"
-								</A>
-								<A
-									attr:class="py-4 w-full grid place-items-center"
-									href="/objects"
-									on:click=move |_| close_header_menu()
-								>
-									"Objects"
-								</A>
+								<Suspense>
+									{move || {
+										user_ctx
+											.map(|ctx| {
+												ctx.user
+													.get()
+													.map(|user_opt| {
+														match user_opt {
+															Some(user) => {
+																view! {
+																	<A
+																		attr:class="py-4 w-full grid place-items-center"
+																		href="/"
+																		on:click=move |_| close_header_menu()
+																	>
+																		"Map"
+																	</A>
+																	<A
+																		attr:class="py-4 w-full grid place-items-center"
+																		href="/objects"
+																		on:click=move |_| close_header_menu()
+																	>
+																		"Objects"
+																	</A>
+																	<A
+																		attr:class="py-4 w-full grid place-items-center"
+																		href="/account"
+																		on:click=move |_| close_header_menu()
+																	>
+																		"Account"
+																	</A>
+																	{if user.role == UserRole::ADMIN {
+																		view! {
+																			<A
+																				attr:class="py-4 w-full grid place-items-center"
+																				href="/admin/users"
+																				on:click=move |_| close_header_menu()
+																			>
+																				"Users"
+																			</A>
+																		}
+																			.into_any()
+																	} else {
+																		().into_any()
+																	}}
+																	<button
+																		class="py-4 w-full grid place-items-center cursor-pointer"
+																		on:click=move |ev| on_logout.with_value(|f| f(ev))
+																	>
+																		"Log Out"
+																	</button>
+																}
+																	.into_any()
+															}
+															None => {
+																view! {
+																	<A
+																		attr:class="py-4 w-full grid place-items-center"
+																		href="/sign-in"
+																		on:click=move |_| close_header_menu()
+																	>
+																		"Sign In"
+																	</A>
+																}
+																	.into_any()
+															}
+														}
+													})
+											})
+									}}
+								</Suspense>
 							</nav>
 						</div>
 					</div>

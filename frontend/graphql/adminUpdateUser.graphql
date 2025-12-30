@@ -1,0 +1,8 @@
+mutation AdminUpdateUserMutation($id: ID!, $role: String, $email: String) {
+	adminUpdateUser(id: $id, role: $role, email: $email) {
+		id
+		email
+		role
+		createdAt
+	}
+}

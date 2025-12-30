@@ -4,8 +4,8 @@ use crate::{
 		s3_object_by_id::S3ObjectByIdQuery,
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
 		update_s3_object::{
-			UpdateS3ObjectQuery,
-			update_s3_object_query::{LocationInput, Variables},
+			UpdateS3ObjectMutation,
+			update_s3_object_mutation::{LocationInput, Variables},
 		},
 	},
 	iso_to_local_datetime_value, js_date_value_to_iso,
@@ -65,10 +65,10 @@ pub fn EditS3ObjectForm(
 				set_latitude.set(Some(loc.latitude));
 				set_longitude.set(Some(loc.longitude));
 			}
-			if let Some(iso_str) = s3_object.made_on {
-				if let Some(local_str) = iso_to_local_datetime_value(&iso_str) {
-					set_made_on.set(local_str);
-				}
+			if let Some(iso_str) = s3_object.made_on
+				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
+			{
+				set_made_on.set(local_str);
 			}
 		}
 	});
@@ -81,10 +81,10 @@ pub fn EditS3ObjectForm(
 				set_latitude.set(Some(loc.latitude));
 				set_longitude.set(Some(loc.longitude));
 			}
-			if let Some(iso_str) = s3_object.made_on {
-				if let Some(local_str) = iso_to_local_datetime_value(&iso_str) {
-					set_made_on.set(local_str);
-				}
+			if let Some(iso_str) = s3_object.made_on
+				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
+			{
+				set_made_on.set(local_str);
 			}
 		}
 	});
@@ -113,7 +113,7 @@ pub fn EditS3ObjectForm(
 				location,
 			};
 
-			match UpdateS3ObjectQuery::run(variables).await {
+			match UpdateS3ObjectMutation::run(variables).await {
 				Ok(_) => {
 					toaster.dispatch_toast(
 						move || {
@@ -135,9 +135,7 @@ pub fn EditS3ObjectForm(
 							view! {
 								<Toast>
 									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>
-										{format!("Failed to update object: {}", e)}
-									</ToastBody>
+									<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
 								</Toast>
 							}
 						},

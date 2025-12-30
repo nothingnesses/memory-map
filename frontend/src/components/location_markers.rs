@@ -50,7 +50,7 @@ pub fn LocationMarkers() -> impl IntoView {
 	view! {
 		<ErrorBoundary fallback=|errors| {
 			debug_error!("Failed to load markers: {:?}", errors.get());
-			return dump_errors(errors);
+			dump_errors(errors)
 		}>
 			<Suspense fallback=move || {
 				view! { <p>"Loading map data..."</p> }

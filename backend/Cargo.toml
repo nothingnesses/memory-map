@@ -4,23 +4,40 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argon2 = "0.5"
 async-graphql = "7.0"
 async-graphql-axum = "7.0"
 axum = { version = "0.8", features = ["multipart"] }
+axum-extra = { version = "0.10", features = [
+	"cookie",
+	"cookie-private",
+	"cookie-signed"
+] }
 axum-macros = "0.5"
+blake3 = "1.5"
+casbin = { version = "2.19.0", features = ["runtime-tokio", "logging"] }
 config = "0.15"
 deadpool = "0.12"
 deadpool-postgres = { version = "0.14", features = ["rt_tokio_1", "serde"] }
 dotenvy = "0.15"
+email_address = "0.2"
 futures = "0.3"
 futures-util = "0.3"
+hex = "0.4"
 jiff = "0.2"
+lettre = { version = "0.11", features = [
+	"builder",
+	"tokio1",
+	"tokio1-native-tls"
+] }
 minio = "0.3"
 moka = { version = "0.12", features = ["future"] }
+rand = "0.8"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 shared = { path = "../shared" }
+time = "0.3"
 tokio = { version = "1.47", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-jiff-0_2"] }
 tower = { version = "0.5", features = ["util"] }

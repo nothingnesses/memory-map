@@ -15,7 +15,7 @@ servers:
 
 # Start backend server.
 backend:
-    {{log_prefix}} bacon run -- {{release_flag}} --bin backend
+    cd backend; {{log_prefix}} bacon run -- {{release_flag}}
 
 # Start frontend server. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
 frontend:

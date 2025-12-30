@@ -1,6 +1,6 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
-use crate::SharedState;
+use crate::AppState;
 use crate::graphql::{objects::location::Location, queries::mutation::Mutation};
 use axum::{
 	body::Bytes,
@@ -8,11 +8,11 @@ use axum::{
 	http::StatusCode,
 	response::{IntoResponse, Response},
 };
+use axum_extra::extract::cookie::PrivateCookieJar;
 use axum_macros::debug_handler;
 use deadpool::managed::Object;
 use deadpool_postgres::Manager;
 use shared::ALLOWED_MIME_TYPES;
-use std::sync::Arc;
 
 #[derive(Debug)]
 struct FileData {
@@ -24,9 +24,18 @@ struct FileData {
 // @todo Modify to return both status code and location and filenames added.
 #[debug_handler]
 pub async fn post(
-	State(state): State<Arc<SharedState<Manager, Object<Manager>>>>,
+	State(state): State<AppState<Manager, Object<Manager>>>,
+	jar: PrivateCookieJar,
 	mut multipart: Multipart,
 ) -> Response {
+	let user_id = if let Some(cookie) = jar.get("auth_token")
+		&& let Ok(id) = cookie.value().parse::<i64>()
+	{
+		id
+	} else {
+		return StatusCode::UNAUTHORIZED.into_response();
+	};
+
 	let mut latitude: Option<f64> = None;
 	let mut longitude: Option<f64> = None;
 	let mut made_on: Option<String> = None;
@@ -37,25 +46,25 @@ pub async fn post(
 
 		match name.as_str() {
 			"latitude" => {
-				if let Ok(txt) = field.text().await {
-					if let Ok(val) = txt.parse::<f64>() {
-						latitude = Some(val);
-					}
+				if let Ok(txt) = field.text().await
+					&& let Ok(val) = txt.parse::<f64>()
+				{
+					latitude = Some(val);
 				}
 			}
 			"longitude" => {
-				if let Ok(txt) = field.text().await {
-					if let Ok(val) = txt.parse::<f64>() {
-						longitude = Some(val);
-					}
+				if let Ok(txt) = field.text().await
+					&& let Ok(val) = txt.parse::<f64>()
+				{
+					longitude = Some(val);
 				}
 			}
 			"made_on" => {
-				if let Ok(txt) = field.text().await {
-					if !txt.is_empty() {
-						// Store the ISO 8601 UTC timestamp string
-						made_on = Some(txt);
-					}
+				if let Ok(txt) = field.text().await
+					&& !txt.is_empty()
+				{
+					// Store the ISO 8601 UTC timestamp string
+					made_on = Some(txt);
 				}
 			}
 			"files" => {
@@ -65,7 +74,7 @@ pub async fn post(
 				if !ALLOWED_MIME_TYPES.contains(&content_type.as_str()) {
 					return (
 						StatusCode::BAD_REQUEST,
-						format!("Unsupported file type: {}", content_type),
+						format!("Unsupported file type: {content_type}"),
 					)
 						.into_response();
 				}
@@ -91,24 +100,30 @@ pub async fn post(
 		);
 
 		let _ = state
+			.inner
 			.minio_client
-			.put_object_content(&state.bucket_name, &file.filename, file.bytes)
+			.put_object_content(&state.inner.bucket_name, &file.filename, file.bytes)
 			.content_type(file.content_type)
 			.send()
 			.await;
 
-		let client = state.pool.get().await.unwrap();
+		let client = state.inner.pool.get().await.unwrap();
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
 			Some(Location { latitude, longitude })
 		} else {
 			None
 		};
 
-		let _ =
-			Mutation::upsert_s3_object_worker(&client, file.filename, made_on.clone(), location)
-				.await;
+		let _ = Mutation::upsert_s3_object_worker(
+			&client,
+			file.filename,
+			made_on.clone(),
+			location,
+			user_id,
+		)
+		.await;
 
-		state.update_last_modified();
+		state.inner.update_last_modified();
 	}
 
 	StatusCode::OK.into_response()
