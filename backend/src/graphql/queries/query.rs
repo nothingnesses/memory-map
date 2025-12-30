@@ -1,10 +1,6 @@
 use crate::{
 	CasbinObject, CasbinUser, SharedState, UserId,
-	graphql::objects::{
-		config::PublicConfig,
-		s3_object::S3Object,
-		user::{User, UserRole},
-	},
+	graphql::objects::{config::PublicConfig, s3_object::S3Object, user::User},
 };
 use async_graphql::{Context, Error as GraphQLError, Object};
 use casbin::CoreApi;

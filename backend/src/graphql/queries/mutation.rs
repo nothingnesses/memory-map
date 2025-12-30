@@ -1,11 +1,7 @@
 use crate::{
 	CasbinObject, CasbinUser, ContextWrapper, SharedState, UserId,
 	email::send_password_reset_email,
-	graphql::objects::{
-		location::Location,
-		s3_object::S3Object,
-		user::{User, UserRole},
-	},
+	graphql::objects::{location::Location, s3_object::S3Object, user::User},
 };
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use async_graphql::{Context, Error as GraphQLError, ID, Object};
