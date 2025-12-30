@@ -8,7 +8,7 @@ use thaw::*;
 
 #[component]
 pub fn Users() -> impl IntoView {
-	let trigger = RwSignal::new(0);
+	let trigger: RwSignal<usize> = RwSignal::new(0);
 	let users_resource = LocalResource::new(move || {
 		trigger.get();
 		async move { UsersQuery::run().await.unwrap_or_default() }
@@ -24,7 +24,7 @@ pub fn Users() -> impl IntoView {
 			};
 			let _ = AdminUpdateUserMutation::run(variables).await;
 			loading.set(false);
-			trigger.update(|n| *n += 1);
+			trigger.update(|n| *n = n.wrapping_add(1));
 		});
 	};
 
@@ -38,7 +38,7 @@ pub fn Users() -> impl IntoView {
 			};
 			let _ = AdminUpdateUserMutation::run(variables).await;
 			loading.set(false);
-			trigger.update(|n| *n += 1);
+			trigger.update(|n| *n = n.wrapping_add(1));
 		});
 	};
 
@@ -88,7 +88,6 @@ pub fn Users() -> impl IntoView {
 											let reset_action = on_reset_password.clone();
 											let user_role = user.role.clone();
 											let is_loading = RwSignal::new(false);
-
 											let id_for_email = id.clone();
 											let id_for_role = id.clone();
 
@@ -138,9 +137,7 @@ pub fn Users() -> impl IntoView {
 													<TableCell>
 														<Button
 															disabled=move || is_loading.get()
-															on_click=move |_| {
-																reset_action(email.get(), is_loading)
-															}
+															on_click=move |_| { reset_action(email.get(), is_loading) }
 														>
 															"Reset Password"
 														</Button>

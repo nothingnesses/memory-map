@@ -134,7 +134,7 @@ pub fn App() -> impl IntoView {
 	// Provides context that manages stylesheets, titles, meta tags, etc.
 	provide_meta_context();
 
-	let trigger = RwSignal::new(0);
+	let trigger: RwSignal<usize> = RwSignal::new(0);
 	let user_resource = LocalResource::new(move || {
 		trigger.get();
 		async move { MeQuery::run().await.ok().flatten() }
@@ -142,7 +142,7 @@ pub fn App() -> impl IntoView {
 
 	provide_context(UserContext {
 		user: user_resource,
-		refetch: Callback::new(move |_| trigger.update(|n| *n += 1)),
+		refetch: Callback::new(move |_| trigger.update(|n| *n = n.wrapping_add(1))),
 	});
 
 	view! {
