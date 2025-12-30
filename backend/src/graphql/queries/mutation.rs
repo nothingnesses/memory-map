@@ -21,20 +21,20 @@ use std::sync::{Arc, Mutex};
 use time::Duration;
 use tracing;
 
-const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity::text AS publicity;";
 
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
 SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), publicity = $5
 WHERE id = $1
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity::text AS publicity;";
 
 const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id, publicity)
 VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5)
 ON CONFLICT (name) DO UPDATE
 SET made_on = EXCLUDED.made_on, location = EXCLUDED.location, publicity = EXCLUDED.publicity
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity::text AS publicity;";
 
 fn validate_password(password: &str) -> Result<(), GraphQLError> {
 	if password.len() < 8 {
@@ -408,7 +408,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET default_publicity = $1, updated_at = now() WHERE id = $2 RETURNING *",
+				"UPDATE users SET default_publicity = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity::text AS default_publicity",
 				&[&default_publicity.to_string(), &user_id],
 			)
 			.await
@@ -456,7 +456,7 @@ impl Mutation {
 			.to_string();
 
 		let statement = client
-			.prepare_cached("INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *")
+			.prepare_cached("INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, created_at, updated_at, default_publicity::text AS default_publicity")
 			.await?;
 
 		let row = client
@@ -476,7 +476,7 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		let statement = client.prepare_cached("SELECT * FROM users WHERE email = $1").await?;
+		let statement = client.prepare_cached("SELECT id, email, password_hash, role, created_at, updated_at, default_publicity::text AS default_publicity FROM users WHERE email = $1").await?;
 
 		let row = client
 			.query_opt(&statement, &[&email])
@@ -484,14 +484,10 @@ impl Mutation {
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.ok_or_else(|| GraphQLError::new("Invalid email or password"))?;
 
+		let password_hash_str: String = row
+			.try_get("password_hash")
+			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 		let user = User::try_from(row)?;
-		let password_hash_str: String = client
-			.query_one(
-				"SELECT password_hash FROM users WHERE id = $1",
-				&[&user.id.parse::<i64>().unwrap()],
-			)
-			.await?
-			.get("password_hash");
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
 			.map_err(|e| GraphQLError::new(format!("Hash parse error: {e}")))?;
@@ -632,7 +628,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET email = $1, updated_at = now() WHERE id = $2 RETURNING *",
+				"UPDATE users SET email = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity::text AS default_publicity",
 				&[&new_email, &user_id.0],
 			)
 			.await
@@ -786,7 +782,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING *",
+				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING id, email, role, created_at, updated_at, default_publicity::text AS default_publicity",
 				&[&target_user.role.to_string(), &target_user.email, &target_id],
 			)
 			.await
