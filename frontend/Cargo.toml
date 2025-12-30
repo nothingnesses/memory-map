@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1"
+email_address = "0.2"
 graphql_client = "0.14"
 leptos = { version = "0.8", features = ["csr"] }
 leptos-leaflet = { version = "0.10", features = [

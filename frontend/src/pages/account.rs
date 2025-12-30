@@ -88,30 +88,27 @@ pub fn Account() -> impl IntoView {
 
 	let on_change_publicity = move |ev| {
 		let val = event_target_value(&ev);
-		let new_publicity = match val.as_str() {
-			"Public" => PublicityDefault::Public,
-			"Private" => PublicityDefault::Private,
-			_ => PublicityDefault::Private,
-		};
-		default_publicity.set(new_publicity.clone());
+		if let Ok(new_publicity) = val.parse::<PublicityDefault>() {
+			default_publicity.set(new_publicity.clone());
 
-		is_publicity_loading.set(true);
-		spawn_local(async move {
-			let variables =
-				update_user_publicity_mutation::Variables { default_publicity: new_publicity };
-			match UpdateUserPublicityMutation::run(variables).await {
-				Ok(_) => {
-					publicity_message
-						.set(Some("Default publicity updated successfully".to_string()));
-					publicity_error.set(None);
+			is_publicity_loading.set(true);
+			spawn_local(async move {
+				let variables =
+					update_user_publicity_mutation::Variables { default_publicity: new_publicity };
+				match UpdateUserPublicityMutation::run(variables).await {
+					Ok(_) => {
+						publicity_message
+							.set(Some("Default publicity updated successfully".to_string()));
+						publicity_error.set(None);
+					}
+					Err(e) => {
+						publicity_error.set(Some(e.to_string()));
+						publicity_message.set(None);
+					}
 				}
-				Err(e) => {
-					publicity_error.set(Some(e.to_string()));
-					publicity_message.set(None);
-				}
-			}
-			is_publicity_loading.set(false);
-		});
+				is_publicity_loading.set(false);
+			});
+		}
 	};
 
 	view! {
@@ -128,10 +125,7 @@ pub fn Account() -> impl IntoView {
 					<select
 						class="p-2 border rounded bg-white w-full"
 						on:change=on_change_publicity
-						prop:value=move || match default_publicity.get() {
-							PublicityDefault::Public => "Public",
-							PublicityDefault::Private => "Private",
-						}
+						prop:value=move || default_publicity.get().to_string()
 						disabled=move || is_publicity_loading.get()
 					>
 						<option value="Public">"Public"</option>

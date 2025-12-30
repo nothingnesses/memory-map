@@ -11,12 +11,14 @@ use crate::{
 	},
 	iso_to_local_datetime_value, js_date_value_to_iso,
 };
+use email_address::EmailAddress;
 use leptos::{
 	logging::debug_error,
 	prelude::*,
 	task::spawn_local,
 	web_sys::{MouseEvent, SubmitEvent},
 };
+use std::str::FromStr;
 use thaw::*;
 
 /// Component for editing an existing S3 object.
@@ -123,6 +125,30 @@ pub fn EditS3ObjectForm(
 			.map(|s| s.trim().to_string())
 			.filter(|s| !s.is_empty())
 			.collect();
+
+		// Validate emails
+		let invalid_emails: Vec<String> = allowed_users_vec
+			.iter()
+			.filter(|email| EmailAddress::from_str(email).is_err())
+			.map(|s| s.to_string())
+			.collect();
+
+		if !invalid_emails.is_empty() {
+			toaster.dispatch_toast(
+				move || {
+					view! {
+						<Toast>
+							<ToastTitle>"Invalid Emails"</ToastTitle>
+							<ToastBody>
+								{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
+							</ToastBody>
+						</Toast>
+					}
+				},
+				ToastOptions::default().with_intent(ToastIntent::Error),
+			);
+			return;
+		}
 
 		spawn_local(async move {
 			let variables = Variables {

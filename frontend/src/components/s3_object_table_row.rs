@@ -9,8 +9,9 @@ use crate::{
 		},
 	},
 };
-use leptos::{logging::debug_error, prelude::*, task::spawn_local};
-use std::collections::HashSet;
+use email_address::EmailAddress;
+use leptos::{html::Select, logging::debug_error, prelude::*, task::spawn_local};
+use std::{collections::HashSet, str::FromStr};
 use thaw::*;
 
 #[component]
@@ -29,6 +30,7 @@ pub fn S3ObjectTableRow(
 
 	let show_allowed_users_dialog = RwSignal::new(false);
 	let allowed_users_input = RwSignal::new(String::new());
+	let select_ref = NodeRef::<Select>::new();
 
 	// Initialize allowed_users_input when the dialog opens or object changes
 	Effect::new(move |_| {
@@ -93,18 +95,20 @@ pub fn S3ObjectTableRow(
 
 	let on_change_publicity = move |ev| {
 		let val = event_target_value(&ev);
-		let new_publicity = match val.as_str() {
-			"Default" => PublicityOverride::Default,
-			"Public" => PublicityOverride::Public,
-			"Private" => PublicityOverride::Private,
-			"Selected Users" => PublicityOverride::SelectedUsers,
-			_ => PublicityOverride::Default,
-		};
+		if let Ok(new_publicity) = val.parse::<PublicityOverride>() {
+			if new_publicity == PublicityOverride::SelectedUsers {
+				show_allowed_users_dialog.set(true);
+			} else {
+				update_object(new_publicity, None);
+			}
+		}
+	};
 
-		if new_publicity == PublicityOverride::SelectedUsers {
-			show_allowed_users_dialog.set(true);
-		} else {
-			update_object(new_publicity, None);
+	let on_cancel_allowed_users = move |_| {
+		show_allowed_users_dialog.set(false);
+		// Reset the select to the current value
+		if let Some(select) = select_ref.get() {
+			select.set_value(&s3_object.get().publicity.to_string());
 		}
 	};
 
@@ -112,6 +116,30 @@ pub fn S3ObjectTableRow(
 		let input = allowed_users_input.get();
 		let users: Vec<String> =
 			input.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+
+		// Validate emails
+		let invalid_emails: Vec<String> = users
+			.iter()
+			.filter(|email| EmailAddress::from_str(email).is_err())
+			.map(|s| s.to_string())
+			.collect();
+
+		if !invalid_emails.is_empty() {
+			toaster.dispatch_toast(
+				move || {
+					view! {
+						<Toast>
+							<ToastTitle>"Invalid Emails"</ToastTitle>
+							<ToastBody>
+								{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
+							</ToastBody>
+						</Toast>
+					}
+				},
+				ToastOptions::default().with_intent(ToastIntent::Error),
+			);
+			return;
+		}
 
 		update_object(PublicityOverride::SelectedUsers, Some(users));
 		show_allowed_users_dialog.set(false);
@@ -153,14 +181,10 @@ pub fn S3ObjectTableRow(
 			<TableCell class="wrap-anywhere">{move || s3_object.get().content_type}</TableCell>
 			<TableCell class="wrap-anywhere">
 				<select
+					node_ref=select_ref
 					class="p-2 border rounded bg-white"
 					on:change=on_change_publicity
-					prop:value=move || match s3_object.get().publicity {
-						PublicityOverride::Default => "Default",
-						PublicityOverride::Public => "Public",
-						PublicityOverride::Private => "Private",
-						PublicityOverride::SelectedUsers => "Selected Users",
-					}
+					prop:value=move || s3_object.get().publicity.to_string()
 				>
 					<option value="Default">"Default"</option>
 					<option value="Public">"Public"</option>
@@ -233,7 +257,7 @@ pub fn S3ObjectTableRow(
 					<DialogActions>
 						<Button
 							appearance=ButtonAppearance::Subtle
-							on_click=move |_| show_allowed_users_dialog.set(false)
+							on_click=on_cancel_allowed_users
 						>
 							"Cancel"
 						</Button>

@@ -49,6 +49,30 @@ pub enum PublicityDefault {
 	Private,
 }
 
+impl fmt::Display for PublicityDefault {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		match self {
+			PublicityDefault::Public => write!(f, "Public"),
+			PublicityDefault::Private => write!(f, "Private"),
+		}
+	}
+}
+
+impl std::str::FromStr for PublicityDefault {
+	type Err = ();
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"Public" => Ok(PublicityDefault::Public),
+			"Private" => Ok(PublicityDefault::Private),
+			_ => Err(()),
+		}
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UserRole {
 	#[serde(rename = "USER")]
