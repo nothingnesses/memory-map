@@ -2,7 +2,7 @@
 
 use crate::AppState;
 use crate::graphql::{
-	objects::{location::Location, s3_object::PublicityOverride},
+	objects::{location::Location, s3_object::PublicityOverride, s3_object::S3Object},
 	queries::mutation::Mutation,
 };
 use axum::{
@@ -10,6 +10,7 @@ use axum::{
 	extract::{Multipart, State},
 	http::StatusCode,
 	response::{IntoResponse, Response},
+	Json,
 };
 use axum_extra::extract::cookie::PrivateCookieJar;
 use axum_macros::debug_handler;
@@ -31,7 +32,7 @@ pub async fn post(
 	State(state): State<AppState<Manager, Object<Manager>>>,
 	jar: PrivateCookieJar,
 	mut multipart: Multipart,
-) -> Response {
+) -> impl IntoResponse {
 	let user_id = if let Some(cookie) = jar.get("auth_token")
 		&& let Ok(id) = cookie.value().parse::<i64>()
 	{
@@ -95,6 +96,9 @@ pub async fn post(
 	tracing::debug!("Latitude: {:?}", latitude);
 	tracing::debug!("Longitude: {:?}", longitude);
 	tracing::debug!("Files: {} uploaded", files.len());
+
+	let mut uploaded_objects = Vec::new();
+
 	for file in files {
 		tracing::debug!(
 			" - Name: {}, Type: {}, Size: {} bytes",
@@ -118,7 +122,7 @@ pub async fn post(
 			None
 		};
 
-		let _ = Mutation::upsert_s3_object_worker(
+		match Mutation::upsert_s3_object_worker(
 			&client,
 			file.filename,
 			made_on.clone(),
@@ -127,10 +131,14 @@ pub async fn post(
 			PublicityOverride::Default,
 			vec![],
 		)
-		.await;
+		.await
+		{
+			Ok(s3_object) => uploaded_objects.push(s3_object),
+			Err(e) => tracing::error!("Failed to upsert object: {:?}", e),
+		}
 
 		state.inner.update_last_modified();
 	}
 
-	StatusCode::OK.into_response()
+	Json(uploaded_objects).into_response()
 }
