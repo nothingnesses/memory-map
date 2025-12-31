@@ -112,16 +112,16 @@ pub fn Account() -> impl IntoView {
 	};
 
 	view! {
-		<div class="flex flex-col items-center justify-center h-full pt-10 gap-10">
+		<div class="grid gap-4 place-items-center h-full pt-10 gap-10">
 			<h1 class="text-2xl font-bold">"Account Settings"</h1>
 
 			// Default Publicity
-			<div class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<h2 class="text-xl font-bold mb-4">"Default Publicity"</h2>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="publicity">
+			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
+				<h2 class="text-xl font-bold">"Default Publicity"</h2>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">
 						"Default Publicity for New Objects"
-					</label>
+					</div>
 					<select
 						class="p-2 border rounded bg-white w-full"
 						on:change=on_change_publicity
@@ -131,33 +131,31 @@ pub fn Account() -> impl IntoView {
 						<option value="Public">"Public"</option>
 						<option value="Private">"Private"</option>
 					</select>
-				</div>
+				</label>
 				<Show when=move || publicity_message.get().is_some()>
-					<p class="text-green-500 text-xs italic mb-4">{publicity_message.get()}</p>
+					<p class="text-green-500 text-xs italic">{publicity_message.get()}</p>
 				</Show>
 				<Show when=move || publicity_error.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{publicity_error.get()}</p>
+					<p class="text-red-500 text-xs italic">{publicity_error.get()}</p>
 				</Show>
 			</div>
 
 			// Change Email
-			<div class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<h2 class="text-xl font-bold mb-4">"Change Email"</h2>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
-						"New Email"
-					</label>
+			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
+				<h2 class="text-xl font-bold">"Change Email"</h2>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">"New Email"</div>
 					<Input
 						value=email
 						placeholder="New Email"
 						disabled=move || is_email_loading.get()
 					/>
-				</div>
+				</label>
 				<Show when=move || email_message.get().is_some()>
-					<p class="text-green-500 text-xs italic mb-4">{email_message.get()}</p>
+					<p class="text-green-500 text-xs italic">{email_message.get()}</p>
 				</Show>
 				<Show when=move || email_error.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{email_error.get()}</p>
+					<p class="text-red-500 text-xs italic">{email_error.get()}</p>
 				</Show>
 				<Button
 					on_click=on_change_email
@@ -169,44 +167,43 @@ pub fn Account() -> impl IntoView {
 			</div>
 
 			// Change Password
-			<div class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<h2 class="text-xl font-bold mb-4">"Change Password"</h2>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="old_password">
+			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
+				<h2 class="text-xl font-bold">"Change Password"</h2>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">
 						"Old Password"
-					</label>
+					</div>
 					<Input
 						value=old_password
 						placeholder="Old Password"
 						attr:r#type="password"
 						disabled=move || is_password_loading.get()
 					/>
-				</div>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="new_password">
+				</label>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">
 						"New Password"
-					</label>
+					</div>
 					<Input
 						value=new_password
 						placeholder="New Password"
 						attr:r#type="password"
 						disabled=move || is_password_loading.get()
 					/>
-				</div>
-				<div class="mb-6">
-					<label
-						class="block text-gray-700 text-sm font-bold mb-2"
-						for="confirm_new_password"
+				</label>
+				<label class="grid gap-2">
+					<div
+						class="block text-gray-700 text-sm font-bold"
 					>
 						"Confirm New Password"
-					</label>
+					</div>
 					<Input
 						value=confirm_new_password
 						placeholder="Confirm New Password"
 						attr:r#type="password"
 						disabled=move || is_password_loading.get()
 					/>
-				</div>
+				</label>
 				<Show when=move || password_message.get().is_some()>
 					<p class="text-green-500 text-xs italic mb-4">{password_message.get()}</p>
 				</Show>

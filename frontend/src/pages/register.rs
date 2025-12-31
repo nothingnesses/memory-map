@@ -60,46 +60,45 @@ pub fn Register() -> impl IntoView {
 	};
 
 	view! {
-		<div class="flex flex-col items-center justify-center h-full pt-10">
-			<h1 class="text-2xl font-bold mb-4">"Register"</h1>
+		<div class="grid gap-4 place-items-center h-full pt-10">
+			<h1 class="text-2xl font-bold">"Register"</h1>
 			<form
 				on:submit=on_submit
-				class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
+				class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
 			>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">
 						"Email"
-					</label>
+					</div>
 					<Input value=email placeholder="Email" disabled=move || is_loading.get() />
-				</div>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="password">
+				</label>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">
 						"Password"
-					</label>
+					</div>
 					<Input
 						value=password
 						placeholder="Password"
 						attr:r#type="password"
 						disabled=move || is_loading.get()
 					/>
-				</div>
-				<div class="mb-6">
-					<label
-						class="block text-gray-700 text-sm font-bold mb-2"
-						for="confirm_password"
+				</label>
+				<label class="grid gap-2">
+					<div
+						class="block text-gray-700 text-sm font-bold"
 					>
 						"Confirm Password"
-					</label>
+					</div>
 					<Input
 						value=confirm_password
 						placeholder="Confirm Password"
 						attr:r#type="password"
 						disabled=move || is_loading.get()
 					/>
-				</div>
+				</label>
 
 				<Show when=move || error_message.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{error_message.get()}</p>
+					<p class="text-red-500 text-xs italic">{error_message.get()}</p>
 				</Show>
 
 				<div class="flex items-center justify-between">

@@ -510,9 +510,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .mx-auto{margin-inline:auto;}
 .mb-2{margin-bottom:calc(var(--spacing) * 2);}
 .mb-4{margin-bottom:calc(var(--spacing) * 4);}
-.mb-6{margin-bottom:calc(var(--spacing) * 6);}
 .mt-100px{margin-top:100px;}
-.mt-4{margin-top:calc(var(--spacing) * 4);}
 .p-0{padding:calc(var(--spacing) * 0);}
 .p-2{padding:calc(var(--spacing) * 2);}
 .p-4{padding:calc(var(--spacing) * 4);}

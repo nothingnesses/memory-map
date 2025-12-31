@@ -68,35 +68,31 @@ pub fn SignIn() -> impl IntoView {
 	};
 
 	view! {
-		<div class="flex flex-col items-center justify-center h-full pt-10">
-			<h1 class="text-2xl font-bold mb-4">"Sign In"</h1>
+		<div class="grid gap-4 place-items-center h-full pt-10">
+			<h1 class="text-2xl font-bold">"Sign In"</h1>
 			<form
 				on:submit=on_submit
-				class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
+				class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
 			>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
-						"Email"
-					</label>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">"Email"</div>
 					<Input value=email placeholder="Email" disabled=move || is_loading.get() />
-				</div>
-				<div class="mb-6">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="password">
-						"Password"
-					</label>
+				</label>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">"Password"</div>
 					<Input
 						value=password
 						placeholder="Password"
 						attr:r#type="password"
 						disabled=move || is_loading.get()
 					/>
-				</div>
+				</label>
 
 				<Show when=move || error_message.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{error_message.get()}</p>
+					<p class="text-red-500 text-xs italic">{error_message.get()}</p>
 				</Show>
 				<Show when=move || success_message.get().is_some()>
-					<p class="text-green-500 text-xs italic mb-4">{success_message.get()}</p>
+					<p class="text-green-500 text-xs italic">{success_message.get()}</p>
 				</Show>
 
 				<div class="flex items-center justify-between">
@@ -115,7 +111,7 @@ pub fn SignIn() -> impl IntoView {
 						"Forgot Password?"
 					</Button>
 				</div>
-				<div class="mt-4 text-center">
+				<div class="text-center">
 					<Suspense>
 						{move || {
 							config_resource
