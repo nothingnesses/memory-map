@@ -27,9 +27,7 @@ pub fn FullSizeS3Object(
 		})>
 			<Button
 				class="p-unset rounded-none border-none"
-				on_click=move |_| {
-					open.set(true);
-				}
+				on_click=move |_| open.set(true)
 			>
 				// Constrained size content
 				<S3ObjectComponent class="max-w-dvw max-h-dvh object-scale-down" s3_object />
@@ -57,9 +55,7 @@ pub fn FullSizeS3Object(
 						>
 							<Button
 								class="p-unset rounded-none border-none"
-								on_click=move |_| {
-									open.set(false);
-								}
+								on_click=move |_| open.set(false)
 							>
 								<S3ObjectComponent class="max-w-none block" s3_object />
 							</Button>

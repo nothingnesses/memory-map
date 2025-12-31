@@ -89,9 +89,9 @@ pub fn Users() -> impl IntoView {
 													<TableCell>{id}</TableCell>
 													<TableCell>
 														<div class="flex gap-2">
-															<Input value=email disabled=move || is_loading.get() />
+															<Input value=email disabled=is_loading />
 															<Button
-																disabled=move || is_loading.get()
+																disabled=is_loading
 																on_click=move |_| {
 																	update_email_action(
 																		id_for_email.clone(),
@@ -121,7 +121,7 @@ pub fn Users() -> impl IntoView {
 																	UserRole::USER => "user",
 																	_ => "user",
 																}
-																disabled=move || is_loading.get()
+																disabled=is_loading
 															>
 																<option value="user">"User"</option>
 																<option value="admin">"Admin"</option>
@@ -131,7 +131,7 @@ pub fn Users() -> impl IntoView {
 													<TableCell>{created_at}</TableCell>
 													<TableCell>
 														<Button
-															disabled=move || is_loading.get()
+															disabled=is_loading
 															on_click=move |_| { reset_action(email.get(), is_loading) }
 														>
 															"Reset Password"

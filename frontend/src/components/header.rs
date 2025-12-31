@@ -49,7 +49,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 			</div>
 
 			// Menu overlay (visible when menu_open is true)
-			<Show when=move || { menu_open.get() }>
+			<Show when=move || menu_open.get()>
 				<div class="absolute inset-0">
 					<div class="relative w-dvw w-dvh">
 						// Backdrop button to close menu when clicking outside

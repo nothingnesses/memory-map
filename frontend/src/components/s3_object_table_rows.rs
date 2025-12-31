@@ -41,12 +41,12 @@ pub fn S3ObjectTableRows(
 		>
 			<S3ObjectTableRow
 				s3_object=Signal::derive(move || s3_object.clone())
-				selected_ids=selected_ids
-				on_toggle=on_toggle
-				on_delete=on_delete
-				on_edit=on_edit
-				delete_button_content=delete_button_content
-				edit_button_content=edit_button_content
+				selected_ids
+				on_toggle
+				on_delete
+				on_edit
+				delete_button_content
+				edit_button_content
 			/>
 		</ForEnumerate>
 	}
