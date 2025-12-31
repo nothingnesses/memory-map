@@ -7,14 +7,12 @@ use axum::{
 	http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header, request::Parts},
 	middleware::{self, Next},
 	response::IntoResponse,
-	routing::{delete, get, post},
+	routing::{get, post},
 };
 use axum_extra::extract::cookie::{Cookie, Key, PrivateCookieJar};
 use backend::{
 	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
-	controllers::api::{
-		locations::post as post_locations,
-	},
+	controllers::api::locations::post as post_locations,
 	graphiql,
 	graphql::queries::{mutation::Mutation, query::Query},
 	migrations,

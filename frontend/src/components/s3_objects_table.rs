@@ -1,7 +1,9 @@
 // @todo Add better error-handling to prevent errors from prevent table from displaying. Errors should just be logged in console.
 
 use crate::{
-	CallbackAnyView, components::s3_object_table_rows::S3ObjectTableRows, dump_errors,
+	CallbackAnyView,
+	components::s3_object_table_rows::S3ObjectTableRows,
+	dump_errors,
 	graphql_queries::{
 		delete_s3_objects::DeleteS3ObjectsMutation,
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,

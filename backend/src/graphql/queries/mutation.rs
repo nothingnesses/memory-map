@@ -74,15 +74,14 @@ impl Mutation {
 
 		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
 
-		if !objects_to_delete.is_empty() {
-			if let Err(e) = minio_client
+		if !objects_to_delete.is_empty()
+			&& let Err(e) = minio_client
 				.delete_objects::<_, ObjectToDelete>(bucket_name, objects_to_delete)
 				.send()
 				.await
-			{
-				tracing::error!("Failed to delete objects from MinIO: {}", e);
-				// We do not return error here to avoid state mismatch with DB
-			}
+		{
+			tracing::error!("Failed to delete objects from MinIO: {}", e);
+			// We do not return error here to avoid state mismatch with DB
 		}
 
 		Ok(objects)

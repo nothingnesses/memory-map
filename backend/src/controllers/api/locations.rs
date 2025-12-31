@@ -2,15 +2,15 @@
 
 use crate::AppState;
 use crate::graphql::{
-	objects::{location::Location, s3_object::PublicityOverride, s3_object::S3Object},
+	objects::{location::Location, s3_object::PublicityOverride},
 	queries::mutation::Mutation,
 };
 use axum::{
+	Json,
 	body::Bytes,
 	extract::{Multipart, State},
 	http::StatusCode,
-	response::{IntoResponse, Response},
-	Json,
+	response::IntoResponse,
 };
 use axum_extra::extract::cookie::PrivateCookieJar;
 use axum_macros::debug_handler;
@@ -23,7 +23,6 @@ struct FileData {
 	filename: String,
 	content_type: String,
 	bytes: Bytes,
-	// ...
 }
 
 // @todo Modify to return both status code and location and filenames added.
