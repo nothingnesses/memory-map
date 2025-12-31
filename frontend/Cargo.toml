@@ -24,6 +24,7 @@ lucide-leptos = { version = "2", features = [
 	"layout",
 	"multimedia",
 	"notifications",
+	"security",
 	"text"
 ] }
 mime = "0.3"

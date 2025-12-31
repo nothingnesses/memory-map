@@ -1,4 +1,7 @@
-use crate::graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation};
+use crate::{
+	components::password_input::PasswordInput,
+	graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation},
+};
 use leptos::{prelude::*, task::spawn_local};
 use leptos_router::hooks::{use_navigate, use_query_map};
 use thaw::*;
@@ -53,47 +56,44 @@ pub fn ResetPassword() -> impl IntoView {
 	};
 
 	view! {
-		<div class="flex flex-col items-center justify-center h-full pt-10">
-			<h1 class="text-2xl font-bold mb-4">"Reset Password"</h1>
-			<div class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="new_password">
+		<div class="grid gap-4 place-items-center h-full pt-10">
+			<h1 class="text-2xl font-bold">"Reset Password"</h1>
+			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">
 						"New Password"
-					</label>
-					<Input
+					</div>
+					<PasswordInput
 						value=new_password
 						placeholder="New Password"
-						attr:r#type="password"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					/>
-				</div>
-				<div class="mb-6">
-					<label
-						class="block text-gray-700 text-sm font-bold mb-2"
-						for="confirm_password"
+				</label>
+				<label class="grid gap-2">
+					<div
+						class="block text-gray-700 text-sm font-bold"
 					>
 						"Confirm Password"
-					</label>
-					<Input
+					</div>
+					<PasswordInput
 						value=confirm_password
 						placeholder="Confirm Password"
-						attr:r#type="password"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					/>
-				</div>
+				</label>
 
-				<Show when=move || error_message.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{error_message.get()}</p>
+				<Show when=move || error_message.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic">{error_message}</p>
 				</Show>
-				<Show when=move || success_message.get().is_some()>
-					<p class="text-green-500 text-xs italic mb-4">{success_message.get()}</p>
+				<Show when=move || success_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic">{success_message}</p>
 				</Show>
 
 				<div class="flex items-center justify-between">
 					<Button
 						on_click=on_reset
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					>
 						"Reset Password"
 					</Button>

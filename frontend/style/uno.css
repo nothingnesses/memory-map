@@ -58,6 +58,11 @@
 --radius-DEFAULT: 0.25rem;
 --colors-gray-200: oklch(92.8% 0.006 264.531);
 --colors-black: #000;
+--radius-sm: 0.25rem;
+--text-4xl-fontSize: 2.25rem;
+--text-4xl-lineHeight: 2.5rem;
+--text-xl-fontSize: 1.25rem;
+--text-xl-lineHeight: 1.75rem;
 --container-md: 28rem;
 --colors-gray-700: oklch(37.3% 0.034 259.733);
 --colors-green-500: oklch(72.3% 0.219 149.579);
@@ -65,15 +70,11 @@
 --colors-blue-500: oklch(62.3% 0.214 259.815);
 --text-2xl-fontSize: 1.5rem;
 --text-2xl-lineHeight: 2rem;
---text-xl-fontSize: 1.25rem;
---text-xl-lineHeight: 1.75rem;
 --text-sm-fontSize: 0.875rem;
 --text-sm-lineHeight: 1.25rem;
 --text-xs-fontSize: 0.75rem;
 --text-xs-lineHeight: 1rem;
 --colors-blue-700: oklch(48.8% 0.243 264.376);
---text-4xl-fontSize: 2.25rem;
---text-4xl-lineHeight: 2.5rem;
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
 --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);
@@ -510,13 +511,12 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .mx-auto{margin-inline:auto;}
 .mb-2{margin-bottom:calc(var(--spacing) * 2);}
 .mb-4{margin-bottom:calc(var(--spacing) * 4);}
-.mb-6{margin-bottom:calc(var(--spacing) * 6);}
 .mt-100px{margin-top:100px;}
-.mt-4{margin-top:calc(var(--spacing) * 4);}
 .p-0{padding:calc(var(--spacing) * 0);}
 .p-2{padding:calc(var(--spacing) * 2);}
 .p-4{padding:calc(var(--spacing) * 4);}
 .p-unset{padding:unset;}
+.px-2{padding-inline:calc(var(--spacing) * 2);}
 .px-4{padding-inline:calc(var(--spacing) * 4);}
 .py-2{padding-block:calc(var(--spacing) * 2);}
 .py-4{padding-block:calc(var(--spacing) * 4);}
@@ -525,10 +525,12 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .text-center{text-align:center;}
 .scroll-smooth{scroll-behavior:smooth;}
 .border{border-width:1px;}
+.border-black{border-color:color-mix(in srgb, var(--colors-black) var(--un-border-opacity), transparent) /* #000 */;}
 .border-gray-200{border-color:color-mix(in srgb, var(--colors-gray-200) var(--un-border-opacity), transparent) /* oklch(92.8% 0.006 264.531) */;}
 .rounded{border-radius:var(--radius-DEFAULT);}
 .rounded-full{border-radius:calc(infinity * 1px);}
 .rounded-none{border-radius:var(--radius-none);}
+.rounded-sm{border-radius:var(--radius-sm);}
 .border-none{--un-border-style:none;border-style:none;}
 .bg-\[rgba\(0\,0\,0\,0\.4\)\]{background-color:color-mix(in oklab, rgba(0,0,0,0.4) var(--un-bg-opacity), transparent) /* rgba(0,0,0,0.4) */;}
 .bg-\#444{background-color:color-mix(in oklab, #444 var(--un-bg-opacity), transparent) /* #444 */;}
@@ -562,6 +564,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .h-150px{height:150px;}
 .h-20{height:calc(var(--spacing) * 20);}
 .h-4{height:calc(var(--spacing) * 4);}
+.h-5{height:calc(var(--spacing) * 5);}
 .h-auto{height:auto;}
 .h-full{height:100%;}
 .max-h-\[80vh\]{max-height:80vh;}
@@ -579,6 +582,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .w-20{width:calc(var(--spacing) * 20);}
 .w-4{width:calc(var(--spacing) * 4);}
 .w-40px{width:40px;}
+.w-5{width:calc(var(--spacing) * 5);}
 .w-dvh{width:100dvh;}
 .w-dvw{width:100dvw;}
 .w-fit{width:fit-content;}
@@ -648,6 +652,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .group:hover .group-hover\:text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .group:hover:active .group-hover\:group-active\:text-white{color:color-mix(in oklab, var(--colors-white) var(--un-text-opacity), transparent) /* #fff */;}
 .hover\:text-blue-700:hover{color:color-mix(in oklab, var(--colors-blue-700) var(--un-text-opacity), transparent) /* oklch(48.8% 0.243 264.376) */;}
+.border-black{border-color:color-mix(in oklab, var(--colors-black) var(--un-border-opacity), transparent) /* #000 */;}
 .border-gray-200{border-color:color-mix(in oklab, var(--colors-gray-200) var(--un-border-opacity), transparent) /* oklch(92.8% 0.006 264.531) */;}
 .bg-black\/40{background-color:color-mix(in oklab, var(--colors-black) 40%, transparent) /* #000 */;}
 .bg-blue-500{background-color:color-mix(in oklab, var(--colors-blue-500) var(--un-bg-opacity), transparent) /* oklch(62.3% 0.214 259.815) */;}

@@ -1,7 +1,10 @@
-use crate::graphql_queries::{
-	config::ConfigQuery,
-	login::{LoginMutation, login_mutation},
-	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+use crate::{
+	components::password_input::PasswordInput,
+	graphql_queries::{
+		config::ConfigQuery,
+		login::{LoginMutation, login_mutation},
+		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+	},
 };
 use leptos::{ev, prelude::*, task::spawn_local};
 use leptos_router::components::A;
@@ -68,54 +71,49 @@ pub fn SignIn() -> impl IntoView {
 	};
 
 	view! {
-		<div class="flex flex-col items-center justify-center h-full pt-10">
-			<h1 class="text-2xl font-bold mb-4">"Sign In"</h1>
+		<div class="grid gap-4 place-items-center h-full pt-10">
+			<h1 class="text-2xl font-bold">"Sign In"</h1>
 			<form
 				on:submit=on_submit
-				class="w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
+				class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
 			>
-				<div class="mb-4">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="email">
-						"Email"
-					</label>
-					<Input value=email placeholder="Email" disabled=move || is_loading.get() />
-				</div>
-				<div class="mb-6">
-					<label class="block text-gray-700 text-sm font-bold mb-2" for="password">
-						"Password"
-					</label>
-					<Input
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">"Email"</div>
+					<Input value=email placeholder="Email" disabled=is_loading />
+				</label>
+				<label class="grid gap-2">
+					<div class="block text-gray-700 text-sm font-bold">"Password"</div>
+					<PasswordInput
 						value=password
 						placeholder="Password"
-						attr:r#type="password"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					/>
-				</div>
+				</label>
 
-				<Show when=move || error_message.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{error_message.get()}</p>
+				<Show when=move || error_message.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic">{error_message}</p>
 				</Show>
-				<Show when=move || success_message.get().is_some()>
-					<p class="text-green-500 text-xs italic mb-4">{success_message.get()}</p>
+				<Show when=move || success_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic">{success_message}</p>
 				</Show>
 
 				<div class="flex items-center justify-between">
 					<Button
 						attr:r#type="submit"
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					>
 						"Sign In"
 					</Button>
 					<Button
 						on_click=on_forgot_password
 						appearance=ButtonAppearance::Transparent
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					>
 						"Forgot Password?"
 					</Button>
 				</div>
-				<div class="mt-4 text-center">
+				<div class="text-center">
 					<Suspense>
 						{move || {
 							config_resource
