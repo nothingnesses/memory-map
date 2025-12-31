@@ -6,10 +6,11 @@ use futures::future::join_all;
 use jiff::Timestamp;
 use minio::s3::types::S3Api;
 use postgres_types::{FromSql, ToSql};
+use serde::{Serialize, Serializer};
 use std::{fmt, str::FromStr, sync::Arc};
 use tokio_postgres::Row;
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, ToSql, FromSql)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, ToSql, FromSql, Serialize)]
 #[postgres(name = "publicity_override")]
 pub enum PublicityOverride {
 	#[postgres(name = "default")]
@@ -50,10 +51,24 @@ impl FromStr for PublicityOverride {
 	}
 }
 
-#[derive(Debug)]
+fn serialize_timestamp<S>(
+	timestamp: &Option<Timestamp>,
+	serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+	S: Serializer,
+{
+	match timestamp {
+		Some(ts) => serializer.serialize_str(&ts.to_string()),
+		None => serializer.serialize_none(),
+	}
+}
+
+#[derive(Debug, Serialize)]
 pub struct S3Object {
 	pub id: ID,
 	pub name: String,
+	#[serde(serialize_with = "serialize_timestamp")]
 	pub made_on: Option<Timestamp>,
 	pub location: Option<Location>,
 	pub user_id: Option<i64>,

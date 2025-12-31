@@ -1,0 +1,5 @@
+mutation DeleteS3ObjectsMutation($ids: [ID!]!) {
+	deleteS3Objects(ids: $ids) {
+		id
+	}
+}

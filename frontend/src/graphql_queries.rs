@@ -2,6 +2,7 @@ pub mod admin_update_user;
 pub mod change_email;
 pub mod change_password;
 pub mod config;
+pub mod delete_s3_objects;
 pub mod login;
 pub mod logout;
 pub mod me;

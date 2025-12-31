@@ -74,15 +74,14 @@ impl Mutation {
 
 		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
 
-		if !objects_to_delete.is_empty() {
-			minio_client
+		if !objects_to_delete.is_empty()
+			&& let Err(e) = minio_client
 				.delete_objects::<_, ObjectToDelete>(bucket_name, objects_to_delete)
 				.send()
 				.await
-				.map_err(|e| {
-					tracing::error!("Failed to delete objects from MinIO: {}", e);
-					GraphQLError::new(format!("MinIO error: {e}"))
-				})?;
+		{
+			tracing::error!("Failed to delete objects from MinIO: {}", e);
+			// We do not return error here to avoid state mismatch with DB
 		}
 
 		Ok(objects)
