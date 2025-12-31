@@ -15,7 +15,8 @@ pub fn PasswordInput(
 			<input
 				id=id
 				class="rounded-sm px-2 border border-black"
-				value=value
+				prop:value=move || value.get()
+				on:input=move |ev| value.set(event_target_value(&ev))
 				placeholder=placeholder
 				type=move || if show_password.get() { "text" } else { "password" }
 				disabled=disabled
@@ -23,7 +24,9 @@ pub fn PasswordInput(
 			<button
 				type="button"
 				class="cursor-pointer w-fit"
-				aria-label=move || if show_password.get() { "Hide password" } else { "Show password" }
+				aria-label=move || {
+					if show_password.get() { "Hide password" } else { "Show password" }
+				}
 				on:click=move |ev| {
 					ev.prevent_default();
 					show_password.update(|s| *s = !*s);
