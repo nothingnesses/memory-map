@@ -64,7 +64,7 @@ pub fn ResetPassword() -> impl IntoView {
 						value=new_password
 						placeholder="New Password"
 						attr:r#type="password"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					/>
 				</label>
 				<label class="grid gap-2">
@@ -77,22 +77,22 @@ pub fn ResetPassword() -> impl IntoView {
 						value=confirm_password
 						placeholder="Confirm Password"
 						attr:r#type="password"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					/>
 				</label>
 
-				<Show when=move || error_message.get().is_some()>
-					<p class="text-red-500 text-xs italic">{error_message.get()}</p>
+				<Show when=move || error_message.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic">{error_message}</p>
 				</Show>
-				<Show when=move || success_message.get().is_some()>
-					<p class="text-green-500 text-xs italic">{success_message.get()}</p>
+				<Show when=move || success_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic">{success_message}</p>
 				</Show>
 
 				<div class="flex items-center justify-between">
 					<Button
 						on_click=on_reset
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					>
 						"Reset Password"
 					</Button>

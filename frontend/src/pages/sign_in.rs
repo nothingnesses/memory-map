@@ -76,7 +76,7 @@ pub fn SignIn() -> impl IntoView {
 			>
 				<label class="grid gap-2">
 					<div class="block text-gray-700 text-sm font-bold">"Email"</div>
-					<Input value=email placeholder="Email" disabled=move || is_loading.get() />
+					<Input value=email placeholder="Email" disabled=is_loading />
 				</label>
 				<label class="grid gap-2">
 					<div class="block text-gray-700 text-sm font-bold">"Password"</div>
@@ -84,29 +84,29 @@ pub fn SignIn() -> impl IntoView {
 						value=password
 						placeholder="Password"
 						attr:r#type="password"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					/>
 				</label>
 
-				<Show when=move || error_message.get().is_some()>
-					<p class="text-red-500 text-xs italic">{error_message.get()}</p>
+				<Show when=move || error_message.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic">{error_message}</p>
 				</Show>
-				<Show when=move || success_message.get().is_some()>
-					<p class="text-green-500 text-xs italic">{success_message.get()}</p>
+				<Show when=move || success_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic">{success_message}</p>
 				</Show>
 
 				<div class="flex items-center justify-between">
 					<Button
 						attr:r#type="submit"
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					>
 						"Sign In"
 					</Button>
 					<Button
 						on_click=on_forgot_password
 						appearance=ButtonAppearance::Transparent
-						disabled=move || is_loading.get()
+						disabled=is_loading
 					>
 						"Forgot Password?"
 					</Button>

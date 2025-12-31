@@ -126,17 +126,17 @@ pub fn Account() -> impl IntoView {
 						class="p-2 border rounded bg-white w-full"
 						on:change=on_change_publicity
 						prop:value=move || default_publicity.get().to_string()
-						disabled=move || is_publicity_loading.get()
+						disabled=is_publicity_loading
 					>
 						<option value="Public">"Public"</option>
 						<option value="Private">"Private"</option>
 					</select>
 				</label>
-				<Show when=move || publicity_message.get().is_some()>
-					<p class="text-green-500 text-xs italic">{publicity_message.get()}</p>
+				<Show when=move || publicity_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic">{publicity_message}</p>
 				</Show>
-				<Show when=move || publicity_error.get().is_some()>
-					<p class="text-red-500 text-xs italic">{publicity_error.get()}</p>
+				<Show when=move || publicity_error.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic">{publicity_error}</p>
 				</Show>
 			</div>
 
@@ -148,19 +148,19 @@ pub fn Account() -> impl IntoView {
 					<Input
 						value=email
 						placeholder="New Email"
-						disabled=move || is_email_loading.get()
+						disabled=is_email_loading
 					/>
 				</label>
-				<Show when=move || email_message.get().is_some()>
-					<p class="text-green-500 text-xs italic">{email_message.get()}</p>
+				<Show when=move || email_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic">{email_message}</p>
 				</Show>
-				<Show when=move || email_error.get().is_some()>
-					<p class="text-red-500 text-xs italic">{email_error.get()}</p>
+				<Show when=move || email_error.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic">{email_error}</p>
 				</Show>
 				<Button
 					on_click=on_change_email
 					class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-					disabled=move || is_email_loading.get()
+					disabled=is_email_loading
 				>
 					"Update Email"
 				</Button>
@@ -177,7 +177,7 @@ pub fn Account() -> impl IntoView {
 						value=old_password
 						placeholder="Old Password"
 						attr:r#type="password"
-						disabled=move || is_password_loading.get()
+						disabled=is_password_loading
 					/>
 				</label>
 				<label class="grid gap-2">
@@ -188,7 +188,7 @@ pub fn Account() -> impl IntoView {
 						value=new_password
 						placeholder="New Password"
 						attr:r#type="password"
-						disabled=move || is_password_loading.get()
+						disabled=is_password_loading
 					/>
 				</label>
 				<label class="grid gap-2">
@@ -201,19 +201,19 @@ pub fn Account() -> impl IntoView {
 						value=confirm_new_password
 						placeholder="Confirm New Password"
 						attr:r#type="password"
-						disabled=move || is_password_loading.get()
+						disabled=is_password_loading
 					/>
 				</label>
-				<Show when=move || password_message.get().is_some()>
-					<p class="text-green-500 text-xs italic mb-4">{password_message.get()}</p>
+				<Show when=move || password_message.with(Option::is_some)>
+					<p class="text-green-500 text-xs italic mb-4">{password_message}</p>
 				</Show>
-				<Show when=move || password_error.get().is_some()>
-					<p class="text-red-500 text-xs italic mb-4">{password_error.get()}</p>
+				<Show when=move || password_error.with(Option::is_some)>
+					<p class="text-red-500 text-xs italic mb-4">{password_error}</p>
 				</Show>
 				<Button
 					on_click=on_change_password
 					class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-					disabled=move || is_password_loading.get()
+					disabled=is_password_loading
 				>
 					"Update Password"
 				</Button>
