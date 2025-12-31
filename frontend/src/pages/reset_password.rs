@@ -1,4 +1,7 @@
-use crate::graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation};
+use crate::{
+	components::password_input::PasswordInput,
+	graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation},
+};
 use leptos::{prelude::*, task::spawn_local};
 use leptos_router::hooks::{use_navigate, use_query_map};
 use thaw::*;
@@ -60,10 +63,9 @@ pub fn ResetPassword() -> impl IntoView {
 					<div class="block text-gray-700 text-sm font-bold">
 						"New Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=new_password
 						placeholder="New Password"
-						attr:r#type="password"
 						disabled=is_loading
 					/>
 				</label>
@@ -73,10 +75,9 @@ pub fn ResetPassword() -> impl IntoView {
 					>
 						"Confirm Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=confirm_password
 						placeholder="Confirm Password"
-						attr:r#type="password"
 						disabled=is_loading
 					/>
 				</label>

@@ -1,5 +1,6 @@
 use crate::{
 	auth::UserContext,
+	components::password_input::PasswordInput,
 	graphql_queries::{
 		change_email::{ChangeEmailMutation, change_email_mutation},
 		change_password::{ChangePasswordMutation, change_password_mutation},
@@ -173,10 +174,9 @@ pub fn Account() -> impl IntoView {
 					<div class="block text-gray-700 text-sm font-bold">
 						"Old Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=old_password
 						placeholder="Old Password"
-						attr:r#type="password"
 						disabled=is_password_loading
 					/>
 				</label>
@@ -184,10 +184,9 @@ pub fn Account() -> impl IntoView {
 					<div class="block text-gray-700 text-sm font-bold">
 						"New Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=new_password
 						placeholder="New Password"
-						attr:r#type="password"
 						disabled=is_password_loading
 					/>
 				</label>
@@ -197,10 +196,9 @@ pub fn Account() -> impl IntoView {
 					>
 						"Confirm New Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=confirm_new_password
 						placeholder="Confirm New Password"
-						attr:r#type="password"
 						disabled=is_password_loading
 					/>
 				</label>

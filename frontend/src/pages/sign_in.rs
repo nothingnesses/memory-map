@@ -1,7 +1,10 @@
-use crate::graphql_queries::{
-	config::ConfigQuery,
-	login::{LoginMutation, login_mutation},
-	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+use crate::{
+	components::password_input::PasswordInput,
+	graphql_queries::{
+		config::ConfigQuery,
+		login::{LoginMutation, login_mutation},
+		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+	},
 };
 use leptos::{ev, prelude::*, task::spawn_local};
 use leptos_router::components::A;
@@ -80,10 +83,9 @@ pub fn SignIn() -> impl IntoView {
 				</label>
 				<label class="grid gap-2">
 					<div class="block text-gray-700 text-sm font-bold">"Password"</div>
-					<Input
+					<PasswordInput
 						value=password
 						placeholder="Password"
-						attr:r#type="password"
 						disabled=is_loading
 					/>
 				</label>

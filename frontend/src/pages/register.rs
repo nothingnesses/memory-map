@@ -1,6 +1,9 @@
-use crate::graphql_queries::{
-	config::ConfigQuery,
-	register::{RegisterMutation, register_mutation},
+use crate::{
+	components::password_input::PasswordInput,
+	graphql_queries::{
+		config::ConfigQuery,
+		register::{RegisterMutation, register_mutation},
+	},
 };
 use leptos::{ev, prelude::*, task::spawn_local};
 use leptos_router::hooks::use_navigate;
@@ -76,10 +79,9 @@ pub fn Register() -> impl IntoView {
 					<div class="block text-gray-700 text-sm font-bold">
 						"Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=password
 						placeholder="Password"
-						attr:r#type="password"
 						disabled=is_loading
 					/>
 				</label>
@@ -89,10 +91,9 @@ pub fn Register() -> impl IntoView {
 					>
 						"Confirm Password"
 					</div>
-					<Input
+					<PasswordInput
 						value=confirm_password
 						placeholder="Confirm Password"
-						attr:r#type="password"
 						disabled=is_loading
 					/>
 				</label>
