@@ -2,26 +2,19 @@
 
 use crate::{
 	CallbackAnyView, components::s3_object_table_rows::S3ObjectTableRows, dump_errors,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	graphql_queries::{
+		delete_s3_objects::DeleteS3ObjectsMutation,
+		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	},
 };
 use leptos::{
 	logging::{debug_error, debug_log},
 	prelude::*,
 	task::spawn_local,
-	web_sys::{self, Request, RequestInit},
 };
 use lucide_leptos::Trash;
 use std::collections::HashSet;
 use thaw::*;
-use wasm_bindgen_futures::{
-	JsFuture,
-	wasm_bindgen::{JsCast, JsValue},
-};
-
-#[derive(serde::Serialize)]
-struct DeleteRequest {
-	s3_objects: Vec<i64>,
-}
 
 #[component]
 pub fn S3ObjectsTable(
@@ -43,58 +36,15 @@ pub fn S3ObjectsTable(
 ) -> impl IntoView {
 	let delete_objects = move |objects: Vec<S3Object>| {
 		spawn_local(async move {
-			let ids: Vec<i64> = objects.iter().filter_map(|o| o.id.parse::<i64>().ok()).collect();
+			let ids: Vec<String> = objects.iter().map(|o| o.id.clone()).collect();
 
-			let payload = DeleteRequest { s3_objects: ids };
-			let json = match serde_json::to_string(&payload) {
-				Ok(j) => j,
-				Err(e) => {
-					debug_error!("Failed to serialize payload: {:?}", e);
-					return;
-				}
-			};
-
-			debug_log!("Delete request JSON: {json}");
-
-			let options = RequestInit::new();
-			options.set_method("POST");
-			let headers = web_sys::Headers::new().unwrap();
-			headers.append("Content-Type", "application/json").unwrap();
-			options.set_headers(&headers);
-			options.set_body(&JsValue::from_str(&json));
-
-			let request = Request::new_with_str_and_init(
-				"http://localhost:8000/api/delete-s3-objects/",
-				&options,
-			)
-			.unwrap();
-
-			debug_log!("Delete request: {:?}", request);
-
-			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
-				Ok(resp_value) => {
-					let resp: web_sys::Response = resp_value.unchecked_into();
-					debug_log!("Response status: {} {}", resp.status(), resp.status_text());
-					if resp.ok() {
-						debug_log!("Deleted objects: {json}");
-						// Trigger the refresh callback to update the table
-						on_change.run(());
-					} else {
-						let text = JsFuture::from(resp.text().unwrap())
-							.await
-							.unwrap()
-							.as_string()
-							.unwrap_or_default();
-						debug_error!(
-							"Failed to delete objects. Status: {} {}, Body: {}",
-							resp.status(),
-							resp.status_text(),
-							text
-						);
-					}
+			match DeleteS3ObjectsMutation::run(ids).await {
+				Ok(_) => {
+					debug_log!("Deleted objects successfully");
+					on_change.run(());
 				}
 				Err(e) => {
-					debug_error!("Failed to delete objects (network error): {:?}", e);
+					debug_error!("Failed to delete objects: {:?}", e);
 				}
 			}
 		});
