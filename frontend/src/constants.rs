@@ -126,3 +126,6 @@ pub const OPTION_SELECTED_USERS: &str = "Selected Users";
 pub const LABEL_ALLOWED_USERS: &str = "Allowed Users (comma separated emails)";
 pub const PLACEHOLDER_ALLOWED_USERS: &str = "user1@example.com, user2@example.com";
 pub const MSG_ERROR_LOADING_OBJECT: &str = "Error loading object: ";
+
+pub const HEADER_HEIGHT: f64 = 100.0;
+pub const HEADER_LAYER_CLASSES: &str = "hide-on-scroll inset-0 h-100px w-dvw translate-y-[--hide-on-scroll-translate-y] group-[:not(.scrolling)]/page:transition-all";

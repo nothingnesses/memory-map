@@ -1,7 +1,7 @@
 use crate::auth::UserContext;
 use crate::constants::{
-	ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, LINK_ACCOUNT, LINK_MAP, LINK_OBJECTS,
-	LINK_SIGN_IN, LINK_USERS,
+	ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, HEADER_LAYER_CLASSES, LINK_ACCOUNT, LINK_MAP,
+	LINK_OBJECTS, LINK_SIGN_IN, LINK_USERS,
 };
 use crate::graphql_queries::logout::LogoutMutation;
 use crate::graphql_queries::me::UserRole;
@@ -41,9 +41,6 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 		});
 	};
 	let on_logout = StoredValue::new(on_logout);
-
-	// CSS classes for the header layer, including the hide-on-scroll transition logic
-	const HEADER_LAYER_CLASSES: &str = "hide-on-scroll inset-0 h-100px w-dvw translate-y-[--hide-on-scroll-translate-y] group-[:not(.scrolling)]/page:transition-all";
 
 	view! {
 		<header class="fixed z-1">

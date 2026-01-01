@@ -45,7 +45,7 @@ fn Shell(children: Children) -> impl IntoView {
 	let last_scroll_y = StoredValue::new(0.0);
 	let translate_y = StoredValue::new(0.0);
 	let is_scrolling = StoredValue::new(false);
-	let header_height = 100.0;
+	let header_height = crate::constants::HEADER_HEIGHT;
 
 	// Updates the header's vertical position based on scroll direction
 	let update_header_position = move |val: f64| {
