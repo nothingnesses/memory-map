@@ -250,7 +250,7 @@ async fn main() {
 		.route_layer(cors);
 
 	let bind_addr = format!("{}:{}", cfg.server_host, cfg.server_port);
-	println!("GraphiQL IDE: http://{}", bind_addr);
+	println!("GraphiQL IDE: http://{bind_addr}");
 
 	axum::serve(TcpListener::bind(bind_addr).await.unwrap(), app).await.unwrap();
 }

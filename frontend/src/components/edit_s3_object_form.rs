@@ -148,10 +148,7 @@ pub fn EditS3ObjectForm(
 						<Toast>
 							<ToastTitle>{TITLE_INVALID_EMAILS}</ToastTitle>
 							<ToastBody>
-								{format!(
-									"{}",
-									MSG_INVALID_EMAILS.replace("{}", &invalid_emails.join(", ")),
-								)}
+								{format!("{MSG_INVALID_EMAILS}{}", invalid_emails.join(", "))}
 							</ToastBody>
 						</Toast>
 					}
@@ -200,10 +197,7 @@ pub fn EditS3ObjectForm(
 									<Toast>
 										<ToastTitle>{TITLE_WARNING}</ToastTitle>
 										<ToastBody>
-											{format!(
-												"{}",
-												MSG_MISSING_USERS.replace("{}", &missing_users.join(", ")),
-											)}
+											{format!("{MSG_MISSING_USERS}{}", missing_users.join(", "))}
 										</ToastBody>
 									</Toast>
 								}
@@ -222,7 +216,7 @@ pub fn EditS3ObjectForm(
 								<Toast>
 									<ToastTitle>"Error"</ToastTitle>
 									<ToastBody>
-										{format!("{}", MSG_UPDATE_FAILED.replace("{}", &e.to_string()))}
+										{format!("{MSG_UPDATE_FAILED}{e}")}
 									</ToastBody>
 								</Toast>
 							}

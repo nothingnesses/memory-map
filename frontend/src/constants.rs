@@ -19,7 +19,8 @@ pub const MAP_INITIAL_LAT: f64 = 51.505;
 pub const MAP_INITIAL_LNG: f64 = -0.09;
 pub const MAP_INITIAL_ZOOM: f64 = 3.0;
 pub const TILE_LAYER_URL: &str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-pub const TILE_LAYER_ATTRIBUTION: &str = "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors";
+pub const TILE_LAYER_ATTRIBUTION: &str =
+	"&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors";
 
 // Sign In
 pub const TITLE_SIGN_IN: &str = "Sign In";
@@ -113,12 +114,12 @@ pub const ARIA_OPEN_MENU: &str = "Open menu";
 
 // Edit Object Form
 pub const TITLE_INVALID_EMAILS: &str = "Invalid Emails";
-pub const MSG_INVALID_EMAILS: &str = "Invalid email addresses: {}";
+pub const MSG_INVALID_EMAILS: &str = "Invalid email addresses: ";
 pub const TITLE_SUCCESS: &str = "Success";
 pub const MSG_OBJECT_UPDATED: &str = "Object updated successfully";
 pub const TITLE_WARNING: &str = "Warning";
-pub const MSG_MISSING_USERS: &str = "The following users were not found: {}";
-pub const MSG_UPDATE_FAILED: &str = "Failed to update object: {}";
+pub const MSG_MISSING_USERS: &str = "The following users were not found: ";
+pub const MSG_UPDATE_FAILED: &str = "Failed to update object: ";
 pub const LABEL_NAME: &str = "Name";
 pub const LABEL_PUBLICITY: &str = "Publicity";
 pub const OPTION_DEFAULT: &str = "Default";

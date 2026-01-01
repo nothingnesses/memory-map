@@ -1,10 +1,11 @@
 use crate::{
-	AppConfig, dump_errors, js_date_value_to_iso,
+	AppConfig,
 	constants::{
 		BUTTON_CANCEL, BUTTON_SUBMIT, ERROR_NETWORK, ERROR_SELECT_FILE, ERROR_TITLE,
 		LABEL_SELECT_FILES, LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE, LABEL_SET_LONGITUDE,
 		LATITUDE_MAX, LATITUDE_MIN, LONGITUDE_MAX, LONGITUDE_MIN,
 	},
+	dump_errors, js_date_value_to_iso,
 };
 use leptos::{
 	html::Input,
@@ -94,7 +95,7 @@ pub fn FileUpload(
 			options.set_method("POST");
 			options.set_body(&form_data);
 
-			let url = format!("{}/api/locations/", api_url);
+			let url = format!("{api_url}/api/locations/");
 			let request = Request::new_with_str_and_init(&url, &options).unwrap();
 
 			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {

@@ -1,4 +1,4 @@
-use frontend::{constants::*, App, AppConfig};
+use frontend::{App, AppConfig, constants::*};
 use leptos::prelude::*;
 
 fn main() {
@@ -11,17 +11,17 @@ fn main() {
 			let origin = window().location().origin().unwrap_or_else(|_| {
 				option_env!("FRONTEND_URL").unwrap_or(DEFAULT_FRONTEND_URL).to_string()
 			});
-			let url = format!("{}{}", origin, CONFIG_FILE_PATH);
+			let url = format!("{origin}{CONFIG_FILE_PATH}");
 			match reqwest::get(&url).await {
 				Ok(resp) => match resp.json::<AppConfig>().await {
 					Ok(config) => Some(config),
 					Err(e) => {
-						log::error!("{}: {:?}", MSG_FAILED_TO_PARSE_CONFIG, e);
+						log::error!("{MSG_FAILED_TO_PARSE_CONFIG}: {e:?}");
 						None
 					}
 				},
 				Err(e) => {
-					log::error!("{}: {:?}", MSG_FAILED_TO_FETCH_CONFIG, e);
+					log::error!("{MSG_FAILED_TO_FETCH_CONFIG}: {e:?}");
 					None
 				}
 			}
