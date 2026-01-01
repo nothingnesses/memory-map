@@ -20,10 +20,13 @@ use leptos::error::Error;
 pub struct UpdateUserPublicityMutation;
 
 impl UpdateUserPublicityMutation {
-	pub async fn run(variables: Variables) -> Result<User, Error> {
+	pub async fn run(
+		api_url: String,
+		variables: Variables,
+	) -> Result<User, Error> {
 		Ok(post_graphql_with_auth::<UpdateUserPublicityMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			api_url,
 			variables,
 		)
 		.await?

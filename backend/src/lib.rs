@@ -20,7 +20,9 @@ use std::{
 };
 use tokio::sync::RwLock;
 
+pub mod constants;
 pub mod controllers;
+pub mod db;
 pub mod email;
 pub mod graphql;
 
@@ -34,6 +36,13 @@ pub struct Config {
 	pub smtp_from: String,
 	pub cookie_secret: String,
 	pub frontend_url: String,
+	pub minio_access_key: String,
+	pub minio_secret_key: String,
+	pub minio_url: String,
+	pub s3_bucket_name: String,
+	pub server_host: String,
+	pub server_port: u16,
+	pub cors_allowed_origins: String,
 }
 
 impl Config {
@@ -44,9 +53,6 @@ impl Config {
 			.try_deserialize()
 	}
 }
-
-// 1GB.
-pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
 refinery::embed_migrations!("migrations");
 

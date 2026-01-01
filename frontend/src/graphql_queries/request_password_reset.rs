@@ -14,10 +14,13 @@ use leptos::error::Error;
 pub struct RequestPasswordResetMutation;
 
 impl RequestPasswordResetMutation {
-	pub async fn run(variables: Variables) -> Result<bool, Error> {
+	pub async fn run(
+		api_url: String,
+		variables: Variables,
+	) -> Result<bool, Error> {
 		Ok(post_graphql_with_auth::<RequestPasswordResetMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			api_url,
 			variables,
 		)
 		.await?

@@ -11,10 +11,10 @@ use leptos::error::Error;
 pub struct LogoutMutation;
 
 impl LogoutMutation {
-	pub async fn run() -> Result<bool, Error> {
+	pub async fn run(api_url: String) -> Result<bool, Error> {
 		Ok(post_graphql_with_auth::<LogoutMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			api_url,
 			Variables {},
 		)
 		.await?

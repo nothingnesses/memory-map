@@ -20,10 +20,13 @@ pub use crate::graphql_queries::types::PublicityOverride;
 
 impl S3ObjectByIdQuery {
 	// @todo Add better error-handling
-	pub async fn run(id: i64) -> Result<S3Object, Error> {
+	pub async fn run(
+		api_url: String,
+		id: i64,
+	) -> Result<S3Object, Error> {
 		Ok(post_graphql_with_auth::<S3ObjectByIdQuery, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			api_url,
 			Variables { id },
 		)
 		.await?

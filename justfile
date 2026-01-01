@@ -28,3 +28,7 @@ regenerate-schema:
 # Prepare the project before pushing.
 prepare:
     cd devenv; nix fmt; cd ..; cargo fmt; cargo doc --no-deps; cargo clippy; cargo test
+
+# Scan for hardcoded values.
+scan-hardcoded:
+    ./scan_hardcoded.sh

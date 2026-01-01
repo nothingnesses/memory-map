@@ -26,8 +26,14 @@ use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 // Modules
 pub mod auth;
 mod components;
+pub mod constants;
 pub mod graphql_queries;
 mod pages;
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct AppConfig {
+	pub api_url: String,
+}
 
 /// The Shell component wraps the main application content.
 /// It manages the global layout state, including the header's visibility on scroll.
@@ -39,7 +45,7 @@ fn Shell(children: Children) -> impl IntoView {
 	let last_scroll_y = StoredValue::new(0.0);
 	let translate_y = StoredValue::new(0.0);
 	let is_scrolling = StoredValue::new(false);
-	let header_height = 100.0;
+	let header_height = crate::constants::HEADER_HEIGHT;
 
 	// Updates the header's vertical position based on scroll direction
 	let update_header_position = move |val: f64| {
@@ -138,9 +144,12 @@ pub fn App() -> impl IntoView {
 	provide_meta_context();
 
 	let trigger: RwSignal<usize> = RwSignal::new(0);
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let api_url = config.api_url.clone();
 	let user_resource = LocalResource::new(move || {
 		trigger.get();
-		async move { MeQuery::run().await.ok().flatten() }
+		let api_url = api_url.clone();
+		async move { MeQuery::run(api_url).await.ok().flatten() }
 	});
 
 	provide_context(UserContext {

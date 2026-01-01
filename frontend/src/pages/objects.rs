@@ -3,7 +3,14 @@ use crate::components::{
 	s3_objects_table::S3ObjectsTable,
 };
 use crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
-use crate::{dump_errors, graphql_queries::s3_objects::S3ObjectsQuery};
+use crate::{
+	AppConfig,
+	constants::{
+		BUTTON_ADD_OBJECT, BUTTON_CLOSE, TITLE_ADD_OBJECT, TITLE_EDIT_OBJECT, TITLE_OBJECTS,
+	},
+	dump_errors,
+	graphql_queries::s3_objects::S3ObjectsQuery,
+};
 use leptos::prelude::*;
 use thaw::*;
 
@@ -25,9 +32,10 @@ pub fn Objects() -> impl IntoView {
 	let editing_object = RwSignal::new(None::<S3Object>);
 
 	// Resource that fetches S3 objects, re-running whenever `trigger` changes
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
 	let s3_objects_resource = LocalResource::new(move || {
 		trigger.get();
-		S3ObjectsQuery::run()
+		S3ObjectsQuery::run(config.api_url.clone())
 	});
 
 	// Callback to update the trigger, effectively reloading the table
@@ -59,12 +67,12 @@ pub fn Objects() -> impl IntoView {
 			<div class="relative w-dvw">
 				<div class="container mx-auto grid gap-4">
 					<div class="flex justify-between items-center">
-						<h1 class="text-22px font-bold">"Objects"</h1>
+						<h1 class="text-22px font-bold">{TITLE_OBJECTS}</h1>
 						<Button
 							on_click=move |_| open_add_object.set(true)
 							class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 						>
-							"Add Object"
+							{BUTTON_ADD_OBJECT}
 						</Button>
 					</div>
 					<div class="grid gap-6">
@@ -81,10 +89,10 @@ pub fn Objects() -> impl IntoView {
 						<DialogContent>
 							<div class="grid gap-4">
 								<div class="flex justify-between items-center">
-									<h2 class="text-xl font-bold">"Add Object"</h2>
+									<h2 class="text-xl font-bold">{TITLE_ADD_OBJECT}</h2>
 									<Button on_click=move |_| {
 										open_add_object.set(false)
-									}>"Close"</Button>
+									}>{BUTTON_CLOSE}</Button>
 								</div>
 								<FileUpload
 									on_success=on_upload_success
@@ -102,10 +110,10 @@ pub fn Objects() -> impl IntoView {
 						<DialogContent>
 							<div class="grid gap-4">
 								<div class="flex justify-between items-center">
-									<h2 class="text-xl font-bold">"Edit Object"</h2>
+									<h2 class="text-xl font-bold">{TITLE_EDIT_OBJECT}</h2>
 									<Button on_click=move |_| {
 										open_edit_object.set(false)
-									}>"Close"</Button>
+									}>{BUTTON_CLOSE}</Button>
 								</div>
 								<EditS3ObjectForm
 									id=editing_object_id

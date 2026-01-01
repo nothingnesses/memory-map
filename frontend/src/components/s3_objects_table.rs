@@ -1,8 +1,13 @@
 // @todo Add better error-handling to prevent errors from prevent table from displaying. Errors should just be logged in console.
 
 use crate::{
-	CallbackAnyView,
+	AppConfig, CallbackAnyView,
 	components::s3_object_table_rows::S3ObjectTableRows,
+	constants::{
+		BUTTON_CLOSE, BUTTON_DELETE_SELECTED, BUTTON_NO, BUTTON_YES, HEADER_ACTIONS,
+		HEADER_CONTENT_TYPE, HEADER_ID, HEADER_LOCATION, HEADER_MADE_ON, HEADER_NAME,
+		HEADER_SELECT, HEADER_VIEW, MSG_CONFIRM_DELETE, MSG_DELETE_FAILED, MSG_DELETE_SUCCESS,
+	},
 	dump_errors,
 	graphql_queries::{
 		delete_s3_objects::DeleteS3ObjectsMutation,
@@ -21,7 +26,7 @@ use thaw::*;
 #[component]
 pub fn S3ObjectsTable(
 	#[prop(into)] s3_objects_resource: Signal<LocalResource<Result<Vec<S3Object>, Error>>>,
-	#[prop(into, default = Callback::new(|_| "Close".into_any()))]
+	#[prop(into, default = Callback::new(|_| BUTTON_CLOSE.into_any()))]
 	close_button_content: CallbackAnyView,
 	// Callback to trigger a refresh of the data after deletion
 	#[prop(into, default = Callback::new(|_| ()))] on_change: Callback<()>,
@@ -30,23 +35,25 @@ pub fn S3ObjectsTable(
 		view! {
 			<div class="relative grid grid-flow-col gap-4 place-items-center">
 				<Trash />
-				"Delete selected"
+				{BUTTON_DELETE_SELECTED}
 			</div>
 		}.into_any()
 	))]
 	delete_selected_button_content: CallbackAnyView,
 ) -> impl IntoView {
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
 	let delete_objects = move |objects: Vec<S3Object>| {
+		let api_url = config.api_url.clone();
 		spawn_local(async move {
 			let ids: Vec<String> = objects.iter().map(|o| o.id.clone()).collect();
 
-			match DeleteS3ObjectsMutation::run(ids).await {
+			match DeleteS3ObjectsMutation::run(api_url, ids).await {
 				Ok(_) => {
-					debug_log!("Deleted objects successfully");
+					debug_log!("{}", MSG_DELETE_SUCCESS);
 					on_change.run(());
 				}
 				Err(e) => {
-					debug_error!("Failed to delete objects: {:?}", e);
+					debug_error!("{}: {:?}", MSG_DELETE_FAILED, e);
 				}
 			}
 		});
@@ -127,29 +134,29 @@ pub fn S3ObjectsTable(
 									}
 									on:change=toggle_all
 								/>
-								<div>"Select"</div>
+								<div>{HEADER_SELECT}</div>
 							</div>
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"ID"
+							{HEADER_ID}
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"Name"
+							{HEADER_NAME}
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"Made On"
+							{HEADER_MADE_ON}
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"Location"
+							{HEADER_LOCATION}
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"View"
+							{HEADER_VIEW}
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"Content Type"
+							{HEADER_CONTENT_TYPE}
 						</TableHeaderCell>
 						<TableHeaderCell class="wrap-anywhere font-bold" resizable=true>
-							"Actions"
+							{HEADER_ACTIONS}
 						</TableHeaderCell>
 					</TableRow>
 				</TableHeader>
@@ -197,7 +204,7 @@ pub fn S3ObjectsTable(
 								</Button>
 								<div class="relative grid gap-4">
 									<h2>
-										"Are you sure you want to delete "
+										{MSG_CONFIRM_DELETE}
 										{move || {
 											selected_objects
 												.get()
@@ -213,10 +220,10 @@ pub fn S3ObjectsTable(
 										<Button on_click=move |_| {
 											delete_objects(selected_objects.get());
 											open_delete.set(false);
-										}>"Yes"</Button>
+										}>{BUTTON_YES}</Button>
 										<Button on_click=move |_| {
 											open_delete.set(false);
-										}>"No"</Button>
+										}>{BUTTON_NO}</Button>
 									</div>
 								</div>
 							</div>

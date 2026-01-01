@@ -1,4 +1,11 @@
-use crate::{ContextWrapper, SharedState, graphql::objects::location::Location};
+use crate::{
+	ContextWrapper, SharedState,
+	db::queries::{
+		SELECT_ALL_OBJECTS_QUERY, SELECT_OBJECT_BY_ID_QUERY, SELECT_OBJECT_BY_NAME_QUERY,
+		SELECT_OBJECTS_BY_IDS_QUERY, SELECT_OBJECTS_BY_USER_ID_QUERY, SELECT_VISIBLE_OBJECTS_QUERY,
+	},
+	graphql::objects::location::Location,
+};
 use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use axum::http::Method;
 use deadpool_postgres::Manager;
@@ -99,16 +106,7 @@ impl S3Object {
 
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-				FROM objects o
-				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-				LEFT JOIN users u ON oau.user_id = u.id
-				GROUP BY o.id;",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_ALL_OBJECTS_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[])
@@ -128,17 +126,7 @@ impl S3Object {
 		id: i64,
 	) -> Result<Self, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-				FROM objects o
-				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-				LEFT JOIN users u ON oau.user_id = u.id
-				WHERE o.id = $1
-				GROUP BY o.id;",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECT_BY_ID_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&id]).await?).await
 	}
 
@@ -147,17 +135,7 @@ impl S3Object {
 		name: String,
 	) -> Result<Self, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-				FROM objects o
-				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-				LEFT JOIN users u ON oau.user_id = u.id
-				WHERE o.name = $1
-				GROUP BY o.id;",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&name]).await?).await
 	}
 
@@ -166,17 +144,7 @@ impl S3Object {
 		ids: &[i64],
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-				FROM objects o
-				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-				LEFT JOIN users u ON oau.user_id = u.id
-				WHERE o.id = ANY($1)
-				GROUP BY o.id;",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[&ids])
@@ -196,17 +164,7 @@ impl S3Object {
 		user_id: i64,
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-				COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-				FROM objects o
-				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-				LEFT JOIN users u ON oau.user_id = u.id
-				WHERE o.user_id = $1
-				GROUP BY o.id;",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[&user_id])
@@ -226,22 +184,7 @@ impl S3Object {
 		user_id: Option<i64>,
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-				COALESCE(array_agg(u_allowed.email) FILTER (WHERE u_allowed.email IS NOT NULL), '{}') AS allowed_users
-				FROM objects o
-				JOIN users u ON o.user_id = u.id
-				LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-				LEFT JOIN users u_allowed ON oau.user_id = u_allowed.id
-				WHERE
-					($1::BIGINT IS NOT NULL AND o.user_id = $1)
-					OR o.publicity = 'public'
-					OR (o.publicity = 'default' AND u.default_publicity = 'public')
-					OR (o.publicity = 'selected_users' AND $1::BIGINT IS NOT NULL AND $1 IN (SELECT user_id FROM object_allowed_users WHERE object_id = o.id))
-				GROUP BY o.id;",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[&user_id])

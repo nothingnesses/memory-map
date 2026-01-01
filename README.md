@@ -144,3 +144,15 @@ Please ensure:
 - All services start via `just`
 - Frontend builds without errors
 - Code is formatted (`cargo fmt`)
+
+## Development Tools
+
+### Scanning for Hard-Coded Values
+
+A script `scan_hardcoded.sh` is available to help identify hard-coded values (constants, URLs, IPs, secrets) in the codebase.
+
+Usage:
+```bash
+./scan_hardcoded.sh
+```
+

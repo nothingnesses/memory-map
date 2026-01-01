@@ -15,10 +15,13 @@ use self::delete_s3_objects_mutation::{
 };
 
 impl DeleteS3ObjectsMutation {
-	pub async fn run(ids: Vec<String>) -> Result<Vec<DeletedS3Object>, Error> {
+	pub async fn run(
+		api_url: String,
+		ids: Vec<String>,
+	) -> Result<Vec<DeletedS3Object>, Error> {
 		Ok(post_graphql_with_auth::<DeleteS3ObjectsMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			api_url,
 			Variables { ids },
 		)
 		.await?

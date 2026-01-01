@@ -1,5 +1,10 @@
 use crate::{
+	AppConfig,
 	components::password_input::PasswordInput,
+	constants::{
+		BUTTON_FORGOT_PASSWORD, BUTTON_SIGN_IN, LABEL_EMAIL, LABEL_PASSWORD, LINK_REGISTER,
+		MSG_ENTER_EMAIL_RESET, MSG_RESET_EMAIL_SENT, TITLE_SIGN_IN,
+	},
 	graphql_queries::{
 		config::ConfigQuery,
 		login::{LoginMutation, login_mutation},
@@ -18,17 +23,24 @@ pub fn SignIn() -> impl IntoView {
 	let success_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
 
-	let config_resource = LocalResource::new(move || async move { ConfigQuery::run().await.ok() });
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let api_url = config.api_url.clone();
+	let config_resource = LocalResource::new(move || {
+		let api_url = api_url.clone();
+		async move { ConfigQuery::run(api_url).await.ok() }
+	});
 
 	let on_sign_in = move |_| {
 		let email_val = email.get();
 		let password_val = password.get();
+		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+		let api_url = config.api_url.clone();
 
 		is_loading.set(true);
 		spawn_local(async move {
 			let variables = login_mutation::Variables { email: email_val, password: password_val };
 
-			match LoginMutation::run(variables).await {
+			match LoginMutation::run(api_url, variables).await {
 				Ok(_) => {
 					let _ = window().location().set_href("/");
 				}
@@ -43,18 +55,19 @@ pub fn SignIn() -> impl IntoView {
 	let on_forgot_password = move |_| {
 		let email_val = email.get();
 		if email_val.is_empty() {
-			error_message
-				.set(Some("Please enter your email address to reset password".to_string()));
+			error_message.set(Some(MSG_ENTER_EMAIL_RESET.to_string()));
 			return;
 		}
+		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+		let api_url = config.api_url.clone();
 
 		is_loading.set(true);
 		spawn_local(async move {
 			let variables = request_password_reset_mutation::Variables { email: email_val };
 
-			match RequestPasswordResetMutation::run(variables).await {
+			match RequestPasswordResetMutation::run(api_url, variables).await {
 				Ok(_) => {
-					success_message.set(Some("Password reset email sent".to_string()));
+					success_message.set(Some(MSG_RESET_EMAIL_SENT.to_string()));
 					error_message.set(None);
 				}
 				Err(e) => {
@@ -72,20 +85,20 @@ pub fn SignIn() -> impl IntoView {
 
 	view! {
 		<div class="grid gap-4 place-items-center h-full pt-10">
-			<h1 class="text-2xl font-bold">"Sign In"</h1>
+			<h1 class="text-2xl font-bold">{TITLE_SIGN_IN}</h1>
 			<form
 				on:submit=on_submit
 				class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200"
 			>
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">"Email"</div>
-					<Input value=email placeholder="Email" disabled=is_loading />
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_EMAIL}</div>
+					<Input value=email placeholder=LABEL_EMAIL disabled=is_loading />
 				</label>
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">"Password"</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_PASSWORD}</div>
 					<PasswordInput
 						value=password
-						placeholder="Password"
+						placeholder=LABEL_PASSWORD
 						disabled=is_loading
 					/>
 				</label>
@@ -103,14 +116,14 @@ pub fn SignIn() -> impl IntoView {
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 						disabled=is_loading
 					>
-						"Sign In"
+						{BUTTON_SIGN_IN}
 					</Button>
 					<Button
 						on_click=on_forgot_password
 						appearance=ButtonAppearance::Transparent
 						disabled=is_loading
 					>
-						"Forgot Password?"
+						{BUTTON_FORGOT_PASSWORD}
 					</Button>
 				</div>
 				<div class="text-center">
@@ -126,7 +139,7 @@ pub fn SignIn() -> impl IntoView {
 												href="/register"
 												attr:class="text-blue-500 hover:text-blue-700"
 											>
-												"Don't have an account? Register"
+												{LINK_REGISTER}
 											</A>
 										}
 											.into_any()

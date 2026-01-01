@@ -21,10 +21,13 @@ pub use crate::graphql_queries::types::PublicityOverride;
 impl UpdateS3ObjectMutation {
 	// @todo Add better error-handling
 	/// Executes the UpdateS3ObjectQuery against the GraphQL API.
-	pub async fn run(variables: Variables) -> Result<S3Object, Error> {
+	pub async fn run(
+		api_url: String,
+		variables: Variables,
+	) -> Result<S3Object, Error> {
 		Ok(post_graphql_with_auth::<UpdateS3ObjectMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			api_url,
 			variables,
 		)
 		.await?

@@ -1,4 +1,7 @@
-use crate::ContextWrapper;
+use crate::{
+	ContextWrapper,
+	db::queries::{SELECT_ALL_USERS_QUERY, SELECT_USER_BY_EMAIL_QUERY, SELECT_USER_BY_ID_QUERY},
+};
 use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
 use jiff::Timestamp;
 use postgres_types::{FromSql, ToSql};
@@ -95,11 +98,7 @@ impl User {
 
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT id, email, role, created_at, updated_at, default_publicity FROM users",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_ALL_USERS_QUERY).await?;
 		client.query(&statement, &[]).await?.into_iter().map(Self::try_from).collect()
 	}
 
@@ -108,11 +107,7 @@ impl User {
 		id: i64,
 	) -> Result<Option<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT id, email, role, created_at, updated_at, default_publicity FROM users WHERE id = $1",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_USER_BY_ID_QUERY).await?;
 		match client.query_opt(&statement, &[&id]).await? {
 			Some(row) => Ok(Some(Self::try_from(row)?)),
 			None => Ok(None),
@@ -124,11 +119,7 @@ impl User {
 		email: &str,
 	) -> Result<Option<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(
-				"SELECT id, email, role, created_at, updated_at, default_publicity FROM users WHERE email = $1",
-			)
-			.await?;
+		let statement = client.prepare_cached(SELECT_USER_BY_EMAIL_QUERY).await?;
 		match client.query_opt(&statement, &[&email]).await? {
 			Some(row) => Ok(Some(Self::try_from(row)?)),
 			None => Ok(None),

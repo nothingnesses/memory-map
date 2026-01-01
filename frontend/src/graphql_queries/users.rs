@@ -16,15 +16,11 @@ pub struct UsersQuery;
 pub use users_query::UserRole;
 
 impl UsersQuery {
-	pub async fn run() -> Result<Vec<User>, Error> {
-		Ok(post_graphql_with_auth::<UsersQuery, _>(
-			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
-			Variables {},
-		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.users)?)
+	pub async fn run(api_url: String) -> Result<Vec<User>, Error> {
+		Ok(post_graphql_with_auth::<UsersQuery, _>(&reqwest::Client::new(), api_url, Variables {})
+			.await?
+			.data
+			.ok_or("Empty response".to_string())
+			.map(|response| response.users)?)
 	}
 }
