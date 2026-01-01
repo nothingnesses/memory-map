@@ -1,4 +1,8 @@
 use crate::auth::UserContext;
+use crate::constants::{
+	ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, LINK_ACCOUNT, LINK_MAP, LINK_OBJECTS,
+	LINK_SIGN_IN, LINK_USERS,
+};
 use crate::graphql_queries::logout::LogoutMutation;
 use crate::graphql_queries::me::UserRole;
 use leptos::{prelude::*, task::spawn_local};
@@ -87,21 +91,21 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																		href="/"
 																		on:click=move |_| close_header_menu()
 																	>
-																		"Map"
+																		{LINK_MAP}
 																	</A>
 																	<A
 																		attr:class="py-4 w-full grid place-items-center"
 																		href="/objects"
 																		on:click=move |_| close_header_menu()
 																	>
-																		"Objects"
+																		{LINK_OBJECTS}
 																	</A>
 																	<A
 																		attr:class="py-4 w-full grid place-items-center"
 																		href="/account"
 																		on:click=move |_| close_header_menu()
 																	>
-																		"Account"
+																		{LINK_ACCOUNT}
 																	</A>
 																	{if user.role == UserRole::Admin {
 																		view! {
@@ -110,7 +114,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																				href="/admin/users"
 																				on:click=move |_| close_header_menu()
 																			>
-																				"Users"
+																				{LINK_USERS}
 																			</A>
 																		}
 																			.into_any()
@@ -121,7 +125,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																		class="py-4 w-full grid place-items-center cursor-pointer"
 																		on:click=move |ev| on_logout.with_value(|f| f(ev))
 																	>
-																		"Log Out"
+																		{BUTTON_LOGOUT}
 																	</button>
 																}
 																	.into_any()
@@ -133,7 +137,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 																		href="/sign-in"
 																		on:click=move |_| close_header_menu()
 																	>
-																		"Sign In"
+																		{LINK_SIGN_IN}
 																	</A>
 																}
 																	.into_any()
@@ -156,7 +160,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 						class="pointer-events-auto relative z-1 cursor-pointer justify-self-end rounded-full grid place-items-center w-40px aspect-square bg-#666"
 						on:click=move |_| toggle_header_menu()
 						attr:aria-label=move || {
-							if menu_open.get() { "Close menu" } else { "Open menu" }
+							if menu_open.get() { ARIA_CLOSE_MENU } else { ARIA_OPEN_MENU }
 						}
 					>
 						<Show

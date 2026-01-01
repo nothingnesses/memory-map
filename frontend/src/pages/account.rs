@@ -1,6 +1,13 @@
 use crate::{
 	auth::UserContext,
 	components::password_input::PasswordInput,
+	constants::{
+		BUTTON_UPDATE_EMAIL, BUTTON_UPDATE_PASSWORD, LABEL_CONFIRM_NEW_PASSWORD,
+		LABEL_DEFAULT_PUBLICITY, LABEL_NEW_EMAIL, LABEL_NEW_PASSWORD, LABEL_OLD_PASSWORD,
+		MSG_EMAIL_UPDATED, MSG_NEW_PASSWORDS_DO_NOT_MATCH, MSG_PASSWORD_UPDATED,
+		MSG_PUBLICITY_UPDATED, OPTION_PRIVATE, OPTION_PUBLIC, TITLE_ACCOUNT_SETTINGS,
+		TITLE_CHANGE_EMAIL, TITLE_CHANGE_PASSWORD, TITLE_DEFAULT_PUBLICITY,
+	},
 	graphql_queries::{
 		change_email::{ChangeEmailMutation, change_email_mutation},
 		change_password::{ChangePasswordMutation, change_password_mutation},
@@ -45,7 +52,7 @@ pub fn Account() -> impl IntoView {
 			let variables = change_email_mutation::Variables { new_email: email_val };
 			match ChangeEmailMutation::run(variables).await {
 				Ok(_) => {
-					email_message.set(Some("Email updated successfully".to_string()));
+					email_message.set(Some(MSG_EMAIL_UPDATED.to_string()));
 					email_error.set(None);
 				}
 				Err(e) => {
@@ -63,7 +70,7 @@ pub fn Account() -> impl IntoView {
 		let confirm_pass = confirm_new_password.get();
 
 		if new_pass != confirm_pass {
-			password_error.set(Some("New passwords do not match".to_string()));
+			password_error.set(Some(MSG_NEW_PASSWORDS_DO_NOT_MATCH.to_string()));
 			return;
 		}
 
@@ -75,7 +82,7 @@ pub fn Account() -> impl IntoView {
 			};
 			match ChangePasswordMutation::run(variables).await {
 				Ok(_) => {
-					password_message.set(Some("Password updated successfully".to_string()));
+					password_message.set(Some(MSG_PASSWORD_UPDATED.to_string()));
 					password_error.set(None);
 				}
 				Err(e) => {
@@ -98,8 +105,7 @@ pub fn Account() -> impl IntoView {
 					update_user_publicity_mutation::Variables { default_publicity: new_publicity };
 				match UpdateUserPublicityMutation::run(variables).await {
 					Ok(_) => {
-						publicity_message
-							.set(Some("Default publicity updated successfully".to_string()));
+						publicity_message.set(Some(MSG_PUBLICITY_UPDATED.to_string()));
 						publicity_error.set(None);
 					}
 					Err(e) => {
@@ -114,23 +120,21 @@ pub fn Account() -> impl IntoView {
 
 	view! {
 		<div class="grid gap-4 place-items-center h-full pt-10 gap-10">
-			<h1 class="text-2xl font-bold">"Account Settings"</h1>
+			<h1 class="text-2xl font-bold">{TITLE_ACCOUNT_SETTINGS}</h1>
 
 			// Default Publicity
 			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<h2 class="text-xl font-bold">"Default Publicity"</h2>
+				<h2 class="text-xl font-bold">{TITLE_DEFAULT_PUBLICITY}</h2>
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">
-						"Default Publicity for New Objects"
-					</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_DEFAULT_PUBLICITY}</div>
 					<select
 						class="p-2 border rounded bg-white w-full"
 						on:change=on_change_publicity
 						prop:value=move || default_publicity.get().to_string()
 						disabled=is_publicity_loading
 					>
-						<option value="Public">"Public"</option>
-						<option value="Private">"Private"</option>
+						<option value="Public">{OPTION_PUBLIC}</option>
+						<option value="Private">{OPTION_PRIVATE}</option>
 					</select>
 				</label>
 				<Show when=move || publicity_message.with(Option::is_some)>
@@ -143,14 +147,10 @@ pub fn Account() -> impl IntoView {
 
 			// Change Email
 			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<h2 class="text-xl font-bold">"Change Email"</h2>
+				<h2 class="text-xl font-bold">{TITLE_CHANGE_EMAIL}</h2>
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">"New Email"</div>
-					<Input
-						value=email
-						placeholder="New Email"
-						disabled=is_email_loading
-					/>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_NEW_EMAIL}</div>
+					<Input value=email placeholder=LABEL_NEW_EMAIL disabled=is_email_loading />
 				</label>
 				<Show when=move || email_message.with(Option::is_some)>
 					<p class="text-green-500 text-xs italic">{email_message}</p>
@@ -163,42 +163,34 @@ pub fn Account() -> impl IntoView {
 					class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 					disabled=is_email_loading
 				>
-					"Update Email"
+					{BUTTON_UPDATE_EMAIL}
 				</Button>
 			</div>
 
 			// Change Password
 			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
-				<h2 class="text-xl font-bold">"Change Password"</h2>
+				<h2 class="text-xl font-bold">{TITLE_CHANGE_PASSWORD}</h2>
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">
-						"Old Password"
-					</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_OLD_PASSWORD}</div>
 					<PasswordInput
 						value=old_password
-						placeholder="Old Password"
+						placeholder=LABEL_OLD_PASSWORD
 						disabled=is_password_loading
 					/>
 				</label>
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">
-						"New Password"
-					</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_NEW_PASSWORD}</div>
 					<PasswordInput
 						value=new_password
-						placeholder="New Password"
+						placeholder=LABEL_NEW_PASSWORD
 						disabled=is_password_loading
 					/>
 				</label>
 				<label class="grid gap-2">
-					<div
-						class="block text-gray-700 text-sm font-bold"
-					>
-						"Confirm New Password"
-					</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_CONFIRM_NEW_PASSWORD}</div>
 					<PasswordInput
 						value=confirm_new_password
-						placeholder="Confirm New Password"
+						placeholder=LABEL_CONFIRM_NEW_PASSWORD
 						disabled=is_password_loading
 					/>
 				</label>
@@ -213,7 +205,7 @@ pub fn Account() -> impl IntoView {
 					class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 					disabled=is_password_loading
 				>
-					"Update Password"
+					{BUTTON_UPDATE_PASSWORD}
 				</Button>
 			</div>
 		</div>

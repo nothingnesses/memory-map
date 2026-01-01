@@ -1,4 +1,11 @@
-use crate::{AppConfig, dump_errors, js_date_value_to_iso};
+use crate::{
+	AppConfig, dump_errors, js_date_value_to_iso,
+	constants::{
+		BUTTON_CANCEL, BUTTON_SUBMIT, ERROR_NETWORK, ERROR_SELECT_FILE, ERROR_TITLE,
+		LABEL_SELECT_FILES, LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE, LABEL_SET_LONGITUDE,
+		LATITUDE_MAX, LATITUDE_MIN, LONGITUDE_MAX, LONGITUDE_MIN,
+	},
+};
 use leptos::{
 	html::Input,
 	logging::{debug_error, debug_log},
@@ -48,8 +55,8 @@ pub fn FileUpload(
 					move || {
 						view! {
 							<Toast>
-								<ToastTitle>"Error"</ToastTitle>
-								<ToastBody>"Please select at least one file to upload."</ToastBody>
+								<ToastTitle>{ERROR_TITLE}</ToastTitle>
+								<ToastBody>{ERROR_SELECT_FILE}</ToastBody>
 							</Toast>
 						}
 					},
@@ -65,7 +72,7 @@ pub fn FileUpload(
 						move || {
 							view! {
 								<Toast>
-									<ToastTitle>"Error"</ToastTitle>
+									<ToastTitle>{ERROR_TITLE}</ToastTitle>
 									<ToastBody>
 										{format!(
 											"Unsupported file type: {file_name} ({file_type})",
@@ -112,7 +119,7 @@ pub fn FileUpload(
 							move || {
 								view! {
 									<Toast>
-										<ToastTitle>"Error"</ToastTitle>
+										<ToastTitle>{ERROR_TITLE}</ToastTitle>
 										<ToastBody>{text}</ToastBody>
 									</Toast>
 								}
@@ -127,8 +134,8 @@ pub fn FileUpload(
 						move || {
 							view! {
 								<Toast>
-									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>"Failed to upload files (network error)"</ToastBody>
+									<ToastTitle>{ERROR_TITLE}</ToastTitle>
+									<ToastBody>{ERROR_NETWORK}</ToastBody>
 								</Toast>
 							}
 						},
@@ -143,19 +150,19 @@ pub fn FileUpload(
 			<Form action="" on:submit=on_submit>
 				<div class="relative grid gap-4">
 					<label>
-						<div class="font-bold">"Set latitude"</div>
-						<input type="number" name="latitude" min="-90" max="90" step="any" />
+						<div class="font-bold">{LABEL_SET_LATITUDE}</div>
+						<input type="number" name="latitude" min=LATITUDE_MIN max=LATITUDE_MAX step="any" />
 					</label>
 					<label>
-						<div class="font-bold">"Set longitude"</div>
-						<input type="number" name="longitude" min="-180" max="180" step="any" />
+						<div class="font-bold">{LABEL_SET_LONGITUDE}</div>
+						<input type="number" name="longitude" min=LONGITUDE_MIN max=LONGITUDE_MAX step="any" />
 					</label>
 					<label>
-						<div class="font-bold">"Set date and time"</div>
+						<div class="font-bold">{LABEL_SET_DATE_TIME}</div>
 						<input type="datetime-local" node_ref=made_on_input_ref />
 					</label>
 					<label>
-						<div class="font-bold">"Select files to upload"</div>
+						<div class="font-bold">{LABEL_SELECT_FILES}</div>
 						<input
 							type="file"
 							name="files"
@@ -165,7 +172,7 @@ pub fn FileUpload(
 						/>
 					</label>
 					<div class="grid grid-flow-col justify-start gap-4">
-						<Button class="w-fit">"Submit"</Button>
+						<Button class="w-fit">{BUTTON_SUBMIT}</Button>
 						<Button
 							class="w-fit"
 							appearance=ButtonAppearance::Subtle
@@ -174,7 +181,7 @@ pub fn FileUpload(
 								on_cancel.run(());
 							}
 						>
-							"Cancel"
+							{BUTTON_CANCEL}
 						</Button>
 					</div>
 				</div>

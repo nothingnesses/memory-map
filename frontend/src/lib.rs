@@ -26,6 +26,7 @@ use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 // Modules
 pub mod auth;
 mod components;
+pub mod constants;
 pub mod graphql_queries;
 mod pages;
 

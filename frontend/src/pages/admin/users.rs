@@ -1,7 +1,13 @@
-use crate::graphql_queries::{
-	admin_update_user::{AdminUpdateUserMutation, admin_update_user_mutation},
-	request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
-	users::{UserRole, UsersQuery},
+use crate::{
+	constants::{
+		BUTTON_RESET_PASSWORD, BUTTON_SAVE, HEADER_ACTIONS, HEADER_CREATED_AT, HEADER_EMAIL,
+		HEADER_ID, HEADER_ROLE, LOADING_TEXT, OPTION_ADMIN, OPTION_USER, TITLE_USERS,
+	},
+	graphql_queries::{
+		admin_update_user::{AdminUpdateUserMutation, admin_update_user_mutation},
+		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+		users::{UserRole, UsersQuery},
+	},
 };
 use leptos::{prelude::*, task::spawn_local, wasm_bindgen::JsCast, web_sys::HtmlSelectElement};
 use thaw::*;
@@ -47,22 +53,22 @@ pub fn Users() -> impl IntoView {
 
 	view! {
 		<div class="container mx-auto pt-10">
-			<h1 class="text-2xl font-bold mb-4">"Users"</h1>
+			<h1 class="text-2xl font-bold mb-4">{TITLE_USERS}</h1>
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHeaderCell>"ID"</TableHeaderCell>
-						<TableHeaderCell>"Email"</TableHeaderCell>
-						<TableHeaderCell>"Role"</TableHeaderCell>
-						<TableHeaderCell>"Created At"</TableHeaderCell>
-						<TableHeaderCell>"Actions"</TableHeaderCell>
+						<TableHeaderCell>{HEADER_ID}</TableHeaderCell>
+						<TableHeaderCell>{HEADER_EMAIL}</TableHeaderCell>
+						<TableHeaderCell>{HEADER_ROLE}</TableHeaderCell>
+						<TableHeaderCell>{HEADER_CREATED_AT}</TableHeaderCell>
+						<TableHeaderCell>{HEADER_ACTIONS}</TableHeaderCell>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
 					<Suspense fallback=move || {
 						view! {
 							<TableRow>
-								<TableCell>"Loading..."</TableCell>
+								<TableCell>{LOADING_TEXT}</TableCell>
 							</TableRow>
 						}
 					}>
@@ -100,7 +106,7 @@ pub fn Users() -> impl IntoView {
 																	)
 																}
 															>
-																"Save"
+																{BUTTON_SAVE}
 															</Button>
 														</div>
 													</TableCell>
@@ -123,8 +129,8 @@ pub fn Users() -> impl IntoView {
 																}
 																disabled=is_loading
 															>
-																<option value="user">"User"</option>
-																<option value="admin">"Admin"</option>
+																<option value="user">{OPTION_USER}</option>
+																<option value="admin">{OPTION_ADMIN}</option>
 															</select>
 														</div>
 													</TableCell>
@@ -134,7 +140,7 @@ pub fn Users() -> impl IntoView {
 															disabled=is_loading
 															on_click=move |_| { reset_action(email.get(), is_loading) }
 														>
-															"Reset Password"
+															{BUTTON_RESET_PASSWORD}
 														</Button>
 													</TableCell>
 												</TableRow>

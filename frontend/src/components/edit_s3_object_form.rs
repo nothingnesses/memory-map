@@ -1,4 +1,12 @@
 use crate::{
+	constants::{
+		BUTTON_CANCEL, BUTTON_SUBMIT, LABEL_ALLOWED_USERS, LABEL_NAME, LABEL_PUBLICITY,
+		LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE, LABEL_SET_LONGITUDE, LATITUDE_MAX, LATITUDE_MIN,
+		LONGITUDE_MAX, LONGITUDE_MIN, MSG_ERROR_LOADING_OBJECT, MSG_INVALID_EMAILS,
+		MSG_MISSING_USERS, MSG_OBJECT_UPDATED, MSG_UPDATE_FAILED, OPTION_DEFAULT, OPTION_PRIVATE,
+		OPTION_PUBLIC, OPTION_SELECTED_USERS, PLACEHOLDER_ALLOWED_USERS, TITLE_INVALID_EMAILS,
+		TITLE_SUCCESS, TITLE_WARNING,
+	},
 	dump_errors,
 	graphql_queries::{
 		s3_object_by_id::S3ObjectByIdQuery,
@@ -138,9 +146,12 @@ pub fn EditS3ObjectForm(
 				move || {
 					view! {
 						<Toast>
-							<ToastTitle>"Invalid Emails"</ToastTitle>
+							<ToastTitle>{TITLE_INVALID_EMAILS}</ToastTitle>
 							<ToastBody>
-								{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
+								{format!(
+									"{}",
+									MSG_INVALID_EMAILS.replace("{}", &invalid_emails.join(", ")),
+								)}
 							</ToastBody>
 						</Toast>
 					}
@@ -166,8 +177,8 @@ pub fn EditS3ObjectForm(
 						move || {
 							view! {
 								<Toast>
-									<ToastTitle>"Success"</ToastTitle>
-									<ToastBody>"Object updated successfully"</ToastBody>
+									<ToastTitle>{TITLE_SUCCESS}</ToastTitle>
+									<ToastBody>{MSG_OBJECT_UPDATED}</ToastBody>
 								</Toast>
 							}
 						},
@@ -187,11 +198,11 @@ pub fn EditS3ObjectForm(
 							move || {
 								view! {
 									<Toast>
-										<ToastTitle>"Warning"</ToastTitle>
+										<ToastTitle>{TITLE_WARNING}</ToastTitle>
 										<ToastBody>
 											{format!(
-												"The following users were not found: {}",
-												missing_users.join(", "),
+												"{}",
+												MSG_MISSING_USERS.replace("{}", &missing_users.join(", ")),
 											)}
 										</ToastBody>
 									</Toast>
@@ -210,7 +221,9 @@ pub fn EditS3ObjectForm(
 							view! {
 								<Toast>
 									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
+									<ToastBody>
+										{format!("{}", MSG_UPDATE_FAILED.replace("{}", &e.to_string()))}
+									</ToastBody>
 								</Toast>
 							}
 						},
@@ -236,7 +249,7 @@ pub fn EditS3ObjectForm(
 										<form on:submit=on_submit>
 											<div class="relative grid gap-4">
 												<label>
-													<div class="font-bold">"Name"</div>
+													<div class="font-bold">{LABEL_NAME}</div>
 													<input
 														type="text"
 														name="name"
@@ -246,7 +259,7 @@ pub fn EditS3ObjectForm(
 													/>
 												</label>
 												<label>
-													<div class="font-bold">"Publicity"</div>
+													<div class="font-bold">{LABEL_PUBLICITY}</div>
 													<select
 														class="p-2 border rounded bg-white"
 														on:change=move |ev| {
@@ -257,19 +270,17 @@ pub fn EditS3ObjectForm(
 														}
 														prop:value=move || publicity.get().to_string()
 													>
-														<option value="Default">"Default"</option>
-														<option value="Public">"Public"</option>
-														<option value="Private">"Private"</option>
-														<option value="Selected Users">"Selected Users"</option>
+														<option value="Default">{OPTION_DEFAULT}</option>
+														<option value="Public">{OPTION_PUBLIC}</option>
+														<option value="Private">{OPTION_PRIVATE}</option>
+														<option value="Selected Users">{OPTION_SELECTED_USERS}</option>
 													</select>
 												</label>
 												<Show when=move || {
 													publicity.get() == PublicityOverride::SelectedUsers
 												}>
 													<label>
-														<div class="font-bold">
-															"Allowed Users (comma separated emails)"
-														</div>
+														<div class="font-bold">{LABEL_ALLOWED_USERS}</div>
 														<input
 															type="text"
 															name="allowed_users"
@@ -277,17 +288,17 @@ pub fn EditS3ObjectForm(
 															on:input=move |ev| {
 																set_allowed_users.set(event_target_value(&ev))
 															}
-															placeholder="user1@example.com, user2@example.com"
+															placeholder=PLACEHOLDER_ALLOWED_USERS
 														/>
 													</label>
 												</Show>
 												<label>
-													<div class="font-bold">"Set latitude"</div>
+													<div class="font-bold">{LABEL_SET_LATITUDE}</div>
 													<input
 														type="number"
 														name="latitude"
-														min="-90"
-														max="90"
+														min=LATITUDE_MIN
+														max=LATITUDE_MAX
 														step="any"
 														on:input=move |ev| {
 															set_latitude
@@ -299,12 +310,12 @@ pub fn EditS3ObjectForm(
 													/>
 												</label>
 												<label>
-													<div class="font-bold">"Set longitude"</div>
+													<div class="font-bold">{LABEL_SET_LONGITUDE}</div>
 													<input
 														type="number"
 														name="longitude"
-														min="-180"
-														max="180"
+														min=LONGITUDE_MIN
+														max=LONGITUDE_MAX
 														step="any"
 														on:input=move |ev| {
 															set_longitude
@@ -316,7 +327,7 @@ pub fn EditS3ObjectForm(
 													/>
 												</label>
 												<label>
-													<div class="font-bold">"Set date and time"</div>
+													<div class="font-bold">{LABEL_SET_DATE_TIME}</div>
 													<input
 														type="datetime-local"
 														on:input=move |ev| set_made_on.set(event_target_value(&ev))
@@ -324,7 +335,7 @@ pub fn EditS3ObjectForm(
 													/>
 												</label>
 												<div class="grid grid-flow-col justify-start gap-4">
-													<Button class="w-fit">"Submit"</Button>
+													<Button class="w-fit">{BUTTON_SUBMIT}</Button>
 													<Button
 														class="w-fit"
 														appearance=ButtonAppearance::Subtle
@@ -333,7 +344,7 @@ pub fn EditS3ObjectForm(
 															on_cancel.run(());
 														}
 													>
-														"Cancel"
+														{BUTTON_CANCEL}
 													</Button>
 												</div>
 											</div>
@@ -342,7 +353,7 @@ pub fn EditS3ObjectForm(
 										.into_any()
 								}
 								Err(e) => {
-									view! { <p>"Error loading object: " {e.to_string()}</p> }
+									view! { <p>{MSG_ERROR_LOADING_OBJECT} {e.to_string()}</p> }
 										.into_any()
 								}
 							}

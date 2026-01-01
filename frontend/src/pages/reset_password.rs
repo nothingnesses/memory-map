@@ -1,5 +1,9 @@
 use crate::{
 	components::password_input::PasswordInput,
+	constants::{
+		BUTTON_RESET_PASSWORD, LABEL_CONFIRM_PASSWORD, LABEL_NEW_PASSWORD, MSG_INVALID_TOKEN,
+		MSG_PASSWORDS_DO_NOT_MATCH, MSG_RESET_SUCCESS, TITLE_RESET_PASSWORD,
+	},
 	graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation},
 };
 use leptos::{prelude::*, task::spawn_local};
@@ -25,12 +29,12 @@ pub fn ResetPassword() -> impl IntoView {
 		let navigate = navigate.clone();
 
 		if token_val.is_empty() {
-			error_message.set(Some("Invalid token".to_string()));
+			error_message.set(Some(MSG_INVALID_TOKEN.to_string()));
 			return;
 		}
 
 		if password_val != confirm_val {
-			error_message.set(Some("Passwords do not match".to_string()));
+			error_message.set(Some(MSG_PASSWORDS_DO_NOT_MATCH.to_string()));
 			return;
 		}
 
@@ -41,9 +45,7 @@ pub fn ResetPassword() -> impl IntoView {
 
 			match ResetPasswordMutation::run(variables).await {
 				Ok(_) => {
-					success_message.set(Some(
-						"Password reset successfully. Redirecting to sign in...".to_string(),
-					));
+					success_message.set(Some(MSG_RESET_SUCCESS.to_string()));
 					error_message.set(None);
 					navigate("/sign-in", Default::default());
 				}
@@ -57,27 +59,21 @@ pub fn ResetPassword() -> impl IntoView {
 
 	view! {
 		<div class="grid gap-4 place-items-center h-full pt-10">
-			<h1 class="text-2xl font-bold">"Reset Password"</h1>
+			<h1 class="text-2xl font-bold">{TITLE_RESET_PASSWORD}</h1>
 			<div class="grid gap-4 w-full max-w-md p-4 bg-white rounded shadow-md border border-gray-200">
 				<label class="grid gap-2">
-					<div class="block text-gray-700 text-sm font-bold">
-						"New Password"
-					</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_NEW_PASSWORD}</div>
 					<PasswordInput
 						value=new_password
-						placeholder="New Password"
+						placeholder=LABEL_NEW_PASSWORD
 						disabled=is_loading
 					/>
 				</label>
 				<label class="grid gap-2">
-					<div
-						class="block text-gray-700 text-sm font-bold"
-					>
-						"Confirm Password"
-					</div>
+					<div class="block text-gray-700 text-sm font-bold">{LABEL_CONFIRM_PASSWORD}</div>
 					<PasswordInput
 						value=confirm_password
-						placeholder="Confirm Password"
+						placeholder=LABEL_CONFIRM_PASSWORD
 						disabled=is_loading
 					/>
 				</label>
@@ -95,7 +91,7 @@ pub fn ResetPassword() -> impl IntoView {
 						class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 						disabled=is_loading
 					>
-						"Reset Password"
+						{BUTTON_RESET_PASSWORD}
 					</Button>
 				</div>
 			</div>
