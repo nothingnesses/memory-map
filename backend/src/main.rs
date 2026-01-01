@@ -14,6 +14,7 @@ use backend::{
 	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
 	constants::{CACHE_MAX_CAPACITY, CACHE_TTL_SECONDS, GRAPHQL_BODY_LIMIT_BYTES},
 	controllers::api::locations::post as post_locations,
+	db::queries::SELECT_USER_EXISTS_QUERY,
 	graphiql,
 	graphql::queries::{mutation::Mutation, query::Query},
 	migrations,
@@ -123,7 +124,7 @@ async fn graphql_handler(
 	{
 		// Verify user exists in database
 		let user_exists = if let Ok(client) = state.inner.pool.get().await {
-			match client.prepare_cached("SELECT 1 FROM users WHERE id = $1").await {
+			match client.prepare_cached(SELECT_USER_EXISTS_QUERY).await {
 				Ok(stmt) => matches!(client.query_opt(&stmt, &[&user_id]).await, Ok(Some(_))),
 				Err(_) => false,
 			}

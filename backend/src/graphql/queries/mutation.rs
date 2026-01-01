@@ -1,6 +1,14 @@
 use crate::{
 	CasbinObject, CasbinUser, ContextWrapper, SharedState, UserId,
-	db::queries::{DELETE_OBJECTS_QUERY, UPDATE_OBJECT_QUERY, UPSERT_OBJECT_QUERY},
+	db::queries::{
+		ADMIN_UPDATE_USER_QUERY, DELETE_OBJECT_ALLOWED_USERS_QUERY, DELETE_OBJECTS_QUERY,
+		DELETE_PASSWORD_RESET_TOKEN_QUERY, INSERT_OBJECT_ALLOWED_USER_QUERY,
+		INSERT_PASSWORD_RESET_TOKEN_QUERY, INSERT_USER_QUERY, SELECT_PASSWORD_RESET_TOKEN_QUERY,
+		SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, SELECT_USER_COUNT_BY_EMAIL_QUERY,
+		SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY,
+		SELECT_USERS_BY_EMAILS_QUERY, UPDATE_OBJECT_QUERY, UPDATE_USER_EMAIL_QUERY,
+		UPDATE_USER_PASSWORD_QUERY, UPDATE_USER_PUBLICITY_QUERY, UPSERT_OBJECT_QUERY,
+	},
 	email::send_password_reset_email,
 	graphql::objects::{
 		location::Location,
@@ -126,7 +134,7 @@ impl Mutation {
 
 		// Update allowed users
 		client
-			.execute("DELETE FROM object_allowed_users WHERE object_id = $1", &[&id])
+			.execute(DELETE_OBJECT_ALLOWED_USERS_QUERY, &[&id])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -134,7 +142,7 @@ impl Mutation {
 
 		if !allowed_users.is_empty() {
 			let rows = client
-				.query("SELECT id, email FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users])
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -143,7 +151,7 @@ impl Mutation {
 				let email: String = row.get("email");
 				client
 					.execute(
-						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
+						INSERT_OBJECT_ALLOWED_USER_QUERY,
 						&[&id, &user_id],
 					)
 					.await
@@ -208,7 +216,7 @@ impl Mutation {
 
 		// Update allowed users
 		client
-			.execute("DELETE FROM object_allowed_users WHERE object_id = $1", &[&id])
+			.execute(DELETE_OBJECT_ALLOWED_USERS_QUERY, &[&id])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -216,7 +224,7 @@ impl Mutation {
 
 		if !allowed_users.is_empty() {
 			let rows = client
-				.query("SELECT id, email FROM users WHERE email = ANY($1)", &[&allowed_users])
+				.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users])
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -225,7 +233,7 @@ impl Mutation {
 				let email: String = row.get("email");
 				client
 					.execute(
-						"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)",
+						INSERT_OBJECT_ALLOWED_USER_QUERY,
 						&[&id, &user_id],
 					)
 					.await
@@ -401,7 +409,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET default_publicity = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity",
+				UPDATE_USER_PUBLICITY_QUERY,
 				&[&default_publicity, &user_id],
 			)
 			.await
@@ -432,7 +440,7 @@ impl Mutation {
 
 		// Check if email is taken
 		let count: i64 = client
-			.query_one("SELECT COUNT(*) FROM users WHERE email = $1", &[&email])
+			.query_one(SELECT_USER_COUNT_BY_EMAIL_QUERY, &[&email])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.get(0);
@@ -449,7 +457,7 @@ impl Mutation {
 			.to_string();
 
 		let statement = client
-			.prepare_cached("INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, created_at, updated_at, default_publicity")
+			.prepare_cached(INSERT_USER_QUERY)
 			.await?;
 
 		let row = client
@@ -469,7 +477,7 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		let statement = client.prepare_cached("SELECT id, email, password_hash, role, created_at, updated_at, default_publicity FROM users WHERE email = $1").await?;
+		let statement = client.prepare_cached(SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY).await?;
 
 		let row = client
 			.query_opt(&statement, &[&email])
@@ -550,7 +558,7 @@ impl Mutation {
 		validate_password(&new_password)?;
 
 		let password_hash_str: String = client
-			.query_one("SELECT password_hash FROM users WHERE id = $1", &[&user_id.0])
+			.query_one(SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, &[&user_id.0])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.get("password_hash");
@@ -570,7 +578,7 @@ impl Mutation {
 
 		client
 			.execute(
-				"UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2",
+				UPDATE_USER_PASSWORD_QUERY,
 				&[&new_hash, &user_id.0],
 			)
 			.await
@@ -608,7 +616,7 @@ impl Mutation {
 		// Check if email is taken
 		let count: i64 = client
 			.query_one(
-				"SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2",
+				SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
 				&[&new_email, &user_id.0],
 			)
 			.await
@@ -621,7 +629,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET email = $1, updated_at = now() WHERE id = $2 RETURNING id, email, role, created_at, updated_at, default_publicity",
+				UPDATE_USER_EMAIL_QUERY,
 				&[&new_email, &user_id.0],
 			)
 			.await
@@ -649,7 +657,7 @@ impl Mutation {
 			// Expires in 10 minutes
 			client
 				.execute(
-					"INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES ($1, $2, now() + interval '10 minutes')",
+					INSERT_PASSWORD_RESET_TOKEN_QUERY,
 					&[&token_hash, &user.id.parse::<i64>().unwrap()],
 				)
 				.await
@@ -683,7 +691,7 @@ impl Mutation {
 
 		let row_opt = client
 			.query_opt(
-				"SELECT user_id FROM password_reset_tokens WHERE token = $1 AND expires_at > now()",
+				SELECT_PASSWORD_RESET_TOKEN_QUERY,
 				&[&token_hash],
 			)
 			.await
@@ -700,7 +708,7 @@ impl Mutation {
 
 			client
 				.execute(
-					"UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2",
+					UPDATE_USER_PASSWORD_QUERY,
 					&[&new_hash, &user_id],
 				)
 				.await
@@ -708,7 +716,7 @@ impl Mutation {
 
 			// Delete token
 			client
-				.execute("DELETE FROM password_reset_tokens WHERE token = $1", &[&token_hash])
+				.execute(DELETE_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash])
 				.await?;
 
 			Ok(true)
@@ -755,7 +763,7 @@ impl Mutation {
 			// Check email uniqueness if changed
 			let count: i64 = client
 				.query_one(
-					"SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2",
+					SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
 					&[&new_email, &target_id],
 				)
 				.await
@@ -775,7 +783,7 @@ impl Mutation {
 
 		let row = client
 			.query_one(
-				"UPDATE users SET role = $1, email = $2, updated_at = now() WHERE id = $3 RETURNING id, email, role, created_at, updated_at, default_publicity",
+				ADMIN_UPDATE_USER_QUERY,
 				&[&target_user.role.to_string(), &target_user.email, &target_id],
 			)
 			.await

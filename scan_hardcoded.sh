@@ -28,4 +28,9 @@ echo "--- Local Variables with Numbers (let ... = 123) ---"
 git grep -nE "let [a-z_]+.*= [0-9_]+" -- ':!*.lock' ':!*.yaml' ':!*.md' ':!*.json'
 echo ""
 
+echo "--- SQL Queries (SELECT, INSERT, UPDATE, DELETE) ---"
+git grep -nE "(SELECT|INSERT|UPDATE|DELETE) " -- "*.rs"
+echo ""
+
 echo "=== Scan Complete ==="
+
