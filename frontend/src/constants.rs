@@ -129,3 +129,12 @@ pub const MSG_ERROR_LOADING_OBJECT: &str = "Error loading object: ";
 
 pub const HEADER_HEIGHT: f64 = 100.0;
 pub const HEADER_LAYER_CLASSES: &str = "hide-on-scroll inset-0 h-100px w-dvw translate-y-[--hide-on-scroll-translate-y] group-[:not(.scrolling)]/page:transition-all";
+
+// Config
+pub const DEFAULT_FRONTEND_URL: &str = "http://127.0.0.1:3000";
+pub const CONFIG_FILE_PATH: &str = "/config.json";
+pub const MSG_FAILED_TO_PARSE_CONFIG: &str = "Failed to parse config";
+pub const MSG_FAILED_TO_FETCH_CONFIG: &str = "Failed to fetch config";
+pub const MSG_LOADING_CONFIG: &str = "Loading config...";
+pub const TITLE_FAILED_LOAD_CONFIG: &str = "Failed to load configuration";
+pub const MSG_CHECK_CONSOLE: &str = "Please check the console for more details.";
