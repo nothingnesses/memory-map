@@ -1,4 +1,5 @@
 use crate::{
+	AppConfig,
 	components::password_input::PasswordInput,
 	constants::{
 		BUTTON_FORGOT_PASSWORD, BUTTON_SIGN_IN, LABEL_EMAIL, LABEL_PASSWORD, LINK_REGISTER,
@@ -22,17 +23,24 @@ pub fn SignIn() -> impl IntoView {
 	let success_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
 
-	let config_resource = LocalResource::new(move || async move { ConfigQuery::run().await.ok() });
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let api_url = config.api_url.clone();
+	let config_resource = LocalResource::new(move || {
+		let api_url = api_url.clone();
+		async move { ConfigQuery::run(api_url).await.ok() }
+	});
 
 	let on_sign_in = move |_| {
 		let email_val = email.get();
 		let password_val = password.get();
+		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+		let api_url = config.api_url.clone();
 
 		is_loading.set(true);
 		spawn_local(async move {
 			let variables = login_mutation::Variables { email: email_val, password: password_val };
 
-			match LoginMutation::run(variables).await {
+			match LoginMutation::run(api_url, variables).await {
 				Ok(_) => {
 					let _ = window().location().set_href("/");
 				}
@@ -50,12 +58,14 @@ pub fn SignIn() -> impl IntoView {
 			error_message.set(Some(MSG_ENTER_EMAIL_RESET.to_string()));
 			return;
 		}
+		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+		let api_url = config.api_url.clone();
 
 		is_loading.set(true);
 		spawn_local(async move {
 			let variables = request_password_reset_mutation::Variables { email: email_val };
 
-			match RequestPasswordResetMutation::run(variables).await {
+			match RequestPasswordResetMutation::run(api_url, variables).await {
 				Ok(_) => {
 					success_message.set(Some(MSG_RESET_EMAIL_SENT.to_string()));
 					error_message.set(None);

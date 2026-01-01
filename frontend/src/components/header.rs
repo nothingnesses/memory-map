@@ -1,3 +1,4 @@
+use crate::AppConfig;
 use crate::auth::UserContext;
 use crate::constants::{
 	ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, HEADER_LAYER_CLASSES, LINK_ACCOUNT, LINK_MAP,
@@ -16,6 +17,7 @@ use lucide_leptos::{Menu, X};
 pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 	let navigate = use_navigate();
 	let user_ctx = use_context::<UserContext>();
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
 
 	// Toggle the menu open state
 	let toggle_header_menu = move || {
@@ -32,8 +34,9 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 		close_header_menu();
 		let user_ctx = user_ctx_logout;
 		let navigate = navigate.clone();
+		let api_url = config.api_url.clone();
 		spawn_local(async move {
-			let _ = LogoutMutation::run().await;
+			let _ = LogoutMutation::run(api_url).await;
 			if let Some(ctx) = user_ctx {
 				ctx.refetch.run(());
 			}

@@ -1,5 +1,5 @@
 use crate::{
-	CallbackAnyView,
+	AppConfig, CallbackAnyView,
 	components::s3_object::S3Object as S3ObjectComponent,
 	graphql_queries::{
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
@@ -28,6 +28,7 @@ pub fn S3ObjectTableRow(
 	let viewing_object = RwSignal::new(None::<S3Object>);
 	let open_view = RwSignal::new(false);
 	let toaster = ToasterInjection::expect_context();
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
 
 	let show_allowed_users_dialog = RwSignal::new(false);
 	let allowed_users_input = RwSignal::new(String::new());
@@ -51,6 +52,7 @@ pub fn S3ObjectTableRow(
 	let update_object = move |new_publicity: PublicityOverride,
 	                          new_allowed_users: Option<Vec<String>>| {
 		let s3_object = s3_object.get();
+		let api_url = config.api_url.clone();
 		spawn_local(async move {
 			let location = s3_object
 				.location
@@ -67,7 +69,7 @@ pub fn S3ObjectTableRow(
 				allowed_users: new_allowed_users.clone().or(Some(s3_object.allowed_users.clone())),
 			};
 
-			match UpdateS3ObjectMutation::run(variables).await {
+			match UpdateS3ObjectMutation::run(api_url, variables).await {
 				Ok(updated_obj) => {
 					toaster.dispatch_toast(
 						move || {
@@ -129,6 +131,7 @@ pub fn S3ObjectTableRow(
 			}
 		});
 	};
+	let update_object = StoredValue::new(update_object);
 
 	let on_change_publicity = move |ev| {
 		let val = event_target_value(&ev);
@@ -137,7 +140,7 @@ pub fn S3ObjectTableRow(
 			if new_publicity == PublicityOverride::SelectedUsers {
 				show_allowed_users_dialog.set(true);
 			} else {
-				update_object(new_publicity, None);
+				update_object.with_value(|f| f(new_publicity, None));
 			}
 		}
 	};
@@ -180,7 +183,7 @@ pub fn S3ObjectTableRow(
 			return;
 		}
 
-		update_object(PublicityOverride::SelectedUsers, Some(users));
+		update_object.with_value(|f| f(PublicityOverride::SelectedUsers, Some(users)));
 		show_allowed_users_dialog.set(false);
 	};
 

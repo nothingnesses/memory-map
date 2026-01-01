@@ -11,7 +11,7 @@ pub fn ProtectedRoute(
 	#[allow(dead_code)]
 	admin_only: bool,
 ) -> impl IntoView {
-	let user_ctx = use_context::<UserContext>().expect("UserContext missing");
+	let user_ctx = use_context::<UserContext>().expect(crate::constants::ERR_USER_CONTEXT_MISSING);
 	let navigate = use_navigate();
 
 	view! {

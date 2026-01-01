@@ -139,3 +139,6 @@ pub const MSG_FAILED_TO_FETCH_CONFIG: &str = "Failed to fetch config";
 pub const MSG_LOADING_CONFIG: &str = "Loading config...";
 pub const TITLE_FAILED_LOAD_CONFIG: &str = "Failed to load configuration";
 pub const MSG_CHECK_CONSOLE: &str = "Please check the console for more details.";
+
+pub const ERR_APP_CONFIG_MISSING: &str = "AppConfig missing";
+pub const ERR_USER_CONTEXT_MISSING: &str = "UserContext missing";

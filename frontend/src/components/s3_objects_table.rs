@@ -1,7 +1,7 @@
 // @todo Add better error-handling to prevent errors from prevent table from displaying. Errors should just be logged in console.
 
 use crate::{
-	CallbackAnyView,
+	AppConfig, CallbackAnyView,
 	components::s3_object_table_rows::S3ObjectTableRows,
 	constants::{
 		BUTTON_CLOSE, BUTTON_DELETE_SELECTED, BUTTON_NO, BUTTON_YES, HEADER_ACTIONS,
@@ -41,11 +41,13 @@ pub fn S3ObjectsTable(
 	))]
 	delete_selected_button_content: CallbackAnyView,
 ) -> impl IntoView {
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
 	let delete_objects = move |objects: Vec<S3Object>| {
+		let api_url = config.api_url.clone();
 		spawn_local(async move {
 			let ids: Vec<String> = objects.iter().map(|o| o.id.clone()).collect();
 
-			match DeleteS3ObjectsMutation::run(ids).await {
+			match DeleteS3ObjectsMutation::run(api_url, ids).await {
 				Ok(_) => {
 					debug_log!("{}", MSG_DELETE_SUCCESS);
 					on_change.run(());

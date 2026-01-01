@@ -1,8 +1,6 @@
-use crate::{
-	AppConfig, graphql_queries::logout::logout_mutation::Variables, post_graphql_with_auth,
-};
+use crate::{graphql_queries::logout::logout_mutation::Variables, post_graphql_with_auth};
 use graphql_client::GraphQLQuery;
-use leptos::{error::Error, prelude::*};
+use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -13,11 +11,10 @@ use leptos::{error::Error, prelude::*};
 pub struct LogoutMutation;
 
 impl LogoutMutation {
-	pub async fn run() -> Result<bool, Error> {
-		let config = use_context::<AppConfig>().expect("AppConfig missing");
+	pub async fn run(api_url: String) -> Result<bool, Error> {
 		Ok(post_graphql_with_auth::<LogoutMutation, _>(
 			&reqwest::Client::new(),
-			config.api_url,
+			api_url,
 			Variables {},
 		)
 		.await?

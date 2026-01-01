@@ -1,10 +1,9 @@
 use crate::{
-	AppConfig,
 	graphql_queries::login::login_mutation::{LoginMutationLogin as User, Variables},
 	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
-use leptos::{error::Error, prelude::*};
+use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -15,16 +14,14 @@ use leptos::{error::Error, prelude::*};
 pub struct LoginMutation;
 
 impl LoginMutation {
-	pub async fn run(variables: Variables) -> Result<User, Error> {
-		let config = use_context::<AppConfig>().expect("AppConfig missing");
-		Ok(post_graphql_with_auth::<LoginMutation, _>(
-			&reqwest::Client::new(),
-			config.api_url,
-			variables,
-		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.login)?)
+	pub async fn run(
+		api_url: String,
+		variables: Variables,
+	) -> Result<User, Error> {
+		Ok(post_graphql_with_auth::<LoginMutation, _>(&reqwest::Client::new(), api_url, variables)
+			.await?
+			.data
+			.ok_or("Empty response".to_string())
+			.map(|response| response.login)?)
 	}
 }

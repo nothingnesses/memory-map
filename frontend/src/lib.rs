@@ -144,9 +144,12 @@ pub fn App() -> impl IntoView {
 	provide_meta_context();
 
 	let trigger: RwSignal<usize> = RwSignal::new(0);
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let api_url = config.api_url.clone();
 	let user_resource = LocalResource::new(move || {
 		trigger.get();
-		async move { MeQuery::run().await.ok().flatten() }
+		let api_url = api_url.clone();
+		async move { MeQuery::run(api_url).await.ok().flatten() }
 	});
 
 	provide_context(UserContext {

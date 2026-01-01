@@ -1,10 +1,9 @@
 use crate::{
-	AppConfig,
 	graphql_queries::users::users_query::{UsersQueryUsers as User, Variables},
 	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
-use leptos::{error::Error, prelude::*};
+use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -17,16 +16,11 @@ pub struct UsersQuery;
 pub use users_query::UserRole;
 
 impl UsersQuery {
-	pub async fn run() -> Result<Vec<User>, Error> {
-		let config = use_context::<AppConfig>().expect("AppConfig missing");
-		Ok(post_graphql_with_auth::<UsersQuery, _>(
-			&reqwest::Client::new(),
-			config.api_url,
-			Variables {},
-		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.users)?)
+	pub async fn run(api_url: String) -> Result<Vec<User>, Error> {
+		Ok(post_graphql_with_auth::<UsersQuery, _>(&reqwest::Client::new(), api_url, Variables {})
+			.await?
+			.data
+			.ok_or("Empty response".to_string())
+			.map(|response| response.users)?)
 	}
 }

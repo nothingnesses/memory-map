@@ -26,7 +26,7 @@ pub fn FileUpload(
 	#[prop(into, default = Callback::new(|_| ()))] on_success: Callback<()>,
 	#[prop(into)] on_cancel: Callback<()>,
 ) -> impl IntoView {
-	let config = use_context::<AppConfig>().expect("AppConfig missing");
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
 	let toaster = ToasterInjection::expect_context();
 	let file_input_ref = NodeRef::<Input>::new();
 	let made_on_input_ref = NodeRef::<Input>::new();

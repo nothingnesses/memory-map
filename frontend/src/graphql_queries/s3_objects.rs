@@ -1,12 +1,11 @@
 use crate::{
-	AppConfig,
 	graphql_queries::s3_objects::s3_objects_query::{
 		S3ObjectsQueryS3Objects as S3Object, Variables,
 	},
 	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
-use leptos::{error::Error, prelude::*};
+use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -21,11 +20,10 @@ pub use crate::graphql_queries::types::PublicityOverride;
 
 impl S3ObjectsQuery {
 	// @todo Add better error-handling
-	pub async fn run() -> Result<Vec<S3Object>, Error> {
-		let config = use_context::<AppConfig>().expect("AppConfig missing");
+	pub async fn run(api_url: String) -> Result<Vec<S3Object>, Error> {
 		Ok(post_graphql_with_auth::<S3ObjectsQuery, _>(
 			&reqwest::Client::new(),
-			config.api_url,
+			api_url,
 			Variables {},
 		)
 		.await?

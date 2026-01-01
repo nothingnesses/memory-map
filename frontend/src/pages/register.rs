@@ -1,4 +1,5 @@
 use crate::{
+	AppConfig,
 	components::password_input::PasswordInput,
 	constants::{
 		BUTTON_REGISTER, LABEL_CONFIRM_PASSWORD, LABEL_EMAIL, LABEL_PASSWORD,
@@ -22,7 +23,12 @@ pub fn Register() -> impl IntoView {
 	let error_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
 
-	let config_resource = LocalResource::new(move || async move { ConfigQuery::run().await.ok() });
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let api_url = config.api_url.clone();
+	let config_resource = LocalResource::new(move || {
+		let api_url = api_url.clone();
+		async move { ConfigQuery::run(api_url).await.ok() }
+	});
 
 	let navigate_effect = navigate.clone();
 	Effect::new(move |_| {
@@ -38,6 +44,8 @@ pub fn Register() -> impl IntoView {
 		let password_val = password.get();
 		let confirm_password_val = confirm_password.get();
 		let navigate = navigate.clone();
+		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+		let api_url = config.api_url.clone();
 
 		if password_val != confirm_password_val {
 			error_message.set(Some(MSG_PASSWORDS_DO_NOT_MATCH.to_string()));
@@ -49,7 +57,7 @@ pub fn Register() -> impl IntoView {
 			let variables =
 				register_mutation::Variables { email: email_val, password: password_val };
 
-			match RegisterMutation::run(variables).await {
+			match RegisterMutation::run(api_url, variables).await {
 				Ok(_) => {
 					navigate("/sign-in", Default::default());
 				}

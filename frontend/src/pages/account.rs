@@ -1,4 +1,5 @@
 use crate::{
+	AppConfig,
 	auth::UserContext,
 	components::password_input::PasswordInput,
 	constants::{
@@ -20,7 +21,9 @@ use thaw::*;
 
 #[component]
 pub fn Account() -> impl IntoView {
-	let user_ctx = use_context::<UserContext>().expect("UserContext missing");
+	let user_ctx = use_context::<UserContext>().expect(crate::constants::ERR_USER_CONTEXT_MISSING);
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = StoredValue::new(config);
 	let email = RwSignal::new(String::new());
 	let old_password = RwSignal::new(String::new());
 	let new_password = RwSignal::new(String::new());
@@ -48,9 +51,10 @@ pub fn Account() -> impl IntoView {
 	let on_change_email = move |_| {
 		let email_val = email.get();
 		is_email_loading.set(true);
+		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables = change_email_mutation::Variables { new_email: email_val };
-			match ChangeEmailMutation::run(variables).await {
+			match ChangeEmailMutation::run(api_url, variables).await {
 				Ok(_) => {
 					email_message.set(Some(MSG_EMAIL_UPDATED.to_string()));
 					email_error.set(None);
@@ -75,12 +79,13 @@ pub fn Account() -> impl IntoView {
 		}
 
 		is_password_loading.set(true);
+		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables = change_password_mutation::Variables {
 				old_password: old_pass,
 				new_password: new_pass,
 			};
-			match ChangePasswordMutation::run(variables).await {
+			match ChangePasswordMutation::run(api_url, variables).await {
 				Ok(_) => {
 					password_message.set(Some(MSG_PASSWORD_UPDATED.to_string()));
 					password_error.set(None);
@@ -100,10 +105,11 @@ pub fn Account() -> impl IntoView {
 			default_publicity.set(new_publicity.clone());
 
 			is_publicity_loading.set(true);
+			let api_url = config.with_value(|c| c.api_url.clone());
 			spawn_local(async move {
 				let variables =
 					update_user_publicity_mutation::Variables { default_publicity: new_publicity };
-				match UpdateUserPublicityMutation::run(variables).await {
+				match UpdateUserPublicityMutation::run(api_url, variables).await {
 					Ok(_) => {
 						publicity_message.set(Some(MSG_PUBLICITY_UPDATED.to_string()));
 						publicity_error.set(None);

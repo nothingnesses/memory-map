@@ -1,10 +1,9 @@
 use crate::{
-	AppConfig,
 	graphql_queries::me::me_query::{MeQueryMe as User, Variables},
 	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
-use leptos::{error::Error, prelude::*};
+use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -18,16 +17,11 @@ pub struct MeQuery;
 pub use crate::graphql_queries::types::{PublicityDefault, UserRole};
 
 impl MeQuery {
-	pub async fn run() -> Result<Option<User>, Error> {
-		let config = use_context::<AppConfig>().expect("AppConfig missing");
-		Ok(post_graphql_with_auth::<MeQuery, _>(
-			&reqwest::Client::new(),
-			config.api_url,
-			Variables {},
-		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.me)?)
+	pub async fn run(api_url: String) -> Result<Option<User>, Error> {
+		Ok(post_graphql_with_auth::<MeQuery, _>(&reqwest::Client::new(), api_url, Variables {})
+			.await?
+			.data
+			.ok_or("Empty response".to_string())
+			.map(|response| response.me)?)
 	}
 }

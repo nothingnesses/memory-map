@@ -1,4 +1,5 @@
 use crate::{
+	AppConfig,
 	constants::{
 		BUTTON_CANCEL, BUTTON_SUBMIT, LABEL_ALLOWED_USERS, LABEL_NAME, LABEL_PUBLICITY,
 		LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE, LABEL_SET_LONGITUDE, LATITUDE_MAX, LATITUDE_MIN,
@@ -49,14 +50,17 @@ pub fn EditS3ObjectForm(
 	on_cancel: Callback<()>,
 ) -> impl IntoView {
 	// Resource to fetch the S3 object data when the ID changes.
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = StoredValue::new(config);
 	let s3_object_resource = LocalResource::new(move || {
 		let id = id.get();
+		let api_url = config.with_value(|c| c.api_url.clone());
 		async move {
 			if id == 0 {
 				return Err("Invalid ID".to_string());
 			}
 			// Fetch the S3 object data by ID
-			S3ObjectByIdQuery::run(id).await.map_err(|e| e.to_string())
+			S3ObjectByIdQuery::run(api_url, id).await.map_err(|e| e.to_string())
 		}
 	});
 
@@ -158,6 +162,7 @@ pub fn EditS3ObjectForm(
 			return;
 		}
 
+		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables = Variables {
 				id: id.get().to_string(),
@@ -168,7 +173,7 @@ pub fn EditS3ObjectForm(
 				allowed_users: Some(allowed_users_vec.clone()),
 			};
 
-			match UpdateS3ObjectMutation::run(variables).await {
+			match UpdateS3ObjectMutation::run(api_url, variables).await {
 				Ok(updated_obj) => {
 					toaster.dispatch_toast(
 						move || {
@@ -227,6 +232,7 @@ pub fn EditS3ObjectForm(
 			}
 		});
 	};
+	let on_submit = StoredValue::new(on_submit);
 
 	view! {
 		<ErrorBoundary fallback=dump_errors>
@@ -240,7 +246,7 @@ pub fn EditS3ObjectForm(
 							match result {
 								Ok(_) => {
 									view! {
-										<form on:submit=on_submit>
+										<form on:submit=move |ev| on_submit.with_value(|f| f(ev))>
 											<div class="relative grid gap-4">
 												<label>
 													<div class="font-bold">{LABEL_NAME}</div>

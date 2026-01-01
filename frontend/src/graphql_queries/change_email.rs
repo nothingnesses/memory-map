@@ -1,12 +1,11 @@
 use crate::{
-	AppConfig,
 	graphql_queries::change_email::change_email_mutation::{
 		ChangeEmailMutationChangeEmail as User, Variables,
 	},
 	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
-use leptos::{error::Error, prelude::*};
+use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -17,11 +16,13 @@ use leptos::{error::Error, prelude::*};
 pub struct ChangeEmailMutation;
 
 impl ChangeEmailMutation {
-	pub async fn run(variables: Variables) -> Result<User, Error> {
-		let config = use_context::<AppConfig>().expect("AppConfig missing");
+	pub async fn run(
+		api_url: String,
+		variables: Variables,
+	) -> Result<User, Error> {
 		Ok(post_graphql_with_auth::<ChangeEmailMutation, _>(
 			&reqwest::Client::new(),
-			config.api_url,
+			api_url,
 			variables,
 		)
 		.await?

@@ -1,4 +1,5 @@
 use crate::{
+	AppConfig,
 	constants::{
 		BUTTON_RESET_PASSWORD, BUTTON_SAVE, HEADER_ACTIONS, HEADER_CREATED_AT, HEADER_EMAIL,
 		HEADER_ID, HEADER_ROLE, LOADING_TEXT, OPTION_ADMIN, OPTION_USER, TITLE_USERS,
@@ -15,41 +16,49 @@ use thaw::*;
 #[component]
 pub fn Users() -> impl IntoView {
 	let trigger: RwSignal<usize> = RwSignal::new(0);
+	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = StoredValue::new(config);
 	let users_resource = LocalResource::new(move || {
 		trigger.get();
-		async move { UsersQuery::run().await.unwrap_or_default() }
+		UsersQuery::run(config.with_value(|c| c.api_url.clone()))
 	});
 
 	let on_update_email = move |id: String, email: String, loading: RwSignal<bool>| {
 		loading.set(true);
+		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables =
 				admin_update_user_mutation::Variables { id, role: None, email: Some(email) };
-			let _ = AdminUpdateUserMutation::run(variables).await;
+			let _ = AdminUpdateUserMutation::run(api_url, variables).await;
 			loading.set(false);
 			trigger.update(|n| *n = n.wrapping_add(1));
 		});
 	};
+	let on_update_email = StoredValue::new(on_update_email);
 
 	let on_toggle_role = move |id: String, new_role: String, loading: RwSignal<bool>| {
 		loading.set(true);
+		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables =
 				admin_update_user_mutation::Variables { id, role: Some(new_role), email: None };
-			let _ = AdminUpdateUserMutation::run(variables).await;
+			let _ = AdminUpdateUserMutation::run(api_url, variables).await;
 			loading.set(false);
 			trigger.update(|n| *n = n.wrapping_add(1));
 		});
 	};
+	let on_toggle_role = StoredValue::new(on_toggle_role);
 
 	let on_reset_password = move |email: String, loading: RwSignal<bool>| {
 		loading.set(true);
+		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables = request_password_reset_mutation::Variables { email };
-			let _ = RequestPasswordResetMutation::run(variables).await;
+			let _ = RequestPasswordResetMutation::run(api_url, variables).await;
 			loading.set(false);
 		});
 	};
+	let on_reset_password = StoredValue::new(on_reset_password);
 
 	view! {
 		<div class="container mx-auto pt-10">
@@ -75,8 +84,8 @@ pub fn Users() -> impl IntoView {
 						{move || {
 							users_resource
 								.get()
-								.map(|users| {
-									users
+								.map(|res| {
+									res.unwrap_or_default()
 										.into_iter()
 										.map(|user| {
 											let id = user.id.clone();
@@ -99,11 +108,13 @@ pub fn Users() -> impl IntoView {
 															<Button
 																disabled=is_loading
 																on_click=move |_| {
-																	update_email_action(
-																		id_for_email.clone(),
-																		email.get(),
-																		is_loading,
-																	)
+																	update_email_action.with_value(|f| {
+																		f(
+																			id_for_email.clone(),
+																			email.get(),
+																			is_loading,
+																		)
+																	})
 																}
 															>
 																{BUTTON_SAVE}
@@ -120,7 +131,8 @@ pub fn Users() -> impl IntoView {
 																		.unwrap()
 																		.unchecked_into::<HtmlSelectElement>()
 																		.value();
-																	toggle_role_action(id_for_role.clone(), val, is_loading)
+																	toggle_role_action
+																		.with_value(|f| f(id_for_role.clone(), val, is_loading))
 																}
 																prop:value=move || match user_role {
 																	UserRole::ADMIN => "admin",
@@ -138,7 +150,9 @@ pub fn Users() -> impl IntoView {
 													<TableCell>
 														<Button
 															disabled=is_loading
-															on_click=move |_| { reset_action(email.get(), is_loading) }
+															on_click=move |_| {
+																reset_action.with_value(|f| f(email.get(), is_loading))
+															}
 														>
 															{BUTTON_RESET_PASSWORD}
 														</Button>

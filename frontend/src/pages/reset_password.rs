@@ -1,4 +1,5 @@
 use crate::{
+	AppConfig,
 	components::password_input::PasswordInput,
 	constants::{
 		BUTTON_RESET_PASSWORD, LABEL_CONFIRM_PASSWORD, LABEL_NEW_PASSWORD, MSG_INVALID_TOKEN,
@@ -27,6 +28,8 @@ pub fn ResetPassword() -> impl IntoView {
 		let password_val = new_password.get();
 		let confirm_val = confirm_password.get();
 		let navigate = navigate.clone();
+		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+		let api_url = config.api_url.clone();
 
 		if token_val.is_empty() {
 			error_message.set(Some(MSG_INVALID_TOKEN.to_string()));
@@ -43,7 +46,7 @@ pub fn ResetPassword() -> impl IntoView {
 			let variables =
 				reset_password_mutation::Variables { token: token_val, new_password: password_val };
 
-			match ResetPasswordMutation::run(variables).await {
+			match ResetPasswordMutation::run(api_url, variables).await {
 				Ok(_) => {
 					success_message.set(Some(MSG_RESET_SUCCESS.to_string()));
 					error_message.set(None);
