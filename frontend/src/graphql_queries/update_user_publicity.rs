@@ -1,11 +1,12 @@
 use crate::{
+	AppConfig,
 	graphql_queries::{
 		types::PublicityDefault,
 		update_user_publicity::update_user_publicity_mutation::{
 			UpdateUserPublicityMutationUpdateUserPublicity as User, Variables,
 		},
 	},
-	post_graphql_with_auth, AppConfig,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};

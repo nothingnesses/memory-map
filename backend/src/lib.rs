@@ -20,11 +20,11 @@ use std::{
 };
 use tokio::sync::RwLock;
 
+pub mod constants;
 pub mod controllers;
+pub mod db;
 pub mod email;
 pub mod graphql;
-pub mod constants;
-pub mod db;
 
 #[derive(Debug, serde::Deserialize, Clone)]
 pub struct Config {
@@ -52,9 +52,6 @@ impl Config {
 			.try_deserialize()
 	}
 }
-
-// 1GB.
-pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
 refinery::embed_migrations!("migrations");
 

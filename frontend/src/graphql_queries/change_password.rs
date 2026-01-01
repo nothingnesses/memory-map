@@ -1,5 +1,6 @@
 use crate::{
-	graphql_queries::change_password::change_password_mutation::Variables, post_graphql_with_auth, AppConfig,
+	AppConfig, graphql_queries::change_password::change_password_mutation::Variables,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};

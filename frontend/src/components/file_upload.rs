@@ -1,4 +1,4 @@
-use crate::{dump_errors, js_date_value_to_iso, AppConfig};
+use crate::{AppConfig, dump_errors, js_date_value_to_iso};
 use leptos::{
 	html::Input,
 	logging::{debug_error, debug_log},
@@ -88,9 +88,7 @@ pub fn FileUpload(
 			options.set_body(&form_data);
 
 			let url = format!("{}/api/locations/", api_url);
-			let request =
-				Request::new_with_str_and_init(&url, &options)
-					.unwrap();
+			let request = Request::new_with_str_and_init(&url, &options).unwrap();
 
 			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {
 				Ok(resp_value) => {

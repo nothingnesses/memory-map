@@ -106,9 +106,7 @@ impl S3Object {
 
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(SELECT_ALL_OBJECTS_QUERY)
-			.await?;
+		let statement = client.prepare_cached(SELECT_ALL_OBJECTS_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[])
@@ -128,9 +126,7 @@ impl S3Object {
 		id: i64,
 	) -> Result<Self, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(SELECT_OBJECT_BY_ID_QUERY)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECT_BY_ID_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&id]).await?).await
 	}
 
@@ -139,9 +135,7 @@ impl S3Object {
 		name: String,
 	) -> Result<Self, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&name]).await?).await
 	}
 
@@ -150,9 +144,7 @@ impl S3Object {
 		ids: &[i64],
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[&ids])
@@ -172,9 +164,7 @@ impl S3Object {
 		user_id: i64,
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY)
-			.await?;
+		let statement = client.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[&user_id])
@@ -194,9 +184,7 @@ impl S3Object {
 		user_id: Option<i64>,
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
-		let statement = client
-			.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY)
-			.await?;
+		let statement = client.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY).await?;
 		join_all(
 			client
 				.query(&statement, &[&user_id])

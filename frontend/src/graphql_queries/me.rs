@@ -1,6 +1,7 @@
 use crate::{
+	AppConfig,
 	graphql_queries::me::me_query::{MeQueryMe as User, Variables},
-	post_graphql_with_auth, AppConfig,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};

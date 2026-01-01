@@ -1,8 +1,9 @@
 use crate::{
+	AppConfig,
 	graphql_queries::update_s3_object::update_s3_object_mutation::{
 		UpdateS3ObjectMutationUpdateS3Object as S3Object, Variables,
 	},
-	post_graphql_with_auth, AppConfig,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};

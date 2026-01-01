@@ -1,8 +1,9 @@
 use crate::{
+	AppConfig,
 	graphql_queries::change_email::change_email_mutation::{
 		ChangeEmailMutationChangeEmail as User, Variables,
 	},
-	post_graphql_with_auth, AppConfig,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};

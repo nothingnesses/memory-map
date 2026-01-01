@@ -1,4 +1,4 @@
-use crate::{post_graphql_with_auth, AppConfig};
+use crate::{AppConfig, post_graphql_with_auth};
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};
 

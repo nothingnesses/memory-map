@@ -11,8 +11,10 @@ use axum::{
 };
 use axum_extra::extract::cookie::{Cookie, Key, PrivateCookieJar};
 use backend::{
-	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
-	constants::{CACHE_MAX_CAPACITY, CACHE_TTL_SECONDS, GRAPHQL_BODY_LIMIT_BYTES},
+	AppState, Config, SharedState, UserId,
+	constants::{
+		BODY_MAX_SIZE_LIMIT_BYTES, CACHE_MAX_CAPACITY, CACHE_TTL_SECONDS, GRAPHQL_BODY_LIMIT_BYTES,
+	},
 	controllers::api::locations::post as post_locations,
 	db::queries::SELECT_USER_EXISTS_QUERY,
 	graphiql,
@@ -221,7 +223,8 @@ async fn main() {
 		.allow_origin(AllowOrigin::predicate(
 			move |origin: &HeaderValue, _request_parts: &Parts| {
 				let origin_bytes = origin.as_bytes();
-				origin_bytes == frontend_url.as_bytes() || origin_bytes == cors_allowed_origins.as_bytes()
+				origin_bytes == frontend_url.as_bytes()
+					|| origin_bytes == cors_allowed_origins.as_bytes()
 			},
 		))
 		.allow_methods([Method::GET, Method::POST])

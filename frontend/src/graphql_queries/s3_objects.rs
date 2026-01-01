@@ -1,8 +1,9 @@
 use crate::{
+	AppConfig,
 	graphql_queries::s3_objects::s3_objects_query::{
 		S3ObjectsQueryS3Objects as S3Object, Variables,
 	},
-	post_graphql_with_auth, AppConfig,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};

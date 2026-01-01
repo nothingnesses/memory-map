@@ -1,4 +1,6 @@
-use crate::{graphql_queries::logout::logout_mutation::Variables, post_graphql_with_auth, AppConfig};
+use crate::{
+	AppConfig, graphql_queries::logout::logout_mutation::Variables, post_graphql_with_auth,
+};
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};
 

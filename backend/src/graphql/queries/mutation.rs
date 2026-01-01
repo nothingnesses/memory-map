@@ -150,10 +150,7 @@ impl Mutation {
 				let user_id: i64 = row.get("id");
 				let email: String = row.get("email");
 				client
-					.execute(
-						INSERT_OBJECT_ALLOWED_USER_QUERY,
-						&[&id, &user_id],
-					)
+					.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&id, &user_id])
 					.await
 					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 				valid_allowed_users.push(email);
@@ -232,10 +229,7 @@ impl Mutation {
 				let user_id: i64 = row.get("id");
 				let email: String = row.get("email");
 				client
-					.execute(
-						INSERT_OBJECT_ALLOWED_USER_QUERY,
-						&[&id, &user_id],
-					)
+					.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&id, &user_id])
 					.await
 					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 				valid_allowed_users.push(email);
@@ -408,10 +402,7 @@ impl Mutation {
 		}
 
 		let row = client
-			.query_one(
-				UPDATE_USER_PUBLICITY_QUERY,
-				&[&default_publicity, &user_id],
-			)
+			.query_one(UPDATE_USER_PUBLICITY_QUERY, &[&default_publicity, &user_id])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -456,9 +447,7 @@ impl Mutation {
 			.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
 			.to_string();
 
-		let statement = client
-			.prepare_cached(INSERT_USER_QUERY)
-			.await?;
+		let statement = client.prepare_cached(INSERT_USER_QUERY).await?;
 
 		let row = client
 			.query_one(&statement, &[&email, &password_hash])
@@ -577,10 +566,7 @@ impl Mutation {
 			.to_string();
 
 		client
-			.execute(
-				UPDATE_USER_PASSWORD_QUERY,
-				&[&new_hash, &user_id.0],
-			)
+			.execute(UPDATE_USER_PASSWORD_QUERY, &[&new_hash, &user_id.0])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -615,10 +601,7 @@ impl Mutation {
 
 		// Check if email is taken
 		let count: i64 = client
-			.query_one(
-				SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
-				&[&new_email, &user_id.0],
-			)
+			.query_one(SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, &[&new_email, &user_id.0])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 			.get(0);
@@ -628,10 +611,7 @@ impl Mutation {
 		}
 
 		let row = client
-			.query_one(
-				UPDATE_USER_EMAIL_QUERY,
-				&[&new_email, &user_id.0],
-			)
+			.query_one(UPDATE_USER_EMAIL_QUERY, &[&new_email, &user_id.0])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -690,10 +670,7 @@ impl Mutation {
 		let token_hash = blake3::hash(token.as_bytes()).to_string();
 
 		let row_opt = client
-			.query_opt(
-				SELECT_PASSWORD_RESET_TOKEN_QUERY,
-				&[&token_hash],
-			)
+			.query_opt(SELECT_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash])
 			.await
 			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
@@ -707,17 +684,12 @@ impl Mutation {
 				.to_string();
 
 			client
-				.execute(
-					UPDATE_USER_PASSWORD_QUERY,
-					&[&new_hash, &user_id],
-				)
+				.execute(UPDATE_USER_PASSWORD_QUERY, &[&new_hash, &user_id])
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
 
 			// Delete token
-			client
-				.execute(DELETE_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash])
-				.await?;
+			client.execute(DELETE_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash]).await?;
 
 			Ok(true)
 		} else {
@@ -762,10 +734,7 @@ impl Mutation {
 
 			// Check email uniqueness if changed
 			let count: i64 = client
-				.query_one(
-					SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
-					&[&new_email, &target_id],
-				)
+				.query_one(SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, &[&new_email, &target_id])
 				.await
 				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
 				.get(0);

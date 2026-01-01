@@ -1,8 +1,9 @@
 use crate::{
+	AppConfig,
 	graphql_queries::admin_update_user::admin_update_user_mutation::{
 		AdminUpdateUserMutationAdminUpdateUser as User, Variables,
 	},
-	post_graphql_with_auth, AppConfig,
+	post_graphql_with_auth,
 };
 use graphql_client::GraphQLQuery;
 use leptos::{error::Error, prelude::*};
