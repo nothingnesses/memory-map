@@ -1,9 +1,9 @@
 use crate::{
 	graphql_queries::me::me_query::{MeQueryMe as User, Variables},
-	post_graphql_with_auth,
+	post_graphql_with_auth, AppConfig,
 };
 use graphql_client::GraphQLQuery;
-use leptos::error::Error;
+use leptos::{error::Error, prelude::*};
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -18,9 +18,10 @@ pub use crate::graphql_queries::types::{PublicityDefault, UserRole};
 
 impl MeQuery {
 	pub async fn run() -> Result<Option<User>, Error> {
+		let config = use_context::<AppConfig>().expect("AppConfig missing");
 		Ok(post_graphql_with_auth::<MeQuery, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			config.api_url,
 			Variables {},
 		)
 		.await?

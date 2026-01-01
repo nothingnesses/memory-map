@@ -1,4 +1,4 @@
-use crate::{dump_errors, js_date_value_to_iso};
+use crate::{dump_errors, js_date_value_to_iso, AppConfig};
 use leptos::{
 	html::Input,
 	logging::{debug_error, debug_log},
@@ -18,6 +18,7 @@ pub fn FileUpload(
 	#[prop(into, default = Callback::new(|_| ()))] on_success: Callback<()>,
 	#[prop(into)] on_cancel: Callback<()>,
 ) -> impl IntoView {
+	let config = use_context::<AppConfig>().expect("AppConfig missing");
 	let toaster = ToasterInjection::expect_context();
 	let file_input_ref = NodeRef::<Input>::new();
 	let made_on_input_ref = NodeRef::<Input>::new();
@@ -80,13 +81,15 @@ pub fn FileUpload(
 			}
 		}
 
+		let api_url = config.api_url.clone();
 		spawn_local(async move {
 			let options = RequestInit::new();
 			options.set_method("POST");
 			options.set_body(&form_data);
 
+			let url = format!("{}/api/locations/", api_url);
 			let request =
-				Request::new_with_str_and_init("http://localhost:8000/api/locations/", &options)
+				Request::new_with_str_and_init(&url, &options)
 					.unwrap();
 
 			match JsFuture::from(web_sys::window().unwrap().fetch_with_request(&request)).await {

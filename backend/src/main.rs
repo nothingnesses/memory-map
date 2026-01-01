@@ -12,6 +12,7 @@ use axum::{
 use axum_extra::extract::cookie::{Cookie, Key, PrivateCookieJar};
 use backend::{
 	AppState, BODY_MAX_SIZE_LIMIT_BYTES, Config, SharedState, UserId,
+	constants::{CACHE_MAX_CAPACITY, CACHE_TTL_SECONDS, GRAPHQL_BODY_LIMIT_BYTES},
 	controllers::api::locations::post as post_locations,
 	graphiql,
 	graphql::queries::{mutation::Mutation, query::Query},
@@ -37,13 +38,6 @@ use tokio::{net::TcpListener, sync::RwLock};
 use tokio_postgres::NoTls;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing_subscriber::EnvFilter;
-
-// Amount of bytes to cache.
-const CACHE_MAX_CAPACITY: u64 = 10_000;
-// Cache time-to-live duration in seconds. Currently 10 minutes.
-const CACHE_TTL_SECONDS: u64 = 600;
-// Max body size for GraphQL queries (1MB).
-const GRAPHQL_BODY_LIMIT_BYTES: usize = 1024 * 1024;
 
 async fn caching_middleware(
 	State(state): State<AppState<Manager, Object<Manager>>>,
@@ -166,6 +160,7 @@ async fn main() {
 	dotenv().ok();
 	let cfg = Config::from_env().unwrap();
 	let frontend_url = cfg.frontend_url.clone();
+	let cors_allowed_origins = cfg.cors_allowed_origins.clone();
 
 	// Connect to DB
 	let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
@@ -179,10 +174,10 @@ async fn main() {
 	}
 
 	// Initialise minio client
-	let base_url = "http://localhost:9000/".parse::<BaseUrl>().unwrap();
+	let base_url = cfg.minio_url.parse::<BaseUrl>().unwrap();
 	tracing::info!("Trying to connect to MinIO at: `{:?}`", base_url);
 
-	let static_provider = StaticProvider::new("minioadmin", "minioadmin", None);
+	let static_provider = StaticProvider::new(&cfg.minio_access_key, &cfg.minio_secret_key, None);
 
 	let minio_client =
 		ClientBuilder::new(base_url).provider(Some(Box::new(static_provider))).build().unwrap();
@@ -210,7 +205,7 @@ async fn main() {
 		last_modified,
 		response_cache,
 		key: key.clone(),
-		config: cfg,
+		config: cfg.clone(),
 		enforcer,
 	});
 
@@ -225,7 +220,7 @@ async fn main() {
 		.allow_origin(AllowOrigin::predicate(
 			move |origin: &HeaderValue, _request_parts: &Parts| {
 				let origin_bytes = origin.as_bytes();
-				origin_bytes == frontend_url.as_bytes() || origin_bytes == b"http://127.0.0.1:3000"
+				origin_bytes == frontend_url.as_bytes() || origin_bytes == cors_allowed_origins.as_bytes()
 			},
 		))
 		.allow_methods([Method::GET, Method::POST])
@@ -250,7 +245,8 @@ async fn main() {
 		.layer(Extension(key))
 		.route_layer(cors);
 
-	println!("GraphiQL IDE: http://localhost:8000");
+	let bind_addr = format!("{}:{}", cfg.server_host, cfg.server_port);
+	println!("GraphiQL IDE: http://{}", bind_addr);
 
-	axum::serve(TcpListener::bind("127.0.0.1:8000").await.unwrap(), app).await.unwrap();
+	axum::serve(TcpListener::bind(bind_addr).await.unwrap(), app).await.unwrap();
 }

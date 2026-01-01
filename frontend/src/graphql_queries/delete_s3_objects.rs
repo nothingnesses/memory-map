@@ -1,6 +1,6 @@
-use crate::post_graphql_with_auth;
+use crate::{post_graphql_with_auth, AppConfig};
 use graphql_client::GraphQLQuery;
-use leptos::error::Error;
+use leptos::{error::Error, prelude::*};
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -16,9 +16,10 @@ use self::delete_s3_objects_mutation::{
 
 impl DeleteS3ObjectsMutation {
 	pub async fn run(ids: Vec<String>) -> Result<Vec<DeletedS3Object>, Error> {
+		let config = use_context::<AppConfig>().expect("AppConfig missing");
 		Ok(post_graphql_with_auth::<DeleteS3ObjectsMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			config.api_url,
 			Variables { ids },
 		)
 		.await?

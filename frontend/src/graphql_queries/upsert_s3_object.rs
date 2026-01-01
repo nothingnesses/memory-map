@@ -2,10 +2,10 @@ use crate::{
 	graphql_queries::upsert_s3_object::upsert_s3_object_mutation::{
 		UpsertS3ObjectMutationUpsertS3Object as S3Object, Variables,
 	},
-	post_graphql_with_auth,
+	post_graphql_with_auth, AppConfig,
 };
 use graphql_client::GraphQLQuery;
-use leptos::error::Error;
+use leptos::{error::Error, prelude::*};
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -21,9 +21,10 @@ pub use crate::graphql_queries::types::PublicityOverride;
 impl UpsertS3ObjectMutation {
 	// @todo Add better error-handling
 	pub async fn run(variables: Variables) -> Result<S3Object, Error> {
+		let config = use_context::<AppConfig>().expect("AppConfig missing");
 		Ok(post_graphql_with_auth::<UpsertS3ObjectMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			config.api_url,
 			variables,
 		)
 		.await?

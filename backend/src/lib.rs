@@ -23,6 +23,8 @@ use tokio::sync::RwLock;
 pub mod controllers;
 pub mod email;
 pub mod graphql;
+pub mod constants;
+pub mod db;
 
 #[derive(Debug, serde::Deserialize, Clone)]
 pub struct Config {
@@ -34,6 +36,12 @@ pub struct Config {
 	pub smtp_from: String,
 	pub cookie_secret: String,
 	pub frontend_url: String,
+	pub minio_access_key: String,
+	pub minio_secret_key: String,
+	pub minio_url: String,
+	pub server_host: String,
+	pub server_port: u16,
+	pub cors_allowed_origins: String,
 }
 
 impl Config {

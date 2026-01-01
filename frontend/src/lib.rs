@@ -29,6 +29,11 @@ mod components;
 pub mod graphql_queries;
 mod pages;
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct AppConfig {
+	pub api_url: String,
+}
+
 /// The Shell component wraps the main application content.
 /// It manages the global layout state, including the header's visibility on scroll.
 #[component]

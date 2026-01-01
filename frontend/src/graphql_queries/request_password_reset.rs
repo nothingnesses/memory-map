@@ -1,9 +1,9 @@
 use crate::{
 	graphql_queries::request_password_reset::request_password_reset_mutation::Variables,
-	post_graphql_with_auth,
+	post_graphql_with_auth, AppConfig,
 };
 use graphql_client::GraphQLQuery;
-use leptos::error::Error;
+use leptos::{error::Error, prelude::*};
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -15,9 +15,10 @@ pub struct RequestPasswordResetMutation;
 
 impl RequestPasswordResetMutation {
 	pub async fn run(variables: Variables) -> Result<bool, Error> {
+		let config = use_context::<AppConfig>().expect("AppConfig missing");
 		Ok(post_graphql_with_auth::<RequestPasswordResetMutation, _>(
 			&reqwest::Client::new(),
-			"http://127.0.0.1:8000/",
+			config.api_url,
 			variables,
 		)
 		.await?
