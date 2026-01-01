@@ -39,6 +39,7 @@ pub struct Config {
 	pub minio_access_key: String,
 	pub minio_secret_key: String,
 	pub minio_url: String,
+	pub s3_bucket_name: String,
 	pub server_host: String,
 	pub server_port: u16,
 	pub cors_allowed_origins: String,

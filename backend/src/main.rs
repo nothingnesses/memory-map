@@ -185,7 +185,7 @@ async fn main() {
 	let minio_client =
 		ClientBuilder::new(base_url).provider(Some(Box::new(static_provider))).build().unwrap();
 
-	let bucket_name = "memory-map".to_string();
+	let bucket_name = cfg.s3_bucket_name.clone();
 
 	let last_modified =
 		AtomicU64::new(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
