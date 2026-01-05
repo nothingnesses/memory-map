@@ -9,11 +9,28 @@ use crate::{
 		SELECT_USERS_BY_EMAILS_QUERY, UPDATE_OBJECT_QUERY, UPDATE_USER_EMAIL_QUERY,
 		UPDATE_USER_PASSWORD_QUERY, UPDATE_USER_PUBLICITY_QUERY, UPSERT_OBJECT_QUERY,
 	},
+	email::send_password_reset_email,
 	errors::AppError,
+	graphql::objects::{
+		location::Location,
+		s3_object::{PublicityOverride, S3Object},
+		user::{PublicityDefault, User},
+	},
 };
 use anyhow::Context as AnyhowContext;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use async_graphql::{Context, Error as GraphQLError, ID, InputObject, Object};
+use axum_extra::extract::cookie::{Cookie, SameSite};
+use casbin::CoreApi;
+use deadpool_postgres::{Client, Manager};
+use email_address::EmailAddress;
+use futures::future::join_all;
+use jiff::Timestamp;
+use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
+use rand::{Rng, distributions::Alphanumeric, rngs::OsRng};
+use std::sync::{Arc, Mutex};
+use time::Duration;
+use tracing;
 
 #[derive(InputObject)]
 pub struct UpdateS3ObjectInput {
@@ -33,23 +50,6 @@ pub struct UpsertS3ObjectInput {
 	pub publicity: PublicityOverride,
 	pub allowed_users: Option<Vec<String>>,
 }
-use crate::email::send_password_reset_email;
-use crate::graphql::objects::{
-	location::Location,
-	s3_object::{PublicityOverride, S3Object},
-	user::{PublicityDefault, User},
-};
-use axum_extra::extract::cookie::{Cookie, SameSite};
-use casbin::CoreApi;
-use deadpool_postgres::{Client, Manager};
-use email_address::EmailAddress;
-use futures::future::join_all;
-use jiff::Timestamp;
-use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
-use rand::{Rng, distributions::Alphanumeric, rngs::OsRng};
-use std::sync::{Arc, Mutex};
-use time::Duration;
-use tracing;
 
 fn validate_password(password: &str) -> Result<(), AppError> {
 	if password.len() < 8 {

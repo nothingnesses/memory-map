@@ -142,3 +142,37 @@ pub const MSG_CHECK_CONSOLE: &str = "Please check the console for more details."
 
 pub const ERR_APP_CONFIG_MISSING: &str = "AppConfig missing";
 pub const ERR_USER_CONTEXT_MISSING: &str = "UserContext missing";
+
+// System Errors
+pub const ERR_SYSTEM_CONFIG_MISSING: &str = "System Error: Configuration missing";
+pub const ERR_SYSTEM_USER_CONTEXT_MISSING_MSG: &str = "System Error: User context missing";
+pub const ERR_SYSTEM_REQUEST_FAILED: &str = "Failed to create Request";
+pub const ERR_SYSTEM_NO_WINDOW: &str = "No window found";
+pub const ERR_SYSTEM_RESPONSE_CAST: &str = "Failed to cast response value to Response";
+pub const ERR_NETWORK_UPLOAD_FAILED: &str = "Failed to upload files. Status: ";
+pub const ERR_NETWORK_PREFIX: &str = "Network error: ";
+pub const ERR_GRAPHQL_PREFIX: &str = "GraphQL error: ";
+pub const ERR_VALIDATION_PREFIX: &str = "Validation error: ";
+pub const ERR_AUTHENTICATION_PREFIX: &str = "Authentication error: ";
+pub const ERR_SYSTEM_PREFIX: &str = "System error: ";
+pub const ERR_NOT_FOUND_MSG: &str = "Not found";
+pub const ERR_JS_PREFIX: &str = "JS error: ";
+pub const ERR_CONTEXT_MISSING: &str = "Context missing: ";
+pub const ERR_UNSUPPORTED_FILE_TYPE: &str = "Unsupported file type: ";
+pub const MSG_FAILED_LOAD_USERS: &str = "Failed to load users";
+
+// Context Keys
+pub const CONTEXT_USER: &str = "UserContext";
+pub const CONTEXT_CONFIG: &str = "AppConfig";
+
+// MIME Types
+pub const MIME_TYPE_IMAGE: &str = "image";
+pub const MIME_TYPE_VIDEO: &str = "video";
+pub const MIME_TYPE_AUDIO: &str = "audio";
+
+// Messages
+pub const MSG_OBJECT_PUBLICITY_UPDATED: &str = "Object publicity updated";
+
+// Roles
+pub const ROLE_ADMIN_VALUE: &str = "admin";
+pub const ROLE_USER_VALUE: &str = "user";

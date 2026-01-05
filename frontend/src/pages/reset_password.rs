@@ -2,8 +2,9 @@ use crate::{
 	AppConfig,
 	components::password_input::PasswordInput,
 	constants::{
-		BUTTON_RESET_PASSWORD, LABEL_CONFIRM_PASSWORD, LABEL_NEW_PASSWORD, MSG_INVALID_TOKEN,
-		MSG_PASSWORDS_DO_NOT_MATCH, MSG_RESET_SUCCESS, TITLE_RESET_PASSWORD,
+		BUTTON_RESET_PASSWORD, ERR_SYSTEM_CONFIG_MISSING, LABEL_CONFIRM_PASSWORD,
+		LABEL_NEW_PASSWORD, MSG_INVALID_TOKEN, MSG_PASSWORDS_DO_NOT_MATCH, MSG_RESET_SUCCESS,
+		TITLE_RESET_PASSWORD,
 	},
 	graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation},
 };
@@ -32,7 +33,7 @@ pub fn ResetPassword() -> impl IntoView {
 		let api_url = match config {
 			Some(c) => c.api_url.clone(),
 			None => {
-				error_message.set(Some("System Error: Configuration missing".to_string()));
+				error_message.set(Some(ERR_SYSTEM_CONFIG_MISSING.to_string()));
 				return;
 			}
 		};

@@ -1,8 +1,9 @@
 use crate::{
 	AppConfig,
 	constants::{
-		BUTTON_RESET_PASSWORD, BUTTON_SAVE, HEADER_ACTIONS, HEADER_CREATED_AT, HEADER_EMAIL,
-		HEADER_ID, HEADER_ROLE, LOADING_TEXT, OPTION_ADMIN, OPTION_USER, TITLE_USERS,
+		BUTTON_RESET_PASSWORD, BUTTON_SAVE, ERR_SYSTEM_CONFIG_MISSING, HEADER_ACTIONS,
+		HEADER_CREATED_AT, HEADER_EMAIL, HEADER_ID, HEADER_ROLE, LOADING_TEXT,
+		MSG_FAILED_LOAD_USERS, OPTION_ADMIN, OPTION_USER, TITLE_USERS,
 	},
 	errors::{AppError, use_context_safe, use_error_context},
 	graphql_queries::{
@@ -20,7 +21,7 @@ pub fn Users() -> impl IntoView {
 	let error_ctx = use_error_context();
 	let config = match use_context_safe::<AppConfig>("AppConfig") {
 		Some(c) => c,
-		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
 	};
 	let config = StoredValue::new(config);
 	let users_resource = LocalResource::new(move || {
@@ -77,7 +78,7 @@ pub fn Users() -> impl IntoView {
 			<ErrorBoundary fallback=move |errors| {
 				view! {
 					<div class="p-4 bg-red-100 text-red-700 rounded">
-						<p class="font-bold">"Failed to load users"</p>
+						<p class="font-bold">{MSG_FAILED_LOAD_USERS}</p>
 						<ul>
 							{move || {
 								errors

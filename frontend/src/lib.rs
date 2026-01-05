@@ -1,5 +1,6 @@
 use crate::{
 	components::{header::Header, protected_route::ProtectedRoute},
+	constants::ERR_SYSTEM_CONFIG_MISSING,
 	errors::{provide_error_context, use_error_context},
 	pages::{
 		account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
@@ -179,7 +180,7 @@ pub fn App() -> impl IntoView {
 	let trigger: RwSignal<usize> = RwSignal::new(0);
 	let config = match use_context::<AppConfig>() {
 		Some(c) => c,
-		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
 	};
 	let api_url = config.api_url.clone();
 	let user_resource = LocalResource::new(move || {

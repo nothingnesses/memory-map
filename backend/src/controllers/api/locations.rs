@@ -4,7 +4,15 @@ use crate::graphql::{
 	objects::{location::Location, s3_object::PublicityOverride},
 	queries::mutation::Mutation,
 };
-use crate::{AppState, errors::AppError};
+use crate::{
+	AppState,
+	constants::{
+		ERR_DB_CLIENT, ERR_FAILED_READ_BYTES, ERR_MULTIPART_MISSING_CONTENT_TYPE,
+		ERR_MULTIPART_MISSING_FILENAME, ERR_MULTIPART_MISSING_NAME, ERR_UNSUPPORTED_FILE_TYPE,
+		ERR_UPLOAD_MINIO,
+	},
+	errors::AppError,
+};
 use anyhow::Context;
 use axum::{
 	Json,
@@ -48,7 +56,7 @@ pub async fn post(
 	while let Some(field) = multipart.next_field().await? {
 		let name = field
 			.name()
-			.ok_or_else(|| AppError::Validation("Multipart field missing name".to_string()))?
+			.ok_or_else(|| AppError::Validation(ERR_MULTIPART_MISSING_NAME.to_string()))?
 			.to_string();
 
 		match name.as_str() {
@@ -78,26 +86,27 @@ pub async fn post(
 				let filename = field
 					.file_name()
 					.ok_or_else(|| {
-						AppError::Validation("Multipart field missing filename".to_string())
+						AppError::Validation(ERR_MULTIPART_MISSING_FILENAME.to_string())
 					})?
 					.to_string();
 				let content_type = field
 					.content_type()
 					.ok_or_else(|| {
-						AppError::Validation("Multipart field missing content type".to_string())
+						AppError::Validation(ERR_MULTIPART_MISSING_CONTENT_TYPE.to_string())
 					})?
 					.to_string();
 
 				if !ALLOWED_MIME_TYPES.contains(&content_type.as_str()) {
 					return Err(AppError::Validation(format!(
-						"Unsupported file type: {content_type}"
+						"{}{}",
+						ERR_UNSUPPORTED_FILE_TYPE, content_type
 					)));
 				}
 
 				let bytes = field
 					.bytes()
 					.await
-					.map_err(|e| AppError::Validation(format!("Failed to read bytes: {}", e)))?;
+					.map_err(|e| AppError::Validation(format!("{}{}", ERR_FAILED_READ_BYTES, e)))?;
 				files.push(FileData { filename, content_type, bytes });
 			}
 			_ => {}
@@ -126,10 +135,9 @@ pub async fn post(
 			.content_type(file.content_type)
 			.send()
 			.await
-			.context("Failed to upload file to MinIO")?;
+			.context(ERR_UPLOAD_MINIO)?;
 
-		let client =
-			state.inner.pool.get().await.context("Failed to get database client from pool")?;
+		let client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
 			Some(Location { latitude, longitude })
 		} else {

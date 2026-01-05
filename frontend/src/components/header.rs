@@ -1,12 +1,13 @@
-use crate::AppConfig;
-use crate::auth::UserContext;
-use crate::constants::{
-	ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, HEADER_LAYER_CLASSES, LINK_ACCOUNT, LINK_MAP,
-	LINK_OBJECTS, LINK_SIGN_IN, LINK_USERS,
+use crate::{
+	AppConfig,
+	auth::UserContext,
+	constants::{
+		ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, ERR_SYSTEM_CONFIG_MISSING,
+		HEADER_LAYER_CLASSES, LINK_ACCOUNT, LINK_MAP, LINK_OBJECTS, LINK_SIGN_IN, LINK_USERS,
+	},
+	errors::use_context_safe,
+	graphql_queries::{logout::LogoutMutation, me::UserRole},
 };
-use crate::errors::use_context_safe;
-use crate::graphql_queries::logout::LogoutMutation;
-use crate::graphql_queries::me::UserRole;
 use leptos::{prelude::*, task::spawn_local};
 use leptos_router::{components::A, hooks::use_navigate};
 use lucide_leptos::{Menu, X};
@@ -20,7 +21,7 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 	let user_ctx = use_context_safe::<UserContext>("UserContext");
 	let config = match use_context_safe::<AppConfig>("AppConfig") {
 		Some(c) => c,
-		None => return view! { <header>"System Error: Configuration missing"</header> }.into_any(),
+		None => return view! { <header>{ERR_SYSTEM_CONFIG_MISSING}</header> }.into_any(),
 	};
 
 	// Toggle the menu open state

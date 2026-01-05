@@ -1,30 +1,40 @@
+use crate::constants::{
+	ERR_AUTHENTICATION_PREFIX, ERR_CONTEXT_MISSING, ERR_GRAPHQL_PREFIX, ERR_JS_PREFIX,
+	ERR_NETWORK_PREFIX, ERR_NOT_FOUND_MSG, ERR_SYSTEM_PREFIX, ERR_VALIDATION_PREFIX,
+};
 use leptos::prelude::*;
-use thiserror::Error;
+use std::fmt;
 use wasm_bindgen::JsValue;
 
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppError {
-	#[error("Network error: {0}")]
 	Network(String),
-
-	#[error("GraphQL error: {0}")]
 	GraphQL(String),
-
-	#[error("Validation error: {0}")]
 	Validation(String),
-
-	#[error("Authentication error: {0}")]
 	Authentication(String),
-
-	#[error("System error: {0}")]
 	System(String),
-
-	#[error("Not found")]
 	NotFound,
-
-	#[error("JS error: {0}")]
 	Js(String),
 }
+
+impl fmt::Display for AppError {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		match self {
+			AppError::Network(msg) => write!(f, "{}{}", ERR_NETWORK_PREFIX, msg),
+			AppError::GraphQL(msg) => write!(f, "{}{}", ERR_GRAPHQL_PREFIX, msg),
+			AppError::Validation(msg) => write!(f, "{}{}", ERR_VALIDATION_PREFIX, msg),
+			AppError::Authentication(msg) => write!(f, "{}{}", ERR_AUTHENTICATION_PREFIX, msg),
+			AppError::System(msg) => write!(f, "{}{}", ERR_SYSTEM_PREFIX, msg),
+			AppError::NotFound => write!(f, "{}", ERR_NOT_FOUND_MSG),
+			AppError::Js(msg) => write!(f, "{}{}", ERR_JS_PREFIX, msg),
+		}
+	}
+}
+
+impl std::error::Error for AppError {}
 
 impl From<JsValue> for AppError {
 	fn from(value: JsValue) -> Self {
@@ -78,7 +88,7 @@ pub fn use_context_safe<T: Clone + 'static>(name: &str) -> Option<T> {
 		Some(ctx) => Some(ctx),
 		None => {
 			let error_ctx = use_error_context();
-			error_ctx.report(AppError::System(format!("Context missing: {}", name)));
+			error_ctx.report(AppError::System(format!("{}{}", ERR_CONTEXT_MISSING, name)));
 			None
 		}
 	}

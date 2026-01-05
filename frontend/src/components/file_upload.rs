@@ -1,9 +1,10 @@
 use crate::{
 	AppConfig,
 	constants::{
-		BUTTON_CANCEL, BUTTON_SUBMIT, ERROR_SELECT_FILE, LABEL_SELECT_FILES, LABEL_SET_DATE_TIME,
-		LABEL_SET_LATITUDE, LABEL_SET_LONGITUDE, LATITUDE_MAX, LATITUDE_MIN, LONGITUDE_MAX,
-		LONGITUDE_MIN,
+		BUTTON_CANCEL, BUTTON_SUBMIT, ERR_NETWORK_UPLOAD_FAILED, ERR_SYSTEM_NO_WINDOW,
+		ERR_SYSTEM_REQUEST_FAILED, ERR_SYSTEM_RESPONSE_CAST, ERR_UNSUPPORTED_FILE_TYPE,
+		ERROR_SELECT_FILE, LABEL_SELECT_FILES, LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE,
+		LABEL_SET_LONGITUDE, LATITUDE_MAX, LATITUDE_MIN, LONGITUDE_MAX, LONGITUDE_MIN,
 	},
 	dump_errors,
 	errors::{AppError, use_context_safe, use_error_context},
@@ -75,7 +76,8 @@ pub fn FileUpload(
 				if !ALLOWED_MIME_TYPES.contains(&file_type.as_str()) {
 					let file_name = file.name();
 					error_ctx.report(AppError::Validation(format!(
-						"Unsupported file type: {file_name} ({file_type})",
+						"{}{file_name} ({file_type})",
+						ERR_UNSUPPORTED_FILE_TYPE
 					)));
 					return;
 				}
@@ -90,21 +92,19 @@ pub fn FileUpload(
 
 			let url = format!("{api_url}/api/locations/");
 			let Ok(request) = Request::new_with_str_and_init(&url, &options) else {
-				error_ctx.report(AppError::System("Failed to create Request".to_string()));
+				error_ctx.report(AppError::System(ERR_SYSTEM_REQUEST_FAILED.to_string()));
 				return;
 			};
 
 			let Some(window) = web_sys::window() else {
-				error_ctx.report(AppError::System("No window found".to_string()));
+				error_ctx.report(AppError::System(ERR_SYSTEM_NO_WINDOW.to_string()));
 				return;
 			};
 
 			match JsFuture::from(window.fetch_with_request(&request)).await {
 				Ok(resp_value) => {
 					let Ok(resp) = resp_value.dyn_into::<web_sys::Response>() else {
-						error_ctx.report(AppError::System(
-							"Failed to cast response value to Response".to_string(),
-						));
+						error_ctx.report(AppError::System(ERR_SYSTEM_RESPONSE_CAST.to_string()));
 						return;
 					};
 					if resp.ok() {
@@ -121,7 +121,8 @@ pub fn FileUpload(
 							Default::default()
 						};
 						error_ctx.report(AppError::Network(format!(
-							"Failed to upload files. Status: {} {}, Body: {}",
+							"{}{} {}, Body: {}",
+							ERR_NETWORK_UPLOAD_FAILED,
 							resp.status(),
 							resp.status_text(),
 							text

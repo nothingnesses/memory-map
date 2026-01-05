@@ -2,8 +2,8 @@ use crate::{
 	AppConfig,
 	components::password_input::PasswordInput,
 	constants::{
-		BUTTON_REGISTER, LABEL_CONFIRM_PASSWORD, LABEL_EMAIL, LABEL_PASSWORD,
-		MSG_PASSWORDS_DO_NOT_MATCH, TITLE_REGISTER,
+		BUTTON_REGISTER, ERR_SYSTEM_CONFIG_MISSING, LABEL_CONFIRM_PASSWORD, LABEL_EMAIL,
+		LABEL_PASSWORD, MSG_PASSWORDS_DO_NOT_MATCH, TITLE_REGISTER,
 	},
 	errors::use_context_safe,
 	graphql_queries::{
@@ -26,7 +26,7 @@ pub fn Register() -> impl IntoView {
 
 	let config = match use_context_safe::<AppConfig>("AppConfig") {
 		Some(c) => c,
-		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
 	};
 	let api_url = config.api_url.clone();
 	let config_resource = LocalResource::new(move || {
