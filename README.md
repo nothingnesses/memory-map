@@ -10,10 +10,101 @@ Users can browse the map, click markers and explore media galleries tied to real
 
 ## Features
 
-- Upload media files (images, videos and audio files)
-- Manual GPS location & timestamp tagging
-- Interactive world map with clickable memory pins
-- Gallery view for each map location
+- Upload media files (images, videos and audio files).
+- Manual location & timestamp tagging.
+- Interactive world map with clickable memory pins.
+- Gallery view for each map location.
+
+## Screenshots
+
+### Map View
+
+![Map View](./screenshots/map.png)
+
+### Gallery View
+
+![Gallery View](./screenshots/gallery.png)
+
+### Admin View
+
+![Admin View](./screenshots/admin.png)
+
+### GraphQL API (GraphiQL)
+
+![GraphiQL View](./screenshots/graphiql.png)
+
+## Getting Started
+
+### 1. Install dependencies
+
+You’ll need:
+
+- [Nix Package Manager](https://nixos.org/download/)
+- [nix-direnv](https://github.com/nix-community/nix-direnv?tab=readme-ov-file#installation)
+
+### 2. Clone & enter project (you only need to do this step once)
+
+```sh
+git clone https://github.com/nothingnesses/memory-map.git
+cd memory-map
+```
+
+### 3. Setup environment (you only need to do this step once)
+
+```sh
+cp .env.example .env
+direnv allow
+```
+
+This installs all dependencies and auto-loads the development shell whenever you enter the directory.
+
+You can optionally configure the build mode and other settings by editing `.env`:
+
+- `BUILD_MODE="debug"` (default): Faster compilation, includes debug info.
+- `BUILD_MODE="release"`: Optimised build, smaller binaries, slower compilation.
+- Database, SMTP, and S3 storage configurations.
+
+### 4. Start database & storage
+
+```sh
+just servers
+```
+
+MinIO object storage becomes available at: [http://localhost:9001/login](http://localhost:9001/login)
+
+- **Username:** `minioadmin`
+- **Password:** `minioadmin`
+
+### 5. Start backend
+
+In another shell, run:
+
+```sh
+just backend
+```
+
+Backend GraphQL playground: [http://localhost:8000/](http://localhost:8000/)
+
+### 6. Start frontend
+
+In another shell, run:
+
+```sh
+just frontend
+```
+
+Frontend app: [http://localhost:3000/](http://localhost:3000/)
+
+## Development Commands
+
+The project uses [Just](https://github.com/casey/just) as a task runner.
+
+- `just servers`: Start PostgreSQL and MinIO via Nix.
+- `just backend`: Start the Axum backend with hot-reloading (via Bacon).
+- `just frontend`: Start the Leptos frontend (via Trunk).
+- `just prepare`: Format code, run lints, and execute tests. Run this before submitting a PR.
+- `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
+- `just scan-hardcoded`: Scan the codebase for hardcoded secrets or values.
 
 ## Tech Stack
 
@@ -47,112 +138,21 @@ memory-map/
 └── README.md        # Project documentation
 ```
 
-## Getting Started
-
-1. Install dependencies
-
-You’ll need:
-
-- [Nix Package Manager](https://nixos.org/download/)
-- [nix-direnv](https://github.com/nix-community/nix-direnv?tab=readme-ov-file#installation)
-
-2. Clone & enter project (you only need to do this step once)
-
-```sh
-git clone https://github.com/nothingnesses/memory-map.git
-cd memory-map
-```
-
-3. Setup environment (you only need to do this step once)
-
-```sh
-cp .env.example .env
-direnv allow
-```
-
-This installs all dependencies and auto-loads the development shell whenever you enter the directory.
-
-You can optionally configure the build mode by editing `.env`:
-
-- `BUILD_MODE="debug"` (default): Faster compilation, includes debug info.
-- `BUILD_MODE="release"`: Optimised build, smaller binaries, slower compilation.
-
-4. Start database & storage
-
-```sh
-just servers
-```
-
-MinIO object storage becomes available at:
-
-http://localhost:9001/login
-
-Username: minioadmin
-
-Password: minioadmin
-
-5. Start backend
-
-In another shell, run:
-
-```sh
-just backend
-```
-
-Backend GraphQL playground:
-
-http://localhost:8000/
-
-6. Start frontend
-
-In another shell, run:
-
-```sh
-just frontend
-```
-
-Frontend app:
-
-http://localhost:3000/
-
-Screenshots
-Map View Gallery View
-
-    ![Map View](./screenshots/map.png)
-
-API
-The backend exposes a GraphQL API at:
-
-http://localhost:8000/
-
-Screenshots
-GraphiQL
-
-    ![GraphiQL View](./screenshots/graphiQL.png)
-
-Use it to:
-
-- Query memories by location
-- Retrieve gallery data
-
 ## Contributing
 
-We welcome contributions!
-Please ensure:
+We welcome contributions! Please ensure you run the preparation script before making a PR:
 
-- direnv loads correctly
-- All services start via `just`
-- Frontend builds without errors
-- Code is formatted (`cargo fmt`)
-
-## Development Tools
-
-### Scanning for Hard-Coded Values
-
-A script `scan_hardcoded.sh` is available to help identify hard-coded values (constants, URLs, IPs, secrets) in the codebase.
-
-Usage:
-```bash
-./scan_hardcoded.sh
+```sh
+just prepare
 ```
 
+This command will:
+
+- Format code (`nix fmt`, `cargo fmt`)
+- Run clippy lints
+- Generate documentation
+- Run tests
+
+## License
+
+This project is licensed under the [Blue Oak Model License 1.0.0](LICENSE).
