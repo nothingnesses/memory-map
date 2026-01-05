@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use crate::auth::UserContext;
+use crate::errors::use_context_safe;
 use crate::graphql_queries::me::UserRole;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
@@ -11,7 +12,10 @@ pub fn ProtectedRoute(
 	#[allow(dead_code)]
 	admin_only: bool,
 ) -> impl IntoView {
-	let user_ctx = use_context::<UserContext>().expect(crate::constants::ERR_USER_CONTEXT_MISSING);
+	let user_ctx = match use_context_safe::<UserContext>("UserContext") {
+		Some(c) => c,
+		None => return view! { "System Error: User context missing" }.into_any(),
+	};
 	let navigate = use_navigate();
 
 	view! {
@@ -41,4 +45,5 @@ pub fn ProtectedRoute(
 			}}
 		</Suspense>
 	}
+	.into_any()
 }

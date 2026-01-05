@@ -1,17 +1,5 @@
-mutation UpsertS3ObjectMutation(
-	$name: String!
-	$made_on: String
-	$location: LocationInput
-	$publicity: PublicityOverride!
-	$allowedUsers: [String!]
-) {
-	upsertS3Object(
-		name: $name
-		madeOn: $made_on
-		location: $location
-		publicity: $publicity
-		allowedUsers: $allowedUsers
-	) {
+mutation UpsertS3ObjectMutation($input: UpsertS3ObjectInput!) {
+	upsertS3Object(input: $input) {
 		name
 		madeOn
 		location {

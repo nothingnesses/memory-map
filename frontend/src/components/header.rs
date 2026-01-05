@@ -4,6 +4,7 @@ use crate::constants::{
 	ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, HEADER_LAYER_CLASSES, LINK_ACCOUNT, LINK_MAP,
 	LINK_OBJECTS, LINK_SIGN_IN, LINK_USERS,
 };
+use crate::errors::use_context_safe;
 use crate::graphql_queries::logout::LogoutMutation;
 use crate::graphql_queries::me::UserRole;
 use leptos::{prelude::*, task::spawn_local};
@@ -16,8 +17,11 @@ use lucide_leptos::{Menu, X};
 #[component]
 pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 	let navigate = use_navigate();
-	let user_ctx = use_context::<UserContext>();
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let user_ctx = use_context_safe::<UserContext>("UserContext");
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => return view! { <header>"System Error: Configuration missing"</header> }.into_any(),
+	};
 
 	// Toggle the menu open state
 	let toggle_header_menu = move || {
@@ -173,5 +177,5 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 				</div>
 			</div>
 		</header>
-	}
+	}.into_any()
 }

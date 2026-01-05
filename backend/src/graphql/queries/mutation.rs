@@ -9,15 +9,36 @@ use crate::{
 		SELECT_USERS_BY_EMAILS_QUERY, UPDATE_OBJECT_QUERY, UPDATE_USER_EMAIL_QUERY,
 		UPDATE_USER_PASSWORD_QUERY, UPDATE_USER_PUBLICITY_QUERY, UPSERT_OBJECT_QUERY,
 	},
-	email::send_password_reset_email,
-	graphql::objects::{
-		location::Location,
-		s3_object::{PublicityOverride, S3Object},
-		user::{PublicityDefault, User},
-	},
+	errors::AppError,
 };
+use anyhow::Context as AnyhowContext;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
-use async_graphql::{Context, Error as GraphQLError, ID, Object};
+use async_graphql::{Context, Error as GraphQLError, ID, InputObject, Object};
+
+#[derive(InputObject)]
+pub struct UpdateS3ObjectInput {
+	pub id: ID,
+	pub name: String,
+	pub made_on: Option<String>,
+	pub location: Option<Location>,
+	pub publicity: PublicityOverride,
+	pub allowed_users: Option<Vec<String>>,
+}
+
+#[derive(InputObject)]
+pub struct UpsertS3ObjectInput {
+	pub name: String,
+	pub made_on: Option<String>,
+	pub location: Option<Location>,
+	pub publicity: PublicityOverride,
+	pub allowed_users: Option<Vec<String>>,
+}
+use crate::email::send_password_reset_email;
+use crate::graphql::objects::{
+	location::Location,
+	s3_object::{PublicityOverride, S3Object},
+	user::{PublicityDefault, User},
+};
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use casbin::CoreApi;
 use deadpool_postgres::{Client, Manager};
@@ -30,9 +51,11 @@ use std::sync::{Arc, Mutex};
 use time::Duration;
 use tracing;
 
-fn validate_password(password: &str) -> Result<(), GraphQLError> {
+fn validate_password(password: &str) -> Result<(), AppError> {
 	if password.len() < 8 {
-		return Err(GraphQLError::new("Password must be at least 8 characters long"));
+		return Err(AppError::Validation(
+			"Password must be at least 8 characters long".to_string(),
+		));
 	}
 	Ok(())
 }
@@ -45,37 +68,35 @@ impl Mutation {
 		minio_client: &MinioClient,
 		bucket_name: &str,
 		ids: &[i64],
-	) -> Result<Vec<S3Object>, GraphQLError> {
+	) -> Result<Vec<S3Object>, AppError> {
 		tracing::debug!("IDs to delete: {:?}", ids);
-		let statement = db_client.prepare_cached(DELETE_OBJECTS_QUERY).await.map_err(|e| {
-			tracing::error!("Failed to prepare query: {}", e);
-			GraphQLError::new(format!("Database error: {e}"))
-		})?;
+		let statement = db_client.prepare_cached(DELETE_OBJECTS_QUERY).await?;
 		tracing::debug!("Delete DB query: {:?}", statement);
 
-		let rows = db_client.query(&statement, &[&ids]).await.map_err(|e| {
-			tracing::error!("Database query failed: {}", e);
-			GraphQLError::new(format!("Database error: {e}"))
-		})?;
+		let rows = db_client.query(&statement, &[&ids]).await?;
 
 		let objects = join_all(rows.into_iter().map(S3Object::try_from))
 			.await
 			.into_iter()
-			.collect::<Result<Vec<_>, _>>()?;
+			.collect::<Result<Vec<_>, _>>()
+			.map_err(|e| {
+				AppError::Internal(anyhow::anyhow!(
+					"Failed to convert database rows to S3 objects: {}",
+					e.message
+				))
+			})?;
 
 		let objects_to_delete: Vec<ObjectToDelete> =
 			objects.iter().map(|object| ObjectToDelete::from(&object.name)).collect();
 
 		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
 
-		if !objects_to_delete.is_empty()
-			&& let Err(e) = minio_client
+		if !objects_to_delete.is_empty() {
+			minio_client
 				.delete_objects::<_, ObjectToDelete>(bucket_name, objects_to_delete)
 				.send()
 				.await
-		{
-			tracing::error!("Failed to delete objects from MinIO: {}", e);
-			// We do not return error here to avoid state mismatch with DB
+				.context("Failed to delete objects from MinIO")?;
 		}
 
 		Ok(objects)
@@ -91,17 +112,13 @@ impl Mutation {
 		location: Option<Location>,
 		publicity: PublicityOverride,
 		allowed_users: Vec<String>,
-	) -> Result<S3Object, GraphQLError> {
+	) -> Result<S3Object, AppError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
-			Some(timestamp_string) => match timestamp_string.parse() {
-				Ok(timestamp_string) => Some(timestamp_string),
-				Err(error) => {
-					tracing::error!("Failed to parse timestamp '{}': {}", timestamp_string, error);
-					return Err(GraphQLError::new(format!(
-						"Invalid timestamp format: {timestamp_string}"
-					)));
-				}
-			},
+			Some(timestamp_string) => Some(
+				timestamp_string
+					.parse()
+					.map_err(|e| AppError::Validation(format!("Invalid timestamp format: {e}")))?,
+			),
 			None => None,
 		};
 		let location_geometry = location.map(|location| {
@@ -124,35 +141,33 @@ impl Mutation {
 					&client.prepare_cached(UPDATE_OBJECT_QUERY).await?,
 					&[&id, &name, &parsed_made_on, &location_geometry, &publicity],
 				)
-				.await
-				.map_err(|e| {
-					tracing::error!("Database query failed: {}", e);
-					GraphQLError::new(format!("Database error: {e}"))
-				})?,
+				.await?,
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
+		})?;
 
 		// Update allowed users
 		client
 			.execute(DELETE_OBJECT_ALLOWED_USERS_QUERY, &[&id])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to delete object allowed users from database")?;
 
 		let mut valid_allowed_users = Vec::new();
 
 		if !allowed_users.is_empty() {
-			let rows = client
-				.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users])
-				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			let rows = client.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users]).await?;
 
 			for row in rows {
-				let user_id: i64 = row.get("id");
-				let email: String = row.get("email");
+				let user_id: i64 =
+					row.try_get("id").context("Failed to get user ID from database row")?;
+				let email: String =
+					row.try_get("email").context("Failed to get email from database row")?;
 				client
 					.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&id, &user_id])
 					.await
-					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+					.context("Failed to insert object allowed user into database")?;
 				valid_allowed_users.push(email);
 			}
 		}
@@ -168,17 +183,13 @@ impl Mutation {
 		user_id: i64,
 		publicity: PublicityOverride,
 		allowed_users: Vec<String>,
-	) -> Result<S3Object, GraphQLError> {
+	) -> Result<S3Object, AppError> {
 		let parsed_made_on: Option<Timestamp> = match made_on {
-			Some(timestamp_string) => match timestamp_string.parse() {
-				Ok(timestamp_string) => Some(timestamp_string),
-				Err(error) => {
-					tracing::error!("Failed to parse timestamp '{}': {}", timestamp_string, error);
-					return Err(GraphQLError::new(format!(
-						"Invalid timestamp format: {timestamp_string}"
-					)));
-				}
-			},
+			Some(timestamp_string) => Some(
+				timestamp_string
+					.parse()
+					.map_err(|e| AppError::Validation(format!("Invalid timestamp format: {e}")))?,
+			),
 			None => None,
 		};
 		let location_geometry = location.map(|location| {
@@ -201,37 +212,37 @@ impl Mutation {
 					&client.prepare_cached(UPSERT_OBJECT_QUERY).await?,
 					&[&name, &parsed_made_on, &location_geometry, &user_id, &publicity],
 				)
-				.await
-				.map_err(|e| {
-					tracing::error!("Database query failed: {}", e);
-					GraphQLError::new(format!("Database error: {e}"))
-				})?,
+				.await?,
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
+		})?;
 
-		let id: i64 = s3_object.id.parse().unwrap();
+		let id: i64 = s3_object.id.parse().map_err(|e| {
+			AppError::Internal(anyhow::anyhow!("Failed to parse S3 object ID: {e}"))
+		})?;
 
 		// Update allowed users
 		client
 			.execute(DELETE_OBJECT_ALLOWED_USERS_QUERY, &[&id])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to delete object allowed users from database")?;
 
 		let mut valid_allowed_users = Vec::new();
 
 		if !allowed_users.is_empty() {
-			let rows = client
-				.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users])
-				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			let rows = client.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users]).await?;
 
 			for row in rows {
-				let user_id: i64 = row.get("id");
-				let email: String = row.get("email");
+				let user_id: i64 =
+					row.try_get("id").context("Failed to get user ID from database row")?;
+				let email: String =
+					row.try_get("email").context("Failed to get email from database row")?;
 				client
 					.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&id, &user_id])
 					.await
-					.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+					.context("Failed to insert object allowed user into database")?;
 				valid_allowed_users.push(email);
 			}
 		}
@@ -254,13 +265,14 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 		let ids: Vec<i64> = ids
 			.into_iter()
-			.map(|id| {
-				id.parse::<i64>().map_err(|e| GraphQLError::new(format!("Invalid ID format: {e}")))
-			})
+			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from))
 			.collect::<Result<Vec<i64>, _>>()?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
@@ -269,13 +281,16 @@ impl Mutation {
 		let objects = S3Object::where_ids(ctx, &ids).await?;
 		for obj in &objects {
 			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
-			if !enforcer.enforce((casbin_user.clone(), casbin_obj, "delete"))? {
-				return Err(GraphQLError::new("Forbidden"));
-			}
+			enforcer
+				.enforce((casbin_user.clone(), casbin_obj, "delete"))
+				.map_err(AppError::from)?
+				.then_some(())
+				.ok_or_else(|| GraphQLError::new("Forbidden"))?;
 		}
 
-		let result =
-			Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids).await?;
+		let result = Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids)
+			.await
+			.map_err(GraphQLError::from)?;
 
 		state.update_last_modified();
 
@@ -288,20 +303,18 @@ impl Mutation {
 	async fn update_s3_object(
 		&self,
 		ctx: &Context<'_>,
-		id: ID,
-		name: String,
-		made_on: Option<String>,
-		location: Option<Location>,
-		publicity: PublicityOverride,
-		allowed_users: Option<Vec<String>>,
+		input: UpdateS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let id_int =
-			id.parse::<i64>().map_err(|e| GraphQLError::new(format!("Invalid ID format: {e}")))?;
+			input.id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from)?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
@@ -309,22 +322,23 @@ impl Mutation {
 
 		let obj = S3Object::where_id(ctx, id_int).await?;
 		let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
-		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
-		let allowed_users = allowed_users.unwrap_or_default();
+		let allowed_users = input.allowed_users.unwrap_or_default();
 
 		let result = Self::update_s3_object_worker(
 			&client,
 			id_int,
-			name,
-			made_on,
-			location,
-			publicity,
+			input.name,
+			input.made_on,
+			input.location,
+			input.publicity,
 			allowed_users,
 		)
-		.await?;
+		.await
+		.map_err(GraphQLError::from)?;
 
 		state.update_last_modified();
 
@@ -334,46 +348,49 @@ impl Mutation {
 	async fn upsert_s3_object(
 		&self,
 		ctx: &Context<'_>,
-		name: String,
-		made_on: Option<String>,
-		location: Option<Location>,
-		publicity: PublicityOverride,
-		allowed_users: Option<Vec<String>>,
+		input: UpsertS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let client = ContextWrapper(ctx).get_db_client().await?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 
-		if let Ok(obj) = S3Object::where_name(ctx, name.clone()).await {
+		if let Ok(obj) = S3Object::where_name(ctx, input.name.clone()).await {
 			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
-			if !enforcer.enforce((casbin_user.clone(), casbin_obj, "update"))? {
+			if !enforcer
+				.enforce((casbin_user.clone(), casbin_obj, "update"))
+				.map_err(GraphQLError::from)?
+			{
 				return Err(GraphQLError::new("Forbidden"));
 			}
 		} else {
 			let casbin_obj = CasbinObject { user_id };
-			if !enforcer.enforce((casbin_user, casbin_obj, "create"))? {
+			if !enforcer.enforce((casbin_user, casbin_obj, "create")).map_err(GraphQLError::from)? {
 				return Err(GraphQLError::new("Forbidden"));
 			}
 		}
 
-		let allowed_users = allowed_users.unwrap_or_default();
+		let allowed_users = input.allowed_users.unwrap_or_default();
 
 		let result = Self::upsert_s3_object_worker(
 			&client,
-			name,
-			made_on,
-			location,
+			input.name,
+			input.made_on,
+			input.location,
 			user_id,
-			publicity,
+			input.publicity,
 			allowed_users,
 		)
-		.await?;
+		.await
+		.map_err(GraphQLError::from)?;
 
 		state.update_last_modified();
 
@@ -390,23 +407,28 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 		let casbin_obj = CasbinObject { user_id };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
 		let row = client
 			.query_one(UPDATE_USER_PUBLICITY_QUERY, &[&default_publicity, &user_id])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to update user publicity in database")?;
 
 		User::try_from(row)
+			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
+			.map_err(GraphQLError::from)
 	}
 
 	async fn register(
@@ -423,7 +445,7 @@ impl Mutation {
 			return Err(GraphQLError::new("Registration is disabled"));
 		}
 
-		validate_password(&password)?;
+		validate_password(&password).map_err(GraphQLError::from)?;
 
 		if !EmailAddress::is_valid(&email) {
 			return Err(GraphQLError::new("Invalid email format"));
@@ -432,9 +454,9 @@ impl Mutation {
 		// Check if email is taken
 		let count: i64 = client
 			.query_one(SELECT_USER_COUNT_BY_EMAIL_QUERY, &[&email])
-			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
-			.get(0);
+			.await?
+			.try_get(0)
+			.context("Failed to get user count from database")?;
 
 		if count > 0 {
 			return Err(GraphQLError::new("Email already in use"));
@@ -444,7 +466,8 @@ impl Mutation {
 		let argon2 = Argon2::default();
 		let password_hash = argon2
 			.hash_password(password.as_bytes(), &salt)
-			.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
+			.map_err(|e| anyhow::anyhow!(e).context("Failed to hash password"))
+			.map_err(GraphQLError::from)?
 			.to_string();
 
 		let statement = client.prepare_cached(INSERT_USER_QUERY).await?;
@@ -452,9 +475,11 @@ impl Mutation {
 		let row = client
 			.query_one(&statement, &[&email, &password_hash])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to insert user into database")?;
 
 		User::try_from(row)
+			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
+			.map_err(GraphQLError::from)
 	}
 
 	async fn login(
@@ -471,16 +496,19 @@ impl Mutation {
 		let row = client
 			.query_opt(&statement, &[&email])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
+			.context("Failed to query user from database")?
 			.ok_or_else(|| GraphQLError::new("Invalid email or password"))?;
 
 		let password_hash_str: String = row
 			.try_get("password_hash")
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
-		let user = User::try_from(row)?;
+			.context("Failed to get password hash from database row")?;
+		let user = User::try_from(row).map_err(|e| {
+			anyhow::anyhow!("Failed to convert database row to User: {}", e.message)
+		})?;
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
-			.map_err(|e| GraphQLError::new(format!("Hash parse error: {e}")))?;
+			.map_err(|e| anyhow::anyhow!(e).context("Failed to parse password hash from database"))
+			.map_err(GraphQLError::from)?;
 
 		Argon2::default()
 			.verify_password(password.as_bytes(), &parsed_hash)
@@ -497,8 +525,17 @@ impl Mutation {
 			.path("/")
 			.build();
 
-		let cookies = ctx.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()?;
-		cookies.lock().unwrap().push(cookie);
+		let cookies = ctx
+			.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Cookies not found in context"))
+			.map_err(GraphQLError::from)?;
+		cookies
+			.lock()
+			.map_err(|e| {
+				tracing::error!("Mutex poisoned: {}", e);
+				GraphQLError::new("Internal server error")
+			})?
+			.push(cookie);
 
 		Ok(user)
 	}
@@ -515,8 +552,17 @@ impl Mutation {
 			.max_age(Duration::seconds(0))
 			.build();
 
-		let cookies = ctx.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()?;
-		cookies.lock().unwrap().push(cookie);
+		let cookies = ctx
+			.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Cookies not found in context"))
+			.map_err(GraphQLError::from)?;
+		cookies
+			.lock()
+			.map_err(|e| {
+				tracing::error!("Mutex poisoned: {}", e);
+				GraphQLError::new("Internal server error")
+			})?
+			.push(cookie);
 
 		Ok(true)
 	}
@@ -532,7 +578,10 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let user = User::by_id(ctx, user_id.0)
 			.await?
@@ -540,20 +589,21 @@ impl Mutation {
 		let casbin_user = CasbinUser { id: user_id.0, role: user.role.to_string() };
 		let casbin_obj = CasbinObject { user_id: user_id.0 };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
-		validate_password(&new_password)?;
+		validate_password(&new_password).map_err(GraphQLError::from)?;
 
 		let password_hash_str: String = client
 			.query_one(SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, &[&user_id.0])
-			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
-			.get("password_hash");
+			.await?
+			.try_get("password_hash")
+			.context("Failed to get password hash from database row")?;
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
-			.map_err(|e| GraphQLError::new(format!("Hash parse error: {e}")))?;
+			.map_err(|e| anyhow::anyhow!(e).context("Failed to parse password hash from database"))
+			.map_err(GraphQLError::from)?;
 
 		Argon2::default()
 			.verify_password(old_password.as_bytes(), &parsed_hash)
@@ -562,13 +612,14 @@ impl Mutation {
 		let salt = SaltString::generate(&mut OsRng);
 		let new_hash = Argon2::default()
 			.hash_password(new_password.as_bytes(), &salt)
-			.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
+			.map_err(|e| anyhow::anyhow!(e).context("Failed to hash new password"))
+			.map_err(GraphQLError::from)?
 			.to_string();
 
 		client
 			.execute(UPDATE_USER_PASSWORD_QUERY, &[&new_hash, &user_id.0])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to update user password in database")?;
 
 		Ok(true)
 	}
@@ -583,7 +634,10 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let user = User::by_id(ctx, user_id.0)
 			.await?
@@ -591,7 +645,7 @@ impl Mutation {
 		let casbin_user = CasbinUser { id: user_id.0, role: user.role.to_string() };
 		let casbin_obj = CasbinObject { user_id: user_id.0 };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "update"))? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
@@ -602,9 +656,9 @@ impl Mutation {
 		// Check if email is taken
 		let count: i64 = client
 			.query_one(SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, &[&new_email, &user_id.0])
-			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
-			.get(0);
+			.await?
+			.try_get(0)
+			.context("Failed to get user count from database")?;
 
 		if count > 0 {
 			return Err(GraphQLError::new("Email already in use"));
@@ -613,9 +667,11 @@ impl Mutation {
 		let row = client
 			.query_one(UPDATE_USER_EMAIL_QUERY, &[&new_email, &user_id.0])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to update user email in database")?;
 
 		User::try_from(row)
+			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
+			.map_err(GraphQLError::from)
 	}
 
 	async fn request_password_reset(
@@ -634,22 +690,25 @@ impl Mutation {
 
 			let token_hash = blake3::hash(token.as_bytes()).to_string();
 
+			let user_id_int = user
+				.id
+				.parse::<i64>()
+				.context("Failed to parse user ID")
+				.map_err(GraphQLError::from)?;
+
 			// Expires in 10 minutes
 			client
-				.execute(
-					INSERT_PASSWORD_RESET_TOKEN_QUERY,
-					&[&token_hash, &user.id.parse::<i64>().unwrap()],
-				)
+				.execute(INSERT_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash, &user_id_int])
 				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+				.context("Failed to insert password reset token into database")?;
 
 			// Send email
 			// We spawn this to not block the request, but we need to handle errors.
 			// For now, let's await it.
-			send_password_reset_email(&state.config, &email, &token).await.map_err(|e| {
-				tracing::error!("Failed to send email: {}", e);
-				GraphQLError::new("Failed to send email")
-			})?;
+			send_password_reset_email(&state.config, &email, &token)
+				.await
+				.context("Failed to send password reset email")
+				.map_err(|e| AppError::from(e).extend_graphql())?;
 		}
 
 		// Always return true to prevent user enumeration
@@ -665,31 +724,36 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		validate_password(&new_password)?;
+		validate_password(&new_password).map_err(GraphQLError::from)?;
 
 		let token_hash = blake3::hash(token.as_bytes()).to_string();
 
 		let row_opt = client
 			.query_opt(SELECT_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash])
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to query password reset token from database")?;
 
 		if let Some(row) = row_opt {
-			let user_id: i64 = row.get("user_id");
+			let user_id: i64 =
+				row.try_get("user_id").context("Failed to get user ID from database row")?;
 
 			let salt = SaltString::generate(&mut OsRng);
 			let new_hash = Argon2::default()
 				.hash_password(new_password.as_bytes(), &salt)
-				.map_err(|e| GraphQLError::new(format!("Hashing error: {e}")))?
+				.map_err(|e| anyhow::anyhow!(e).context("Failed to hash new password"))
+				.map_err(GraphQLError::from)?
 				.to_string();
 
 			client
 				.execute(UPDATE_USER_PASSWORD_QUERY, &[&new_hash, &user_id])
 				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+				.context("Failed to update user password in database")?;
 
 			// Delete token
-			client.execute(DELETE_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash]).await?;
+			client
+				.execute(DELETE_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash])
+				.await
+				.context("Failed to delete password reset token from database")?;
 
 			Ok(true)
 		} else {
@@ -708,10 +772,14 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		let target_id = id.parse::<i64>().map_err(|_| GraphQLError::new("Invalid ID"))?;
+		let target_id =
+			id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from)?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
 		let current_user = User::by_id(ctx, user_id.0)
 			.await?
@@ -719,7 +787,10 @@ impl Mutation {
 		let casbin_user = CasbinUser { id: user_id.0, role: current_user.role.to_string() };
 		let casbin_obj = CasbinObject { user_id: target_id };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "manage_user"))? {
+		if !enforcer
+			.enforce((casbin_user, casbin_obj, "manage_user"))
+			.map_err(GraphQLError::from)?
+		{
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
@@ -735,9 +806,9 @@ impl Mutation {
 			// Check email uniqueness if changed
 			let count: i64 = client
 				.query_one(SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, &[&new_email, &target_id])
-				.await
-				.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?
-				.get(0);
+				.await?
+				.try_get(0)
+				.context("Failed to get user count from database")?;
 
 			if count > 0 {
 				return Err(GraphQLError::new("Email already in use"));
@@ -756,8 +827,10 @@ impl Mutation {
 				&[&target_user.role.to_string(), &target_user.email, &target_id],
 			)
 			.await
-			.map_err(|e| GraphQLError::new(format!("Database error: {e}")))?;
+			.context("Failed to update user in database")?;
 
 		User::try_from(row)
+			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
+			.map_err(GraphQLError::from)
 	}
 }

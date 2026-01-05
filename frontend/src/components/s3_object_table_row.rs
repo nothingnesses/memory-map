@@ -5,7 +5,7 @@ use crate::{
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 		update_s3_object::{
 			PublicityOverride, UpdateS3ObjectMutation,
-			update_s3_object_mutation::{LocationInput, Variables},
+			update_s3_object_mutation::{LocationInput, UpdateS3ObjectInput, Variables},
 		},
 	},
 };
@@ -27,8 +27,11 @@ pub fn S3ObjectTableRow(
 ) -> impl IntoView {
 	let viewing_object = RwSignal::new(None::<S3Object>);
 	let open_view = RwSignal::new(false);
-	let toaster = ToasterInjection::expect_context();
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let toaster = use_context::<ToasterInjection>();
+	let config = match use_context::<AppConfig>() {
+		Some(c) => c,
+		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+	};
 
 	let show_allowed_users_dialog = RwSignal::new(false);
 	let allowed_users_input = RwSignal::new(String::new());
@@ -61,27 +64,33 @@ pub fn S3ObjectTableRow(
 			let made_on = s3_object.made_on;
 
 			let variables = Variables {
-				id: s3_object.id.clone(),
-				name: s3_object.name.clone(),
-				made_on,
-				location,
-				publicity: new_publicity,
-				allowed_users: new_allowed_users.clone().or(Some(s3_object.allowed_users.clone())),
+				input: UpdateS3ObjectInput {
+					id: s3_object.id.clone(),
+					name: s3_object.name.clone(),
+					made_on,
+					location,
+					publicity: new_publicity,
+					allowed_users: new_allowed_users
+						.clone()
+						.or(Some(s3_object.allowed_users.clone())),
+				},
 			};
 
 			match UpdateS3ObjectMutation::run(api_url, variables).await {
 				Ok(updated_obj) => {
-					toaster.dispatch_toast(
-						move || {
-							view! {
-								<Toast>
-									<ToastTitle>"Success"</ToastTitle>
-									<ToastBody>"Object publicity updated"</ToastBody>
-								</Toast>
-							}
-						},
-						ToastOptions::default().with_intent(ToastIntent::Success),
-					);
+					if let Some(toaster) = toaster {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Success"</ToastTitle>
+										<ToastBody>"Object publicity updated"</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Success),
+						);
+					}
 
 					// Check for missing users if we explicitly set them
 					if let Some(requested_users) = new_allowed_users {
@@ -92,7 +101,9 @@ pub fn S3ObjectTableRow(
 							.filter(|u| !returned_users.contains(u))
 							.collect();
 
-						if !missing_users.is_empty() {
+						if !missing_users.is_empty()
+							&& let Some(toaster) = toaster
+						{
 							toaster.dispatch_toast(
 								move || {
 									view! {
@@ -114,17 +125,19 @@ pub fn S3ObjectTableRow(
 				}
 				Err(e) => {
 					debug_error!("Failed to update object: {:?}", e);
-					toaster.dispatch_toast(
-						move || {
-							view! {
-								<Toast>
-									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
-								</Toast>
-							}
-						},
-						ToastOptions::default().with_intent(ToastIntent::Error),
-					);
+					if let Some(toaster) = toaster {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Error"</ToastTitle>
+										<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Error),
+						);
+					}
 					// Revert local state on error
 					local_publicity.set(s3_object.publicity);
 				}
@@ -167,19 +180,21 @@ pub fn S3ObjectTableRow(
 			.collect();
 
 		if !invalid_emails.is_empty() {
-			toaster.dispatch_toast(
-				move || {
-					view! {
-						<Toast>
-							<ToastTitle>"Invalid Emails"</ToastTitle>
-							<ToastBody>
-								{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
-							</ToastBody>
-						</Toast>
-					}
-				},
-				ToastOptions::default().with_intent(ToastIntent::Error),
-			);
+			if let Some(toaster) = toaster {
+				toaster.dispatch_toast(
+					move || {
+						view! {
+							<Toast>
+								<ToastTitle>"Invalid Emails"</ToastTitle>
+								<ToastBody>
+									{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
+								</ToastBody>
+							</Toast>
+						}
+					},
+					ToastOptions::default().with_intent(ToastIntent::Error),
+				);
+			}
 			return;
 		}
 
@@ -323,4 +338,5 @@ pub fn S3ObjectTableRow(
 			</DialogSurface>
 		</Dialog>
 	}
+	.into_any()
 }

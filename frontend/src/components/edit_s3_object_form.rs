@@ -9,13 +9,14 @@ use crate::{
 		TITLE_SUCCESS, TITLE_WARNING,
 	},
 	dump_errors,
+	errors::use_context_safe,
 	graphql_queries::{
 		s3_object_by_id::S3ObjectByIdQuery,
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
 		types::PublicityOverride,
 		update_s3_object::{
 			UpdateS3ObjectMutation,
-			update_s3_object_mutation::{LocationInput, Variables},
+			update_s3_object_mutation::{LocationInput, UpdateS3ObjectInput, Variables},
 		},
 	},
 	iso_to_local_datetime_value, js_date_value_to_iso,
@@ -50,7 +51,10 @@ pub fn EditS3ObjectForm(
 	on_cancel: Callback<()>,
 ) -> impl IntoView {
 	// Resource to fetch the S3 object data when the ID changes.
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+	};
 	let config = StoredValue::new(config);
 	let s3_object_resource = LocalResource::new(move || {
 		let id = id.get();
@@ -64,7 +68,7 @@ pub fn EditS3ObjectForm(
 		}
 	});
 
-	let toaster = ToasterInjection::expect_context();
+	let toaster = use_context::<ToasterInjection>();
 
 	// Form state signals
 	let (name, set_name) = signal(String::new());
@@ -146,46 +150,52 @@ pub fn EditS3ObjectForm(
 			.collect();
 
 		if !invalid_emails.is_empty() {
-			toaster.dispatch_toast(
-				move || {
-					view! {
-						<Toast>
-							<ToastTitle>{TITLE_INVALID_EMAILS}</ToastTitle>
-							<ToastBody>
-								{format!("{MSG_INVALID_EMAILS}{}", invalid_emails.join(", "))}
-							</ToastBody>
-						</Toast>
-					}
-				},
-				ToastOptions::default().with_intent(ToastIntent::Error),
-			);
+			if let Some(toaster) = toaster {
+				toaster.dispatch_toast(
+					move || {
+						view! {
+							<Toast>
+								<ToastTitle>{TITLE_INVALID_EMAILS}</ToastTitle>
+								<ToastBody>
+									{format!("{MSG_INVALID_EMAILS}{}", invalid_emails.join(", "))}
+								</ToastBody>
+							</Toast>
+						}
+					},
+					ToastOptions::default().with_intent(ToastIntent::Error),
+				);
+			}
 			return;
 		}
 
 		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables = Variables {
-				id: id.get().to_string(),
-				name: name_val,
-				made_on: made_on_iso,
-				location,
-				publicity: publicity_val,
-				allowed_users: Some(allowed_users_vec.clone()),
+				input: UpdateS3ObjectInput {
+					id: id.get().to_string(),
+					name: name_val,
+					made_on: made_on_iso,
+					location,
+					publicity: publicity_val,
+					allowed_users: Some(allowed_users_vec.clone()),
+				},
 			};
 
 			match UpdateS3ObjectMutation::run(api_url, variables).await {
 				Ok(updated_obj) => {
-					toaster.dispatch_toast(
-						move || {
-							view! {
-								<Toast>
-									<ToastTitle>{TITLE_SUCCESS}</ToastTitle>
-									<ToastBody>{MSG_OBJECT_UPDATED}</ToastBody>
-								</Toast>
-							}
-						},
-						ToastOptions::default().with_intent(ToastIntent::Success),
-					);
+					if let Some(toaster) = toaster {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>{TITLE_SUCCESS}</ToastTitle>
+										<ToastBody>{MSG_OBJECT_UPDATED}</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Success),
+						);
+					}
 
 					// Check for missing users
 					let returned_users: HashSet<String> =
@@ -195,7 +205,9 @@ pub fn EditS3ObjectForm(
 						.filter(|u| !returned_users.contains(u))
 						.collect();
 
-					if !missing_users.is_empty() {
+					if !missing_users.is_empty()
+						&& let Some(toaster) = toaster
+					{
 						toaster.dispatch_toast(
 							move || {
 								view! {
@@ -215,19 +227,21 @@ pub fn EditS3ObjectForm(
 				}
 				Err(e) => {
 					debug_error!("Failed to update object: {:?}", e);
-					toaster.dispatch_toast(
-						move || {
-							view! {
-								<Toast>
-									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>
-										{format!("{MSG_UPDATE_FAILED}{e}")}
-									</ToastBody>
-								</Toast>
-							}
-						},
-						ToastOptions::default().with_intent(ToastIntent::Error),
-					);
+					if let Some(toaster) = toaster {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>"Error"</ToastTitle>
+										<ToastBody>
+											{format!("{MSG_UPDATE_FAILED}{e}")}
+										</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Error),
+						);
+					}
 				}
 			}
 		});
@@ -362,4 +376,5 @@ pub fn EditS3ObjectForm(
 			</Suspense>
 		</ErrorBoundary>
 	}
+	.into_any()
 }

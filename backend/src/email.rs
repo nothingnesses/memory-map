@@ -8,7 +8,7 @@ pub async fn send_password_reset_email(
 	config: &Config,
 	to_email: &str,
 	token: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
 	let email = Message::builder()
 		.from(config.smtp_from.parse()?)
 		.to(to_email.parse()?)

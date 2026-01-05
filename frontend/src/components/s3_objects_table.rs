@@ -41,7 +41,10 @@ pub fn S3ObjectsTable(
 	))]
 	delete_selected_button_content: CallbackAnyView,
 ) -> impl IntoView {
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context::<AppConfig>() {
+		Some(c) => c,
+		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+	};
 	let delete_objects = move |objects: Vec<S3Object>| {
 		let api_url = config.api_url.clone();
 		spawn_local(async move {
@@ -233,4 +236,5 @@ pub fn S3ObjectsTable(
 			</Dialog>
 		</ErrorBoundary>
 	}
+	.into_any()
 }

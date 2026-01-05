@@ -28,8 +28,14 @@ pub fn ResetPassword() -> impl IntoView {
 		let password_val = new_password.get();
 		let confirm_val = confirm_password.get();
 		let navigate = navigate.clone();
-		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
-		let api_url = config.api_url.clone();
+		let config = use_context::<AppConfig>();
+		let api_url = match config {
+			Some(c) => c.api_url.clone(),
+			None => {
+				error_message.set(Some("System Error: Configuration missing".to_string()));
+				return;
+			}
+		};
 
 		if token_val.is_empty() {
 			error_message.set(Some(MSG_INVALID_TOKEN.to_string()));

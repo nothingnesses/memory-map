@@ -4,6 +4,7 @@ use crate::{
 		BUTTON_RESET_PASSWORD, BUTTON_SAVE, HEADER_ACTIONS, HEADER_CREATED_AT, HEADER_EMAIL,
 		HEADER_ID, HEADER_ROLE, LOADING_TEXT, OPTION_ADMIN, OPTION_USER, TITLE_USERS,
 	},
+	errors::{AppError, use_context_safe, use_error_context},
 	graphql_queries::{
 		admin_update_user::{AdminUpdateUserMutation, admin_update_user_mutation},
 		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
@@ -16,7 +17,11 @@ use thaw::*;
 #[component]
 pub fn Users() -> impl IntoView {
 	let trigger: RwSignal<usize> = RwSignal::new(0);
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let error_ctx = use_error_context();
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+	};
 	let config = StoredValue::new(config);
 	let users_resource = LocalResource::new(move || {
 		trigger.get();
@@ -29,7 +34,9 @@ pub fn Users() -> impl IntoView {
 		spawn_local(async move {
 			let variables =
 				admin_update_user_mutation::Variables { id, role: None, email: Some(email) };
-			let _ = AdminUpdateUserMutation::run(api_url, variables).await;
+			if let Err(e) = AdminUpdateUserMutation::run(api_url, variables).await {
+				error_ctx.report(AppError::GraphQL(e.to_string()));
+			}
 			loading.set(false);
 			trigger.update(|n| *n = n.wrapping_add(1));
 		});
@@ -42,7 +49,9 @@ pub fn Users() -> impl IntoView {
 		spawn_local(async move {
 			let variables =
 				admin_update_user_mutation::Variables { id, role: Some(new_role), email: None };
-			let _ = AdminUpdateUserMutation::run(api_url, variables).await;
+			if let Err(e) = AdminUpdateUserMutation::run(api_url, variables).await {
+				error_ctx.report(AppError::GraphQL(e.to_string()));
+			}
 			loading.set(false);
 			trigger.update(|n| *n = n.wrapping_add(1));
 		});
@@ -54,7 +63,9 @@ pub fn Users() -> impl IntoView {
 		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
 			let variables = request_password_reset_mutation::Variables { email };
-			let _ = RequestPasswordResetMutation::run(api_url, variables).await;
+			if let Err(e) = RequestPasswordResetMutation::run(api_url, variables).await {
+				error_ctx.report(AppError::GraphQL(e.to_string()));
+			}
 			loading.set(false);
 		});
 	};
@@ -63,8 +74,24 @@ pub fn Users() -> impl IntoView {
 	view! {
 		<div class="container mx-auto pt-10">
 			<h1 class="text-2xl font-bold mb-4">{TITLE_USERS}</h1>
-			<Table>
-				<TableHeader>
+			<ErrorBoundary fallback=move |errors| {
+				view! {
+					<div class="p-4 bg-red-100 text-red-700 rounded">
+						<p class="font-bold">"Failed to load users"</p>
+						<ul>
+							{move || {
+								errors
+									.get()
+									.into_iter()
+									.map(|(_, e)| view! { <li>{e.to_string()}</li> })
+									.collect_view()
+							}}
+						</ul>
+					</div>
+				}
+			}>
+				<Table>
+					<TableHeader>
 					<TableRow>
 						<TableHeaderCell>{HEADER_ID}</TableHeaderCell>
 						<TableHeaderCell>{HEADER_EMAIL}</TableHeaderCell>
@@ -108,13 +135,10 @@ pub fn Users() -> impl IntoView {
 															<Button
 																disabled=is_loading
 																on_click=move |_| {
-																	update_email_action.with_value(|f| {
-																		f(
-																			id_for_email.clone(),
-																			email.get(),
-																			is_loading,
-																		)
-																	})
+																	update_email_action
+																		.with_value(|f| {
+																			f(id_for_email.clone(), email.get(), is_loading)
+																		})
 																}
 															>
 																{BUTTON_SAVE}
@@ -126,13 +150,14 @@ pub fn Users() -> impl IntoView {
 															<select
 																class="p-2 border rounded bg-white"
 																on:change=move |ev| {
-																	let val = ev
-																		.target()
-																		.unwrap()
-																		.unchecked_into::<HtmlSelectElement>()
-																		.value();
-																	toggle_role_action
-																		.with_value(|f| f(id_for_role.clone(), val, is_loading))
+																	if let Some(target) = ev.target() {
+																		let Ok(select) = target.dyn_into::<HtmlSelectElement>() else {
+																			return;
+																		};
+																		let val = select.value();
+																		toggle_role_action
+																			.with_value(|f| { f(id_for_role.clone(), val, is_loading) })
+																	}
 																}
 																prop:value=move || match user_role {
 																	UserRole::ADMIN => "admin",
@@ -166,6 +191,8 @@ pub fn Users() -> impl IntoView {
 					</Suspense>
 				</TableBody>
 			</Table>
+			</ErrorBoundary>
 		</div>
 	}
+	.into_any()
 }

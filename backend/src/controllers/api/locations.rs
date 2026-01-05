@@ -1,15 +1,15 @@
 // @todo Use minio::s3::Client::upload_part to do multipart upload
 
-use crate::AppState;
 use crate::graphql::{
 	objects::{location::Location, s3_object::PublicityOverride},
 	queries::mutation::Mutation,
 };
+use crate::{AppState, errors::AppError};
+use anyhow::Context;
 use axum::{
 	Json,
 	body::Bytes,
 	extract::{Multipart, State},
-	http::StatusCode,
 	response::IntoResponse,
 };
 use axum_extra::extract::cookie::PrivateCookieJar;
@@ -31,13 +31,13 @@ pub async fn post(
 	State(state): State<AppState<Manager, Object<Manager>>>,
 	jar: PrivateCookieJar,
 	mut multipart: Multipart,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
 	let user_id = if let Some(cookie) = jar.get("auth_token")
 		&& let Ok(id) = cookie.value().parse::<i64>()
 	{
 		id
 	} else {
-		return StatusCode::UNAUTHORIZED.into_response();
+		return Err(AppError::Unauthorized);
 	};
 
 	let mut latitude: Option<f64> = None;
@@ -45,8 +45,11 @@ pub async fn post(
 	let mut made_on: Option<String> = None;
 	let mut files: Vec<FileData> = Vec::new();
 
-	while let Some(field) = multipart.next_field().await.unwrap() {
-		let name = field.name().unwrap().to_string();
+	while let Some(field) = multipart.next_field().await? {
+		let name = field
+			.name()
+			.ok_or_else(|| AppError::Validation("Multipart field missing name".to_string()))?
+			.to_string();
 
 		match name.as_str() {
 			"latitude" => {
@@ -72,20 +75,30 @@ pub async fn post(
 				}
 			}
 			"files" => {
-				let filename = field.file_name().unwrap_or_default().to_string();
-				let content_type = field.content_type().unwrap_or_default().to_string();
+				let filename = field
+					.file_name()
+					.ok_or_else(|| {
+						AppError::Validation("Multipart field missing filename".to_string())
+					})?
+					.to_string();
+				let content_type = field
+					.content_type()
+					.ok_or_else(|| {
+						AppError::Validation("Multipart field missing content type".to_string())
+					})?
+					.to_string();
 
 				if !ALLOWED_MIME_TYPES.contains(&content_type.as_str()) {
-					return (
-						StatusCode::BAD_REQUEST,
-						format!("Unsupported file type: {content_type}"),
-					)
-						.into_response();
+					return Err(AppError::Validation(format!(
+						"Unsupported file type: {content_type}"
+					)));
 				}
 
-				if let Ok(bytes) = field.bytes().await {
-					files.push(FileData { filename, content_type, bytes });
-				}
+				let bytes = field
+					.bytes()
+					.await
+					.map_err(|e| AppError::Validation(format!("Failed to read bytes: {}", e)))?;
+				files.push(FileData { filename, content_type, bytes });
 			}
 			_ => {}
 		}
@@ -106,15 +119,17 @@ pub async fn post(
 			file.bytes.len()
 		);
 
-		let _ = state
+		state
 			.inner
 			.minio_client
 			.put_object_content(&state.inner.bucket_name, &file.filename, file.bytes)
 			.content_type(file.content_type)
 			.send()
-			.await;
+			.await
+			.context("Failed to upload file to MinIO")?;
 
-		let client = state.inner.pool.get().await.unwrap();
+		let client =
+			state.inner.pool.get().await.context("Failed to get database client from pool")?;
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
 			Some(Location { latitude, longitude })
 		} else {
@@ -133,11 +148,14 @@ pub async fn post(
 		.await
 		{
 			Ok(s3_object) => uploaded_objects.push(s3_object),
-			Err(e) => tracing::error!("Failed to upsert object: {:?}", e),
+			Err(e) => {
+				tracing::error!("Failed to upsert object: {:?}", e);
+				return Err(e);
+			}
 		}
 
 		state.inner.update_last_modified();
 	}
 
-	Json(uploaded_objects).into_response()
+	Ok(Json(uploaded_objects).into_response())
 }

@@ -1,5 +1,6 @@
 use crate::{
 	components::{header::Header, protected_route::ProtectedRoute},
+	errors::{provide_error_context, use_error_context},
 	pages::{
 		account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
 		reset_password::ResetPassword, sign_in::SignIn,
@@ -19,7 +20,10 @@ use std::{
 	error, io,
 	ops::{Add, Deref, Rem, Sub},
 };
-use thaw::{ConfigProvider, ToasterProvider};
+use thaw::{
+	ConfigProvider, Toast, ToastBody, ToastIntent, ToastOptions, ToastTitle, ToasterInjection,
+	ToasterProvider,
+};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 
@@ -27,12 +31,39 @@ use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 pub mod auth;
 mod components;
 pub mod constants;
+pub mod errors;
 pub mod graphql_queries;
 mod pages;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct AppConfig {
 	pub api_url: String,
+}
+
+/// Global error display component that listens to the ErrorContext.
+#[component]
+fn GlobalErrorDisplay() -> impl IntoView {
+	let error_ctx = use_error_context();
+	let error = error_ctx.error;
+	let toaster = use_context::<ToasterInjection>();
+
+	Effect::new(move |_| {
+		if let Some(e) = error.get()
+			&& let Some(toaster) = toaster
+		{
+			toaster.dispatch_toast(
+				move || {
+					view! {
+						<Toast>
+							<ToastTitle>"Error"</ToastTitle>
+							<ToastBody>{e.to_string()}</ToastBody>
+						</Toast>
+					}
+				},
+				ToastOptions::default().with_intent(ToastIntent::Error),
+			);
+		}
+	});
 }
 
 /// The Shell component wraps the main application content.
@@ -133,6 +164,7 @@ fn Shell(children: Children) -> impl IntoView {
 		<div class="relative group/page scroll-smooth" node_ref=page_wrapper_ref>
 			<Header menu_open=menu_open />
 			<main class="relative pt-150px">{children()}</main>
+			<GlobalErrorDisplay />
 		</div>
 	}
 }
@@ -142,9 +174,13 @@ fn Shell(children: Children) -> impl IntoView {
 pub fn App() -> impl IntoView {
 	// Provides context that manages stylesheets, titles, meta tags, etc.
 	provide_meta_context();
+	provide_error_context();
 
 	let trigger: RwSignal<usize> = RwSignal::new(0);
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context::<AppConfig>() {
+		Some(c) => c,
+		None => return view! { <p>"System Error: Configuration missing"</p> }.into_any(),
+	};
 	let api_url = config.api_url.clone();
 	let user_resource = LocalResource::new(move || {
 		trigger.get();
@@ -217,6 +253,7 @@ pub fn App() -> impl IntoView {
 			</ToasterProvider>
 		</ConfigProvider>
 	}
+	.into_any()
 }
 
 /// [Copied from here](https://docs.rs/graphql_client/0.14.0/src/graphql_client/reqwest.rs.html#8-17),
@@ -320,13 +357,16 @@ pub trait ModularAdd {
 
 impl<T> ModularAdd for T
 where
-	T: Copy + PartialOrd + Add<Output = T> + Rem<Output = T>,
+	T: Copy + PartialOrd + Add<Output = T> + Sub<Output = T> + Rem<Output = T> + Default,
 {
 	fn modular_add(
 		self,
 		addend: Self,
 		maximum: Self,
 	) -> Self {
+		if maximum == T::default() {
+			return self;
+		}
 		(self + addend) % maximum
 	}
 }
@@ -341,13 +381,16 @@ pub trait ModularSubtract {
 
 impl<T> ModularSubtract for T
 where
-	T: Copy + PartialOrd + Sub<Output = T> + Rem<Output = T>,
+	T: Copy + PartialOrd + Sub<Output = T> + Rem<Output = T> + Default,
 {
 	fn modular_subtract(
 		self,
 		subtrahend: Self,
 		maximum: Self,
 	) -> Self {
+		if maximum == T::default() {
+			return self;
+		}
 		let effective_subtrahend = subtrahend % maximum;
 
 		if effective_subtrahend > self {

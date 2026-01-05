@@ -5,6 +5,7 @@ use crate::{
 		BUTTON_FORGOT_PASSWORD, BUTTON_SIGN_IN, LABEL_EMAIL, LABEL_PASSWORD, LINK_REGISTER,
 		MSG_ENTER_EMAIL_RESET, MSG_RESET_EMAIL_SENT, TITLE_SIGN_IN,
 	},
+	errors::{AppError, use_context_safe, use_error_context},
 	graphql_queries::{
 		config::ConfigQuery,
 		login::{LoginMutation, login_mutation},
@@ -22,8 +23,14 @@ pub fn SignIn() -> impl IntoView {
 	let error_message = RwSignal::new(Option::<String>::None);
 	let success_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
+	let error_ctx = use_error_context();
 
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => {
+			return view! { <p>"System Error: Configuration missing"</p> }.into_any();
+		}
+	};
 	let api_url = config.api_url.clone();
 	let config_resource = LocalResource::new(move || {
 		let api_url = api_url.clone();
@@ -33,8 +40,13 @@ pub fn SignIn() -> impl IntoView {
 	let on_sign_in = move |_| {
 		let email_val = email.get();
 		let password_val = password.get();
-		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
-		let api_url = config.api_url.clone();
+		let config = use_context_safe::<AppConfig>("AppConfig");
+		let api_url = match config {
+			Some(c) => c.api_url.clone(),
+			None => {
+				return;
+			}
+		};
 
 		is_loading.set(true);
 		spawn_local(async move {
@@ -45,7 +57,7 @@ pub fn SignIn() -> impl IntoView {
 					let _ = window().location().set_href("/");
 				}
 				Err(e) => {
-					error_message.set(Some(e.to_string()));
+					error_ctx.report(AppError::Authentication(e.to_string()));
 				}
 			}
 			is_loading.set(false);
@@ -58,8 +70,13 @@ pub fn SignIn() -> impl IntoView {
 			error_message.set(Some(MSG_ENTER_EMAIL_RESET.to_string()));
 			return;
 		}
-		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
-		let api_url = config.api_url.clone();
+		let config = use_context_safe::<AppConfig>("AppConfig");
+		let api_url = match config {
+			Some(c) => c.api_url.clone(),
+			None => {
+				return;
+			}
+		};
 
 		is_loading.set(true);
 		spawn_local(async move {
@@ -71,7 +88,7 @@ pub fn SignIn() -> impl IntoView {
 					error_message.set(None);
 				}
 				Err(e) => {
-					error_message.set(Some(e.to_string()));
+					error_ctx.report(AppError::Authentication(e.to_string()));
 				}
 			}
 			is_loading.set(false);
@@ -153,4 +170,5 @@ pub fn SignIn() -> impl IntoView {
 			</form>
 		</div>
 	}
+	.into_any()
 }

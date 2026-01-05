@@ -15,7 +15,9 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<PublicConfig, GraphQLError> {
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		Ok(PublicConfig { enable_registration: state.config.enable_registration })
 	}
 
@@ -37,7 +39,9 @@ impl Query {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
@@ -46,7 +50,10 @@ impl Query {
 		// Dummy object for system-level permission
 		let casbin_obj = CasbinObject { user_id: 0 };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "read_all_users"))? {
+		if !enforcer
+			.enforce((casbin_user, casbin_obj, "read_all_users"))
+			.map_err(GraphQLError::from)?
+		{
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
@@ -64,12 +71,14 @@ impl Query {
 		let object = S3Object::where_id(ctx, id).await?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		let enforcer = state.enforcer.read().await;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 		let casbin_obj = CasbinObject { user_id: object.user_id.unwrap_or(0) };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "read"))? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
@@ -87,12 +96,14 @@ impl Query {
 		let object = S3Object::where_name(ctx, name).await?;
 
 		// Check permissions
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = ctx
+			.data::<Arc<SharedState<Manager, Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		let enforcer = state.enforcer.read().await;
 		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 		let casbin_obj = CasbinObject { user_id: object.user_id.unwrap_or(0) };
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "read"))? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
 
@@ -111,12 +122,17 @@ impl Query {
 				.ok_or_else(|| GraphQLError::new("User not found"))?;
 
 			// Check permissions
-			let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+			let state = ctx.data::<Arc<SharedState<Manager, Client>>>().map_err(|e| {
+				anyhow::anyhow!(e.message).context("Shared state not found in context")
+			})?;
 			let enforcer = state.enforcer.read().await;
 			let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
 			let casbin_obj = CasbinObject { user_id: 0 }; // System level object
 
-			if enforcer.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))? {
+			if enforcer
+				.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))
+				.map_err(GraphQLError::from)?
+			{
 				return S3Object::all(ctx).await;
 			}
 		}

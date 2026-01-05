@@ -1,19 +1,5 @@
-mutation UpdateS3ObjectMutation(
-	$id: ID!
-	$name: String!
-	$made_on: String
-	$location: LocationInput
-	$publicity: PublicityOverride!
-	$allowedUsers: [String!]
-) {
-	updateS3Object(
-		id: $id
-		name: $name
-		madeOn: $made_on
-		location: $location
-		publicity: $publicity
-		allowedUsers: $allowedUsers
-	) {
+mutation UpdateS3ObjectMutation($input: UpdateS3ObjectInput!) {
+	updateS3Object(input: $input) {
 		id
 		name
 		madeOn
