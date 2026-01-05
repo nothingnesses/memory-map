@@ -19,7 +19,6 @@ pub struct S3ObjectsQuery;
 pub use crate::graphql_queries::types::PublicityOverride;
 
 impl S3ObjectsQuery {
-	// @todo Add better error-handling
 	pub async fn run(api_url: String) -> Result<Vec<S3Object>, Error> {
 		Ok(post_graphql_with_auth::<S3ObjectsQuery, _>(
 			&reqwest::Client::new(),

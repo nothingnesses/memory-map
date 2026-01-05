@@ -19,7 +19,6 @@ pub struct UpsertS3ObjectMutation;
 pub use crate::graphql_queries::types::PublicityOverride;
 
 impl UpsertS3ObjectMutation {
-	// @todo Add better error-handling
 	pub async fn run(
 		api_url: String,
 		variables: Variables,

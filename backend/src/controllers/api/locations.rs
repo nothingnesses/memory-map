@@ -1,9 +1,3 @@
-// @todo Use minio::s3::Client::upload_part to do multipart upload
-
-use crate::graphql::{
-	objects::{location::Location, s3_object::PublicityOverride},
-	queries::mutation::Mutation,
-};
 use crate::{
 	AppState,
 	constants::{
@@ -12,6 +6,10 @@ use crate::{
 		ERR_UPLOAD_MINIO,
 	},
 	errors::AppError,
+	graphql::{
+		objects::{location::Location, s3_object::PublicityOverride},
+		queries::mutation::Mutation,
+	},
 };
 use anyhow::Context;
 use axum::{
@@ -33,7 +31,6 @@ struct FileData {
 	bytes: Bytes,
 }
 
-// @todo Modify to return both status code and location and filenames added.
 #[debug_handler]
 pub async fn post(
 	State(state): State<AppState<Manager, Object<Manager>>>,

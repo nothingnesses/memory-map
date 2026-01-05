@@ -19,7 +19,6 @@ pub struct UpdateS3ObjectMutation;
 pub use crate::graphql_queries::types::PublicityOverride;
 
 impl UpdateS3ObjectMutation {
-	// @todo Add better error-handling
 	/// Executes the UpdateS3ObjectQuery against the GraphQL API.
 	pub async fn run(
 		api_url: String,

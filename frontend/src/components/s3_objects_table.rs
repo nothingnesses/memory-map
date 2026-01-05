@@ -1,5 +1,3 @@
-// @todo Add better error-handling to prevent errors from prevent table from displaying. Errors should just be logged in console.
-
 use crate::{
 	AppConfig, CallbackAnyView,
 	components::s3_object_table_rows::S3ObjectTableRows,

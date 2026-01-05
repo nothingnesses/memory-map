@@ -19,7 +19,6 @@ pub struct S3ObjectByIdQuery;
 pub use crate::graphql_queries::types::PublicityOverride;
 
 impl S3ObjectByIdQuery {
-	// @todo Add better error-handling
 	pub async fn run(
 		api_url: String,
 		id: i64,
