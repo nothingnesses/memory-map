@@ -190,11 +190,13 @@
                 pkgs.trunk
                 # https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
                 pkgs.dart-sass
-                # Stable had 0.2.100 and we needed 0.2.104, so we're using unstable here
+                # Stable had 0.2.105 and we needed 0.2.106, so we're using unstable here
                 pkgs.unstable.wasm-bindgen-cli
                 # Needed for building in release mode
                 pkgs.binaryen
                 # pkgs.tailwindcss
+                # For finding function calls
+                pkgs.ast-grep
               ];
 
               env = {

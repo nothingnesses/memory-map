@@ -6,10 +6,11 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0"
 console_error_panic_hook = "0.1"
 console_log = "1"
 email_address = "0.2"
-graphql_client = "0.14"
+graphql_client = "0.15"
 leptos = { version = "0.8", features = ["csr"] }
 leptos-leaflet = { version = "0.10", features = [
 	"csr",
@@ -28,13 +29,13 @@ lucide-leptos = { version = "2", features = [
 	"text"
 ] }
 mime = "0.3"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 shared = { path = "../shared" }
 # @todo Bump this once out of beta.
 thaw = { version = "0.5.0-beta", features = ["csr"] }
-tokio = { version = "1.48", features = [
+tokio = { version = "1.49", features = [
 	"io-util",
 	"macros",
 	"rt",
@@ -43,8 +44,6 @@ tokio = { version = "1.48", features = [
 ] }
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
-	"Blob",
-	"Document",
 	"Headers",
 	"MediaQueryList",
 	"Request",
@@ -60,15 +59,9 @@ web-sys = { version = "0.3", features = [
 # strum_macros = "0.25"
 
 [dev-dependencies]
-# Locked to =0.2.104 since that's the latest available on nixpkgs
-wasm-bindgen = "=0.2.104"
+# Locked to =0.2.106 since that's the latest available on nixpkgs
+wasm-bindgen = "=0.2.106"
 wasm-bindgen-test = "0.3"
-web-sys = { version = "0.3", features = [
-	"Blob",
-	"Document",
-	"MediaQueryList",
-	"Window"
-] }
 
 [profile.release]
 opt-level = "z"
