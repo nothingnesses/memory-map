@@ -1,6 +1,7 @@
 use crate::{
 	AppConfig, LocationStrings,
 	components::location_marker::LocationMarker,
+	constants::ERR_SYSTEM_CONFIG_MISSING,
 	dump_errors,
 	graphql_queries::s3_objects::{
 		S3ObjectsQuery, s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
@@ -46,7 +47,10 @@ fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 /// Location markers to add to the map.
 #[component]
 pub fn LocationMarkers() -> impl IntoView {
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context::<AppConfig>() {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
+	};
 	let s3_objects_resource =
 		LocalResource::new(move || S3ObjectsQuery::run(config.api_url.clone()));
 	view! {
@@ -65,4 +69,5 @@ pub fn LocationMarkers() -> impl IntoView {
 			</Suspense>
 		</ErrorBoundary>
 	}
+	.into_any()
 }

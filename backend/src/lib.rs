@@ -1,3 +1,4 @@
+// Force recompile
 use async_graphql::{
 	http::GraphiQLSource,
 	{Context, Error as GraphQLError},
@@ -24,6 +25,7 @@ pub mod constants;
 pub mod controllers;
 pub mod db;
 pub mod email;
+pub mod errors;
 pub mod graphql;
 
 #[derive(Debug, serde::Deserialize, Clone)]
@@ -46,11 +48,12 @@ pub struct Config {
 }
 
 impl Config {
-	pub fn from_env() -> Result<Self, config::ConfigError> {
-		config::Config::builder()
+	pub fn from_env() -> Result<Self, errors::AppError> {
+		let cfg = config::Config::builder()
 			.add_source(config::Environment::default().separator("__"))
-			.build()?
-			.try_deserialize()
+			.build()
+			.map_err(errors::AppError::from)?;
+		cfg.try_deserialize().map_err(errors::AppError::from)
 	}
 }
 
@@ -77,7 +80,13 @@ impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
 	pub fn update_last_modified(&self) {
-		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+		let now = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.map(|d| d.as_millis() as u64)
+			.unwrap_or_else(|e| {
+				tracing::error!("System time is before UNIX EPOCH: {}", e);
+				0
+			});
 		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
 		self.response_cache.invalidate_all();
 	}
@@ -150,18 +159,18 @@ pub async fn graphiql() -> impl IntoResponse {
 	response::Html(GraphiQLSource::build().endpoint("/").finish())
 }
 
-pub fn parse_latitude(latitude: f64) -> Result<f64, Box<dyn std::error::Error>> {
+pub fn parse_latitude(latitude: f64) -> Result<f64, errors::AppError> {
 	if (-90.0..=90.0).contains(&latitude) {
 		return Ok(latitude);
 	}
-	Err(format!("{latitude} is not a valid latitude value.").into())
+	Err(errors::AppError::Validation(format!("{latitude} is not a valid latitude value.")))
 }
 
-pub fn parse_longitude(longitude: f64) -> Result<f64, Box<dyn std::error::Error>> {
+pub fn parse_longitude(longitude: f64) -> Result<f64, errors::AppError> {
 	if (-180.0..=180.0).contains(&longitude) {
 		return Ok(longitude);
 	}
-	Err(format!("{longitude} is not a valid longitude value.").into())
+	Err(errors::AppError::Validation(format!("{longitude} is not a valid longitude value.")))
 }
 
 #[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]

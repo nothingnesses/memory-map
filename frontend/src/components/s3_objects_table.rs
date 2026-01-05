@@ -4,9 +4,10 @@ use crate::{
 	AppConfig, CallbackAnyView,
 	components::s3_object_table_rows::S3ObjectTableRows,
 	constants::{
-		BUTTON_CLOSE, BUTTON_DELETE_SELECTED, BUTTON_NO, BUTTON_YES, HEADER_ACTIONS,
-		HEADER_CONTENT_TYPE, HEADER_ID, HEADER_LOCATION, HEADER_MADE_ON, HEADER_NAME,
-		HEADER_SELECT, HEADER_VIEW, MSG_CONFIRM_DELETE, MSG_DELETE_FAILED, MSG_DELETE_SUCCESS,
+		BUTTON_CLOSE, BUTTON_DELETE_SELECTED, BUTTON_NO, BUTTON_YES, ERR_SYSTEM_CONFIG_MISSING,
+		HEADER_ACTIONS, HEADER_CONTENT_TYPE, HEADER_ID, HEADER_LOCATION, HEADER_MADE_ON,
+		HEADER_NAME, HEADER_SELECT, HEADER_VIEW, MSG_CONFIRM_DELETE, MSG_DELETE_FAILED,
+		MSG_DELETE_SUCCESS,
 	},
 	dump_errors,
 	graphql_queries::{
@@ -41,7 +42,10 @@ pub fn S3ObjectsTable(
 	))]
 	delete_selected_button_content: CallbackAnyView,
 ) -> impl IntoView {
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context::<AppConfig>() {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
+	};
 	let delete_objects = move |objects: Vec<S3Object>| {
 		let api_url = config.api_url.clone();
 		spawn_local(async move {
@@ -233,4 +237,5 @@ pub fn S3ObjectsTable(
 			</Dialog>
 		</ErrorBoundary>
 	}
+	.into_any()
 }

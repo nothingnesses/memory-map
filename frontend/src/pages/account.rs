@@ -3,12 +3,14 @@ use crate::{
 	auth::UserContext,
 	components::password_input::PasswordInput,
 	constants::{
-		BUTTON_UPDATE_EMAIL, BUTTON_UPDATE_PASSWORD, LABEL_CONFIRM_NEW_PASSWORD,
-		LABEL_DEFAULT_PUBLICITY, LABEL_NEW_EMAIL, LABEL_NEW_PASSWORD, LABEL_OLD_PASSWORD,
-		MSG_EMAIL_UPDATED, MSG_NEW_PASSWORDS_DO_NOT_MATCH, MSG_PASSWORD_UPDATED,
-		MSG_PUBLICITY_UPDATED, OPTION_PRIVATE, OPTION_PUBLIC, TITLE_ACCOUNT_SETTINGS,
-		TITLE_CHANGE_EMAIL, TITLE_CHANGE_PASSWORD, TITLE_DEFAULT_PUBLICITY,
+		BUTTON_UPDATE_EMAIL, BUTTON_UPDATE_PASSWORD, ERR_SYSTEM_CONFIG_MISSING,
+		ERR_SYSTEM_USER_CONTEXT_MISSING_MSG, LABEL_CONFIRM_NEW_PASSWORD, LABEL_DEFAULT_PUBLICITY,
+		LABEL_NEW_EMAIL, LABEL_NEW_PASSWORD, LABEL_OLD_PASSWORD, MSG_EMAIL_UPDATED,
+		MSG_NEW_PASSWORDS_DO_NOT_MATCH, MSG_PASSWORD_UPDATED, MSG_PUBLICITY_UPDATED,
+		OPTION_PRIVATE, OPTION_PUBLIC, TITLE_ACCOUNT_SETTINGS, TITLE_CHANGE_EMAIL,
+		TITLE_CHANGE_PASSWORD, TITLE_DEFAULT_PUBLICITY,
 	},
+	errors::use_context_safe,
 	graphql_queries::{
 		change_email::{ChangeEmailMutation, change_email_mutation},
 		change_password::{ChangePasswordMutation, change_password_mutation},
@@ -21,8 +23,14 @@ use thaw::*;
 
 #[component]
 pub fn Account() -> impl IntoView {
-	let user_ctx = use_context::<UserContext>().expect(crate::constants::ERR_USER_CONTEXT_MISSING);
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let user_ctx = match use_context_safe::<UserContext>("UserContext") {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_USER_CONTEXT_MISSING_MSG}</p> }.into_any(),
+	};
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
+	};
 	let config = StoredValue::new(config);
 	let email = RwSignal::new(String::new());
 	let old_password = RwSignal::new(String::new());
@@ -216,4 +224,5 @@ pub fn Account() -> impl IntoView {
 			</div>
 		</div>
 	}
+	.into_any()
 }

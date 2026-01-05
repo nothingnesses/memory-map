@@ -1,3 +1,4 @@
+use anyhow::Context;
 use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
@@ -47,13 +48,13 @@ async fn caching_middleware(
 	_headers: HeaderMap,
 	request: Request<Body>,
 	next: Next,
-) -> impl IntoResponse {
+) -> axum::response::Result<impl IntoResponse> {
 	// 1. Read body
 	let (parts, body) = request.into_parts();
 	// Limit body size to avoid DoS.
 	let bytes = match to_bytes(body, GRAPHQL_BODY_LIMIT_BYTES).await {
 		Ok(b) => b,
-		Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+		Err(_) => return Ok(StatusCode::PAYLOAD_TOO_LARGE.into_response()),
 	};
 
 	// Return early if it's a mutation.
@@ -64,7 +65,7 @@ async fn caching_middleware(
 		&& query.trim().to_lowercase().starts_with("mutation")
 	{
 		let req = Request::from_parts(parts, Body::from(bytes));
-		return next.run(req).await.into_response();
+		return Ok(next.run(req).await.into_response());
 	}
 
 	// 2. Hash body
@@ -86,9 +87,12 @@ async fn caching_middleware(
 
 		let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
 		let etag = format!("\"{last_modified}\"");
-		response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
+		response.headers_mut().insert(
+			"ETag",
+			HeaderValue::from_str(&etag).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+		);
 
-		return response;
+		return Ok(response);
 	}
 
 	// 4. Process request
@@ -99,7 +103,7 @@ async fn caching_middleware(
 	let (parts, body) = response.into_parts();
 	let bytes = match to_bytes(body, BODY_MAX_SIZE_LIMIT_BYTES).await {
 		Ok(b) => b,
-		Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+		Err(_) => return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
 	};
 
 	state.inner.response_cache.insert(hash, bytes.clone()).await;
@@ -108,9 +112,12 @@ async fn caching_middleware(
 
 	let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
 	let etag = format!("\"{last_modified}\"");
-	response.headers_mut().insert("ETag", HeaderValue::from_str(&etag).unwrap());
+	response.headers_mut().insert(
+		"ETag",
+		HeaderValue::from_str(&etag).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+	);
 
-	response
+	Ok(response)
 }
 
 async fn graphql_handler(
@@ -155,40 +162,53 @@ async fn graphql_handler(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
 	// Initialise logging
 	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
 	// Read and parse dotenv config
 	dotenv().ok();
-	let cfg = Config::from_env().unwrap();
+	let cfg = Config::from_env().context("Failed to load configuration from environment")?;
 	let frontend_url = cfg.frontend_url.clone();
 	let cors_allowed_origins = cfg.cors_allowed_origins.clone();
 
 	// Connect to DB
-	let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap();
+	let pool = cfg
+		.pg
+		.create_pool(Some(Runtime::Tokio1), NoTls)
+		.context("Failed to create database pool")?;
 
 	{
-		let mut postgresql_connection = pool.get().await.unwrap();
+		let mut postgresql_connection =
+			pool.get().await.context("Failed to get database connection from pool")?;
 		let postgresql_client = postgresql_connection.deref_mut().deref_mut();
 
 		// Run DB migrations
-		migrations::runner().run_async(postgresql_client).await.unwrap();
+		migrations::runner()
+			.run_async(postgresql_client)
+			.await
+			.context("Failed to run database migrations")?;
 	}
 
 	// Initialise minio client
-	let base_url = cfg.minio_url.parse::<BaseUrl>().unwrap();
+	let base_url = cfg.minio_url.parse::<BaseUrl>().context("Failed to parse MinIO URL")?;
 	tracing::info!("Trying to connect to MinIO at: `{:?}`", base_url);
 
 	let static_provider = StaticProvider::new(&cfg.minio_access_key, &cfg.minio_secret_key, None);
 
-	let minio_client =
-		ClientBuilder::new(base_url).provider(Some(Box::new(static_provider))).build().unwrap();
+	let minio_client = ClientBuilder::new(base_url)
+		.provider(Some(Box::new(static_provider)))
+		.build()
+		.context("Failed to build MinIO client")?;
 
 	let bucket_name = cfg.s3_bucket_name.clone();
 
-	let last_modified =
-		AtomicU64::new(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64);
+	let last_modified = AtomicU64::new(
+		SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.context("System time is before UNIX EPOCH")?
+			.as_millis() as u64,
+	);
 
 	let response_cache = Cache::builder()
 		.max_capacity(CACHE_MAX_CAPACITY)
@@ -196,7 +216,7 @@ async fn main() {
 		.build();
 
 	// Initialise Casbin Enforcer
-	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await.unwrap();
+	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await?;
 	let enforcer = Arc::new(RwLock::new(enforcer));
 
 	// Set up GraphQL
@@ -252,5 +272,9 @@ async fn main() {
 	let bind_addr = format!("{}:{}", cfg.server_host, cfg.server_port);
 	println!("GraphiQL IDE: http://{bind_addr}");
 
-	axum::serve(TcpListener::bind(bind_addr).await.unwrap(), app).await.unwrap();
+	axum::serve(TcpListener::bind(bind_addr).await.context("Failed to bind to address")?, app)
+		.await
+		.context("Failed to start server")?;
+
+	Ok(())
 }

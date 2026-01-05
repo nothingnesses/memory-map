@@ -2,9 +2,10 @@ use crate::{
 	AppConfig,
 	components::password_input::PasswordInput,
 	constants::{
-		BUTTON_REGISTER, LABEL_CONFIRM_PASSWORD, LABEL_EMAIL, LABEL_PASSWORD,
-		MSG_PASSWORDS_DO_NOT_MATCH, TITLE_REGISTER,
+		BUTTON_REGISTER, ERR_SYSTEM_CONFIG_MISSING, LABEL_CONFIRM_PASSWORD, LABEL_EMAIL,
+		LABEL_PASSWORD, MSG_PASSWORDS_DO_NOT_MATCH, TITLE_REGISTER,
 	},
+	errors::use_context_safe,
 	graphql_queries::{
 		config::ConfigQuery,
 		register::{RegisterMutation, register_mutation},
@@ -23,7 +24,10 @@ pub fn Register() -> impl IntoView {
 	let error_message = RwSignal::new(Option::<String>::None);
 	let is_loading = RwSignal::new(false);
 
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
+	};
 	let api_url = config.api_url.clone();
 	let config_resource = LocalResource::new(move || {
 		let api_url = api_url.clone();
@@ -44,8 +48,13 @@ pub fn Register() -> impl IntoView {
 		let password_val = password.get();
 		let confirm_password_val = confirm_password.get();
 		let navigate = navigate.clone();
-		let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
-		let api_url = config.api_url.clone();
+		let config = use_context_safe::<AppConfig>("AppConfig");
+		let api_url = match config {
+			Some(c) => c.api_url.clone(),
+			None => {
+				return;
+			}
+		};
 
 		if password_val != confirm_password_val {
 			error_message.set(Some(MSG_PASSWORDS_DO_NOT_MATCH.to_string()));
@@ -118,4 +127,5 @@ pub fn Register() -> impl IntoView {
 			</form>
 		</div>
 	}
+	.into_any()
 }

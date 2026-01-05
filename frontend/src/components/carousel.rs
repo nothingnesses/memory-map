@@ -87,45 +87,53 @@ pub fn Carousel(
 	};
 
 	let current_rotation = Signal::derive(move || {
-		let s3_objects = s3_objects.get();
-		if let Some(obj) = s3_objects.get(index.get()) {
-			*rotations.get().get(&obj.id).unwrap_or(&0)
-		} else {
-			0
-		}
+		s3_objects.with(|objects| {
+			objects
+				.get(index.get())
+				.and_then(|obj| rotations.get().get(&obj.id).copied())
+				.unwrap_or(0)
+		})
 	});
 
 	let rotate_anti_clockwise = move || {
-		let s3_objects = s3_objects.get();
-		if let Some(obj) = s3_objects.get(index.get()) {
-			rotations.update(|map| {
-				let current = *map.get(&obj.id).unwrap_or(&0);
-				map.insert(obj.id.clone(), current.modular_subtract(1, 4));
-			});
-			debug_log!("called `rotate_anti_clockwise`");
-		}
+		s3_objects.with(|objects| {
+			if let Some(obj) = objects.get(index.get()) {
+				rotations.update(|map| {
+					let current = *map.get(&obj.id).unwrap_or(&0);
+					map.insert(obj.id.clone(), current.modular_subtract(1, 4));
+				});
+				debug_log!("called `rotate_anti_clockwise`");
+			}
+		});
 	};
 	let rotate_clockwise = move || {
-		let s3_objects = s3_objects.get();
-		if let Some(obj) = s3_objects.get(index.get()) {
-			rotations.update(|map| {
-				let current = *map.get(&obj.id).unwrap_or(&0);
-				map.insert(obj.id.clone(), current.modular_add(1, 4));
-			});
-			debug_log!("called `rotate_clockwise`");
-		}
+		s3_objects.with(|objects| {
+			if let Some(obj) = objects.get(index.get()) {
+				rotations.update(|map| {
+					let current = *map.get(&obj.id).unwrap_or(&0);
+					map.insert(obj.id.clone(), current.modular_add(1, 4));
+				});
+				debug_log!("called `rotate_clockwise`");
+			}
+		});
 	};
 	let close = move || {
 		is_open.set(false);
 		debug_log!("called `close`");
 	};
 	let previous_slide = move || {
-		index.set(index.get().modular_subtract(1, s3_objects.get().len()));
-		debug_log!("called `previous_slide`");
+		let len = s3_objects.get().len();
+		if len > 0 {
+			index.set(index.get().modular_subtract(1, len));
+			debug_log!("called `previous_slide` index: {}", index.get());
+		}
 	};
 	let next_slide = move || {
-		index.set(index.get().modular_add(1, s3_objects.get().len()));
-		debug_log!("called `next_slide`");
+		let len = s3_objects.get().len();
+		if len > 0 {
+			index.set(index.get().modular_add(1, len));
+			debug_log!("called `next_slide` index: {}", index.get());
+		}
 	};
 
 	let local_autoplay_duration = RwSignal::new(autoplay_duration.get_untracked());
@@ -288,7 +296,7 @@ pub fn Carousel(
 					is_open.set(true);
 					index.set(s3_object_index.get());
 				}>
-					<S3ObjectComponent s3_object=Signal::derive(move || s3_object.clone()) />
+					<S3ObjectComponent s3_object=Signal::derive(move || Some(s3_object.clone())) />
 				</Button>
 			</ForEnumerate>
 		</div>
@@ -430,7 +438,7 @@ pub fn Carousel(
 											}
 										>
 											<S3ObjectComponent s3_object=Signal::derive(move || {
-												s3_object.clone()
+												Some(s3_object.clone())
 											}) />
 										</Button>
 									</ForEnumerate>
@@ -444,11 +452,15 @@ pub fn Carousel(
 						on_click=move |_| close()
 					></Button>
 					// Content
-					<FullSizeS3Object
-						class="full-size-s3-object absolute w-fit h-auto"
-						rotation=current_rotation
-						s3_object=Signal::derive(move || { s3_objects.get()[index.get()].clone() })
-					/>
+					<Show when=move || { s3_objects.get().get(index.get()).is_some() }>
+						<FullSizeS3Object
+							class="full-size-s3-object absolute w-fit h-auto"
+							rotation=current_rotation
+							s3_object=Signal::derive(move || {
+								s3_objects.get().get(index.get()).cloned()
+							})
+						/>
+					</Show>
 				</div>
 			</DialogSurface>
 		</Dialog>

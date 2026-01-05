@@ -1,11 +1,17 @@
 use crate::{
 	AppConfig, CallbackAnyView,
 	components::s3_object::S3Object as S3ObjectComponent,
+	constants::{
+		BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_SAVE, ERR_SYSTEM_CONFIG_MISSING, ERROR_TITLE,
+		LABEL_ALLOWED_USERS, MSG_INVALID_EMAILS, MSG_MISSING_USERS, MSG_OBJECT_PUBLICITY_UPDATED,
+		MSG_UPDATE_FAILED, OPTION_DEFAULT, OPTION_PRIVATE, OPTION_PUBLIC, OPTION_SELECTED_USERS,
+		PLACEHOLDER_ALLOWED_USERS, TITLE_INVALID_EMAILS, TITLE_SUCCESS, TITLE_WARNING,
+	},
 	graphql_queries::{
 		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 		update_s3_object::{
 			PublicityOverride, UpdateS3ObjectMutation,
-			update_s3_object_mutation::{LocationInput, Variables},
+			update_s3_object_mutation::{LocationInput, UpdateS3ObjectInput, Variables},
 		},
 	},
 };
@@ -27,8 +33,11 @@ pub fn S3ObjectTableRow(
 ) -> impl IntoView {
 	let viewing_object = RwSignal::new(None::<S3Object>);
 	let open_view = RwSignal::new(false);
-	let toaster = ToasterInjection::expect_context();
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let toaster = use_context::<ToasterInjection>();
+	let config = match use_context::<AppConfig>() {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
+	};
 
 	let show_allowed_users_dialog = RwSignal::new(false);
 	let allowed_users_input = RwSignal::new(String::new());
@@ -61,27 +70,33 @@ pub fn S3ObjectTableRow(
 			let made_on = s3_object.made_on;
 
 			let variables = Variables {
-				id: s3_object.id.clone(),
-				name: s3_object.name.clone(),
-				made_on,
-				location,
-				publicity: new_publicity,
-				allowed_users: new_allowed_users.clone().or(Some(s3_object.allowed_users.clone())),
+				input: UpdateS3ObjectInput {
+					id: s3_object.id.clone(),
+					name: s3_object.name.clone(),
+					made_on,
+					location,
+					publicity: new_publicity,
+					allowed_users: new_allowed_users
+						.clone()
+						.or(Some(s3_object.allowed_users.clone())),
+				},
 			};
 
 			match UpdateS3ObjectMutation::run(api_url, variables).await {
 				Ok(updated_obj) => {
-					toaster.dispatch_toast(
-						move || {
-							view! {
-								<Toast>
-									<ToastTitle>"Success"</ToastTitle>
-									<ToastBody>"Object publicity updated"</ToastBody>
-								</Toast>
-							}
-						},
-						ToastOptions::default().with_intent(ToastIntent::Success),
-					);
+					if let Some(toaster) = toaster {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>{TITLE_SUCCESS}</ToastTitle>
+										<ToastBody>{MSG_OBJECT_PUBLICITY_UPDATED}</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Success),
+						);
+					}
 
 					// Check for missing users if we explicitly set them
 					if let Some(requested_users) = new_allowed_users {
@@ -92,15 +107,18 @@ pub fn S3ObjectTableRow(
 							.filter(|u| !returned_users.contains(u))
 							.collect();
 
-						if !missing_users.is_empty() {
+						if !missing_users.is_empty()
+							&& let Some(toaster) = toaster
+						{
 							toaster.dispatch_toast(
 								move || {
 									view! {
 										<Toast>
-											<ToastTitle>"Warning"</ToastTitle>
+											<ToastTitle>{TITLE_WARNING}</ToastTitle>
 											<ToastBody>
 												{format!(
-													"The following users were not found: {}",
+													"{}{}",
+													MSG_MISSING_USERS,
 													missing_users.join(", "),
 												)}
 											</ToastBody>
@@ -114,17 +132,19 @@ pub fn S3ObjectTableRow(
 				}
 				Err(e) => {
 					debug_error!("Failed to update object: {:?}", e);
-					toaster.dispatch_toast(
-						move || {
-							view! {
-								<Toast>
-									<ToastTitle>"Error"</ToastTitle>
-									<ToastBody>{format!("Failed to update object: {e}")}</ToastBody>
-								</Toast>
-							}
-						},
-						ToastOptions::default().with_intent(ToastIntent::Error),
-					);
+					if let Some(toaster) = toaster {
+						toaster.dispatch_toast(
+							move || {
+								view! {
+									<Toast>
+										<ToastTitle>{ERROR_TITLE}</ToastTitle>
+										<ToastBody>{format!("{}{e}", MSG_UPDATE_FAILED)}</ToastBody>
+									</Toast>
+								}
+							},
+							ToastOptions::default().with_intent(ToastIntent::Error),
+						);
+					}
 					// Revert local state on error
 					local_publicity.set(s3_object.publicity);
 				}
@@ -167,19 +187,21 @@ pub fn S3ObjectTableRow(
 			.collect();
 
 		if !invalid_emails.is_empty() {
-			toaster.dispatch_toast(
-				move || {
-					view! {
-						<Toast>
-							<ToastTitle>"Invalid Emails"</ToastTitle>
-							<ToastBody>
-								{format!("Invalid email addresses: {}", invalid_emails.join(", "))}
-							</ToastBody>
-						</Toast>
-					}
-				},
-				ToastOptions::default().with_intent(ToastIntent::Error),
-			);
+			if let Some(toaster) = toaster {
+				toaster.dispatch_toast(
+					move || {
+						view! {
+							<Toast>
+								<ToastTitle>{TITLE_INVALID_EMAILS}</ToastTitle>
+								<ToastBody>
+									{format!("{}{}", MSG_INVALID_EMAILS, invalid_emails.join(", "))}
+								</ToastBody>
+							</Toast>
+						}
+					},
+					ToastOptions::default().with_intent(ToastIntent::Error),
+				);
+			}
 			return;
 		}
 
@@ -229,10 +251,10 @@ pub fn S3ObjectTableRow(
 						on:change=on_change_publicity
 						prop:value=move || local_publicity.get().to_string()
 					>
-						<option value="Default">"Default"</option>
-						<option value="Public">"Public"</option>
-						<option value="Private">"Private"</option>
-						<option value="Selected Users">"Selected Users"</option>
+						<option value="Default">{OPTION_DEFAULT}</option>
+						<option value="Public">{OPTION_PUBLIC}</option>
+						<option value="Private">{OPTION_PRIVATE}</option>
+						<option value="Selected Users">{OPTION_SELECTED_USERS}</option>
 					</select>
 					<Show when=move || local_publicity.get() == PublicityOverride::SelectedUsers>
 						<Button
@@ -264,7 +286,7 @@ pub fn S3ObjectTableRow(
 					<DialogContent>
 						<div class="grid gap-4">
 							<div class="flex justify-end">
-								<Button on_click=move |_| open_view.set(false)>"Close"</Button>
+								<Button on_click=move |_| open_view.set(false)>{BUTTON_CLOSE}</Button>
 							</div>
 							<div class="flex justify-center">
 								{move || {
@@ -294,7 +316,7 @@ pub fn S3ObjectTableRow(
 						<div class="grid gap-4">
 							<label>
 								<div class="font-bold mb-2">
-									"Allowed Users (comma separated emails)"
+									{LABEL_ALLOWED_USERS}
 								</div>
 								<input
 									type="text"
@@ -303,7 +325,7 @@ pub fn S3ObjectTableRow(
 									on:input=move |ev| {
 										allowed_users_input.set(event_target_value(&ev))
 									}
-									placeholder="user1@example.com, user2@example.com"
+									placeholder=PLACEHOLDER_ALLOWED_USERS
 								/>
 							</label>
 						</div>
@@ -313,14 +335,15 @@ pub fn S3ObjectTableRow(
 							appearance=ButtonAppearance::Subtle
 							on_click=on_cancel_allowed_users
 						>
-							"Cancel"
+							{BUTTON_CANCEL}
 						</Button>
 						<Button appearance=ButtonAppearance::Primary on_click=on_save_allowed_users>
-							"Save"
+							{BUTTON_SAVE}
 						</Button>
 					</DialogActions>
 				</DialogBody>
 			</DialogSurface>
 		</Dialog>
 	}
+	.into_any()
 }

@@ -1,6 +1,8 @@
 #![allow(dead_code)]
-use crate::auth::UserContext;
-use crate::graphql_queries::me::UserRole;
+use crate::{
+	auth::UserContext, constants::ERR_SYSTEM_USER_CONTEXT_MISSING_MSG, errors::use_context_safe,
+	graphql_queries::me::UserRole,
+};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
@@ -11,11 +13,16 @@ pub fn ProtectedRoute(
 	#[allow(dead_code)]
 	admin_only: bool,
 ) -> impl IntoView {
-	let user_ctx = use_context::<UserContext>().expect(crate::constants::ERR_USER_CONTEXT_MISSING);
+	let user_ctx = match use_context_safe::<UserContext>("UserContext") {
+		Some(c) => c,
+		None => return view! { {ERR_SYSTEM_USER_CONTEXT_MISSING_MSG} }.into_any(),
+	};
 	let navigate = use_navigate();
 
 	view! {
-		<Suspense fallback=|| view! { "Loading..." }>
+		<Suspense fallback=|| {
+			view! { "Loading..." }
+		}>
 			{move || {
 				let user_opt = user_ctx.user.get();
 				let navigate = navigate.clone();
@@ -41,4 +48,5 @@ pub fn ProtectedRoute(
 			}}
 		</Suspense>
 	}
+	.into_any()
 }

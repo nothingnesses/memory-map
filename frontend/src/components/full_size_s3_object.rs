@@ -7,7 +7,7 @@ use thaw::*;
 
 #[component]
 pub fn FullSizeS3Object(
-	#[prop(into)] s3_object: Signal<S3Object>,
+	#[prop(into)] s3_object: Signal<Option<S3Object>>,
 	#[prop(optional, into)] class: MaybeProp<String>,
 	#[prop(into)] rotation: Signal<usize>,
 ) -> impl IntoView {

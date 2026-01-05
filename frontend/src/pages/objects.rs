@@ -1,15 +1,17 @@
-use crate::components::{
-	edit_s3_object_form::EditS3ObjectForm, file_upload::FileUpload,
-	s3_objects_table::S3ObjectsTable,
-};
-use crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object;
 use crate::{
 	AppConfig,
+	components::{
+		edit_s3_object_form::EditS3ObjectForm, file_upload::FileUpload,
+		s3_objects_table::S3ObjectsTable,
+	},
 	constants::{
-		BUTTON_ADD_OBJECT, BUTTON_CLOSE, TITLE_ADD_OBJECT, TITLE_EDIT_OBJECT, TITLE_OBJECTS,
+		BUTTON_ADD_OBJECT, BUTTON_CLOSE, ERR_SYSTEM_CONFIG_MISSING, TITLE_ADD_OBJECT,
+		TITLE_EDIT_OBJECT, TITLE_OBJECTS,
 	},
 	dump_errors,
+	errors::use_context_safe,
 	graphql_queries::s3_objects::S3ObjectsQuery,
+	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 };
 use leptos::prelude::*;
 use thaw::*;
@@ -32,7 +34,10 @@ pub fn Objects() -> impl IntoView {
 	let editing_object = RwSignal::new(None::<S3Object>);
 
 	// Resource that fetches S3 objects, re-running whenever `trigger` changes
-	let config = use_context::<AppConfig>().expect(crate::constants::ERR_APP_CONFIG_MISSING);
+	let config = match use_context_safe::<AppConfig>("AppConfig") {
+		Some(c) => c,
+		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
+	};
 	let s3_objects_resource = LocalResource::new(move || {
 		trigger.get();
 		S3ObjectsQuery::run(config.api_url.clone())
@@ -128,4 +133,5 @@ pub fn Objects() -> impl IntoView {
 			</Dialog>
 		</ErrorBoundary>
 	}
+	.into_any()
 }
