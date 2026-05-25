@@ -12,10 +12,22 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    fenix-monthly = {
+      url = "github:nix-community/fenix/monthly";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     flake-parts.url = "github:hercules-ci/flake-parts";
     systems.url = "github:nix-systems/default";
     process-compose-flake.url = "github:Platonic-Systems/process-compose-flake";
     services-flake.url = "github:juspay/services-flake";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -49,6 +61,74 @@
             system,
             ...
           }:
+          let
+            rustToolchain =
+              with inputs.fenix.packages.${pkgs.stdenv.hostPlatform.system};
+              combine [
+                stable.clippy
+                stable.rustc
+                stable.cargo
+                inputs.fenix-monthly.packages.${pkgs.stdenv.hostPlatform.system}.latest.rustfmt
+                stable.rust-src
+                # For Leptos
+                targets.wasm32-unknown-unknown.stable.rust-std
+              ];
+
+            treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
+              # Cargo.toml lives at the repo root (one level above devenv/).
+              projectRootFile = "Cargo.toml";
+              programs = {
+                nixfmt.enable = true;
+                rustfmt = {
+                  enable = true;
+                  package = rustToolchain;
+                };
+                prettier = {
+                  enable = true;
+                  includes = [
+                    "*.md"
+                    "*.yml"
+                    "*.yaml"
+                  ];
+                };
+              };
+              settings.formatter.tombi = {
+                command = "${inputs.nixpkgs-unstable.legacyPackages.${system}.tombi}/bin/tombi";
+                options = [
+                  "format"
+                  "--offline"
+                ];
+                includes = [ "*.toml" ];
+              };
+              settings.global.excludes = [ "frontend/pnpm-lock.yaml" ];
+            };
+
+            pre-commit-check = inputs.git-hooks.lib.${system}.run {
+              src = ./..;
+              hooks = {
+                treefmt = {
+                  enable = true;
+                  package = treefmtEval.config.build.wrapper;
+                };
+                # These run on pre-push because whole-project tools do not mix
+                # well with pre-commit's partial-file staging behaviour.
+                clippy = {
+                  enable = true;
+                  entry = "${pkgs.just}/bin/just clippy";
+                  pass_filenames = false;
+                  always_run = true;
+                  stages = [ "pre-push" ];
+                };
+                cargo-doc = {
+                  enable = true;
+                  entry = "${pkgs.just}/bin/just doc";
+                  pass_filenames = false;
+                  always_run = true;
+                  stages = [ "pre-push" ];
+                };
+              };
+            };
+          in
           {
             # Recommended: move all package definitions here.
             # e.g. (assuming you have a nixpkgs input)
@@ -57,7 +137,12 @@
             #   foo = config.packages.foo;
             # };
 
-            formatter = pkgs.nixfmt;
+            formatter = treefmtEval.config.build.wrapper;
+
+            checks = {
+              formatting = treefmtEval.config.build.check self'.self;
+              inherit pre-commit-check;
+            };
 
             _module.args.pkgs = import inputs.nixpkgs {
               inherit system;
@@ -83,17 +168,7 @@
               inherit (config.packages) rustToolchain;
             };
 
-            packages.rustToolchain =
-              with inputs.fenix.packages.${pkgs.stdenv.hostPlatform.system};
-              combine [
-                stable.clippy
-                stable.rustc
-                stable.cargo
-                stable.rustfmt
-                stable.rust-src
-                # For Leptos
-                targets.wasm32-unknown-unknown.stable.rust-std
-              ];
+            packages.rustToolchain = rustToolchain;
 
             # `process-compose.foo` will add a flake package output called "foo".
             # Therefore, this will add a default package that you can build using
@@ -179,6 +254,7 @@
                 pkgs.cargo-edit
                 pkgs.bacon
                 pkgs.rust-analyzer
+                pkgs.gh
                 # Stable didn't yet have cargo-generate, so we're using unstable here
                 pkgs.unstable.cargo-generate
                 pkgs.just
@@ -194,9 +270,13 @@
                 pkgs.unstable.wasm-bindgen-cli
                 # Needed for building in release mode
                 pkgs.binaryen
+                # For link checking in markdown
+                pkgs.lychee
                 # pkgs.tailwindcss
                 # For finding function calls
                 pkgs.ast-grep
+                # For ASCII-only lint check in `just doc`
+                pkgs.ripgrep
               ];
 
               env = {
@@ -205,6 +285,8 @@
                 # Required by minio-rs dependency
                 LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.openssl ];
               };
+
+              inherit (pre-commit-check) shellHook;
             };
           };
       }

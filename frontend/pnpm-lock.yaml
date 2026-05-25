@@ -12,6 +12,9 @@ importers:
         specifier: ^1.9.4
         version: 1.9.4
     devDependencies:
+      '@unocss/cli':
+        specifier: 66.5.4
+        version: 66.5.4
       '@unocss/preset-wind4':
         specifier: ^66.5.4
         version: 66.5.4

@@ -1,19 +1,33 @@
-use crate::{
-	AppConfig,
-	components::password_input::PasswordInput,
-	constants::{
-		BUTTON_REGISTER, ERR_SYSTEM_CONFIG_MISSING, LABEL_CONFIRM_PASSWORD, LABEL_EMAIL,
-		LABEL_PASSWORD, MSG_PASSWORDS_DO_NOT_MATCH, TITLE_REGISTER,
+use {
+	crate::{
+		AppConfig,
+		components::password_input::PasswordInput,
+		constants::{
+			BUTTON_REGISTER,
+			ERR_SYSTEM_CONFIG_MISSING,
+			LABEL_CONFIRM_PASSWORD,
+			LABEL_EMAIL,
+			LABEL_PASSWORD,
+			MSG_PASSWORDS_DO_NOT_MATCH,
+			TITLE_REGISTER,
+		},
+		errors::use_context_safe,
+		graphql_queries::{
+			config::ConfigQuery,
+			register::{
+				RegisterMutation,
+				register_mutation,
+			},
+		},
 	},
-	errors::use_context_safe,
-	graphql_queries::{
-		config::ConfigQuery,
-		register::{RegisterMutation, register_mutation},
+	leptos::{
+		ev,
+		prelude::*,
+		task::spawn_local,
 	},
+	leptos_router::hooks::use_navigate,
+	thaw::*,
 };
-use leptos::{ev, prelude::*, task::spawn_local};
-use leptos_router::hooks::use_navigate;
-use thaw::*;
 
 #[component]
 pub fn Register() -> impl IntoView {
@@ -36,8 +50,8 @@ pub fn Register() -> impl IntoView {
 
 	let navigate_effect = navigate.clone();
 	Effect::new(move |_| {
-		if let Some(config) = config_resource.get().flatten()
-			&& !config.enable_registration
+		if let Some(config) = config_resource.get().flatten() &&
+			!config.enable_registration
 		{
 			navigate_effect("/sign-in", Default::default());
 		}
@@ -63,8 +77,10 @@ pub fn Register() -> impl IntoView {
 
 		is_loading.set(true);
 		spawn_local(async move {
-			let variables =
-				register_mutation::Variables { email: email_val, password: password_val };
+			let variables = register_mutation::Variables {
+				email: email_val,
+				password: password_val,
+			};
 
 			match RegisterMutation::run(api_url, variables).await {
 				Ok(_) => {

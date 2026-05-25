@@ -1,14 +1,17 @@
-use crate::{
-	graphql_queries::{
-		types::PublicityDefault,
-		update_user_publicity::update_user_publicity_mutation::{
-			UpdateUserPublicityMutationUpdateUserPublicity as User, Variables,
+use {
+	crate::{
+		graphql_queries::{
+			types::PublicityDefault,
+			update_user_publicity::update_user_publicity_mutation::{
+				UpdateUserPublicityMutationUpdateUserPublicity as User,
+				Variables,
+			},
 		},
+		post_graphql_with_auth,
 	},
-	post_graphql_with_auth,
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

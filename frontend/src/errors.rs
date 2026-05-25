@@ -1,10 +1,18 @@
-use crate::constants::{
-	ERR_AUTHENTICATION_PREFIX, ERR_CONTEXT_MISSING, ERR_GRAPHQL_PREFIX, ERR_JS_PREFIX,
-	ERR_NETWORK_PREFIX, ERR_NOT_FOUND_MSG, ERR_SYSTEM_PREFIX, ERR_VALIDATION_PREFIX,
+use {
+	crate::constants::{
+		ERR_AUTHENTICATION_PREFIX,
+		ERR_CONTEXT_MISSING,
+		ERR_GRAPHQL_PREFIX,
+		ERR_JS_PREFIX,
+		ERR_NETWORK_PREFIX,
+		ERR_NOT_FOUND_MSG,
+		ERR_SYSTEM_PREFIX,
+		ERR_VALIDATION_PREFIX,
+	},
+	leptos::prelude::*,
+	std::fmt,
+	wasm_bindgen::JsValue,
 };
-use leptos::prelude::*;
-use std::fmt;
-use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppError {
@@ -34,7 +42,8 @@ impl fmt::Display for AppError {
 	}
 }
 
-impl std::error::Error for AppError {}
+impl std::error::Error for AppError {
+}
 
 impl From<JsValue> for AppError {
 	fn from(value: JsValue) -> Self {
@@ -55,7 +64,9 @@ impl Default for ErrorContext {
 
 impl ErrorContext {
 	pub fn new() -> Self {
-		Self { error: RwSignal::new(None) }
+		Self {
+			error: RwSignal::new(None),
+		}
 	}
 
 	pub fn report(
@@ -98,7 +109,6 @@ pub fn use_context_safe<T: Clone + 'static>(name: &str) -> Option<T> {
 /// This is a safer alternative to .expect() or .unwrap() on use_context.
 pub fn expect_context_safe<T>(name: &str) -> T
 where
-	T: Clone + Default + 'static,
-{
+	T: Clone + Default + 'static, {
 	use_context_safe::<T>(name).unwrap_or_default()
 }

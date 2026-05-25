@@ -1,5 +1,7 @@
-use async_graphql::Context;
-use tokio_postgres::Row;
+use {
+	async_graphql::Context,
+	tokio_postgres::Row,
+};
 
 pub mod config;
 pub mod location;

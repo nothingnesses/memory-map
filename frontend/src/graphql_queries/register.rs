@@ -1,9 +1,14 @@
-use crate::{
-	graphql_queries::register::register_mutation::{RegisterMutationRegister as User, Variables},
-	post_graphql_with_auth,
+use {
+	crate::{
+		graphql_queries::register::register_mutation::{
+			RegisterMutationRegister as User,
+			Variables,
+		},
+		post_graphql_with_auth,
+	},
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

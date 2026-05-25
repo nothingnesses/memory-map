@@ -1,14 +1,21 @@
-use crate::{
-	AppConfig, LocationStrings,
-	components::location_marker::LocationMarker,
-	constants::ERR_SYSTEM_CONFIG_MISSING,
-	dump_errors,
-	graphql_queries::s3_objects::{
-		S3ObjectsQuery, s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+use {
+	crate::{
+		AppConfig,
+		LocationStrings,
+		components::location_marker::LocationMarker,
+		constants::ERR_SYSTEM_CONFIG_MISSING,
+		dump_errors,
+		graphql_queries::s3_objects::{
+			S3ObjectsQuery,
+			s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+		},
 	},
+	leptos::{
+		logging::debug_error,
+		prelude::*,
+	},
+	std::collections::HashMap,
 };
-use leptos::{logging::debug_error, prelude::*};
-use std::collections::HashMap;
 
 fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 	s3_objects
@@ -34,9 +41,8 @@ fn render_markers(s3_objects: Vec<S3Object>) -> impl IntoView {
 					location_strings.latitude.parse::<f64>(),
 					location_strings.longitude.parse::<f64>(),
 				) {
-					(Ok(latitude), Ok(longitude)) => {
-						Some(view! { <LocationMarker latitude longitude s3_objects /> })
-					}
+					(Ok(latitude), Ok(longitude)) =>
+						Some(view! { <LocationMarker latitude longitude s3_objects /> }),
 					_ => None,
 				}
 			})

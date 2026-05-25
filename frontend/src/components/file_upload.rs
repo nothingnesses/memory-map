@@ -1,26 +1,52 @@
-use crate::{
-	AppConfig,
-	constants::{
-		BUTTON_CANCEL, BUTTON_SUBMIT, ERR_NETWORK_UPLOAD_FAILED, ERR_SYSTEM_NO_WINDOW,
-		ERR_SYSTEM_REQUEST_FAILED, ERR_SYSTEM_RESPONSE_CAST, ERR_UNSUPPORTED_FILE_TYPE,
-		ERROR_SELECT_FILE, LABEL_SELECT_FILES, LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE,
-		LABEL_SET_LONGITUDE, LATITUDE_MAX, LATITUDE_MIN, LONGITUDE_MAX, LONGITUDE_MIN,
+use {
+	crate::{
+		AppConfig,
+		constants::{
+			BUTTON_CANCEL,
+			BUTTON_SUBMIT,
+			ERR_NETWORK_UPLOAD_FAILED,
+			ERR_SYSTEM_NO_WINDOW,
+			ERR_SYSTEM_REQUEST_FAILED,
+			ERR_SYSTEM_RESPONSE_CAST,
+			ERR_UNSUPPORTED_FILE_TYPE,
+			ERROR_SELECT_FILE,
+			LABEL_SELECT_FILES,
+			LABEL_SET_DATE_TIME,
+			LABEL_SET_LATITUDE,
+			LABEL_SET_LONGITUDE,
+			LATITUDE_MAX,
+			LATITUDE_MIN,
+			LONGITUDE_MAX,
+			LONGITUDE_MIN,
+		},
+		dump_errors,
+		errors::{
+			AppError,
+			use_context_safe,
+			use_error_context,
+		},
+		js_date_value_to_iso,
 	},
-	dump_errors,
-	errors::{AppError, use_context_safe, use_error_context},
-	js_date_value_to_iso,
+	leptos::{
+		html::Input,
+		prelude::*,
+		task::spawn_local,
+		wasm_bindgen::JsCast,
+		web_sys::{
+			self,
+			FormData,
+			HtmlFormElement,
+			MouseEvent,
+			Request,
+			RequestInit,
+			SubmitEvent,
+		},
+	},
+	leptos_router::components::Form,
+	shared::ALLOWED_MIME_TYPES,
+	thaw::*,
+	wasm_bindgen_futures::JsFuture,
 };
-use leptos::{
-	html::Input,
-	prelude::*,
-	task::spawn_local,
-	wasm_bindgen::JsCast,
-	web_sys::{self, FormData, HtmlFormElement, MouseEvent, Request, RequestInit, SubmitEvent},
-};
-use leptos_router::components::Form;
-use shared::ALLOWED_MIME_TYPES;
-use thaw::*;
-use wasm_bindgen_futures::JsFuture;
 
 #[component]
 pub fn FileUpload(
@@ -60,15 +86,15 @@ pub fn FileUpload(
 		}
 
 		// Client-side validation
-		if let Some(input) = file_input_ref.get()
-			&& let Some(files) = input.files()
+		if let Some(input) = file_input_ref.get() &&
+			let Some(files) = input.files()
 		{
 			let files_length = files.length();
 			if files_length == 0 {
 				error_ctx.report(AppError::Validation(ERROR_SELECT_FILE.to_string()));
 				return;
 			}
-			for i in 0..files_length {
+			for i in 0 .. files_length {
 				let Some(file) = files.item(i) else {
 					continue;
 				};

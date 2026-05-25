@@ -1,7 +1,13 @@
-use crate::Config;
-use lettre::{
-	AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
-	transport::smtp::authentication::Credentials,
+use {
+	crate::Config,
+	lettre::{
+		AsyncSmtpTransport,
+		AsyncTransport,
+		Message,
+		Tokio1Executor,
+		message::header::ContentType,
+		transport::smtp::authentication::Credentials,
+	},
 };
 
 pub async fn send_password_reset_email(

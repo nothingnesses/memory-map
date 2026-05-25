@@ -1,16 +1,32 @@
-use crate::{
-	AppConfig,
-	components::password_input::PasswordInput,
-	constants::{
-		BUTTON_RESET_PASSWORD, ERR_SYSTEM_CONFIG_MISSING, LABEL_CONFIRM_PASSWORD,
-		LABEL_NEW_PASSWORD, MSG_INVALID_TOKEN, MSG_PASSWORDS_DO_NOT_MATCH, MSG_RESET_SUCCESS,
-		TITLE_RESET_PASSWORD,
+use {
+	crate::{
+		AppConfig,
+		components::password_input::PasswordInput,
+		constants::{
+			BUTTON_RESET_PASSWORD,
+			ERR_SYSTEM_CONFIG_MISSING,
+			LABEL_CONFIRM_PASSWORD,
+			LABEL_NEW_PASSWORD,
+			MSG_INVALID_TOKEN,
+			MSG_PASSWORDS_DO_NOT_MATCH,
+			MSG_RESET_SUCCESS,
+			TITLE_RESET_PASSWORD,
+		},
+		graphql_queries::reset_password::{
+			ResetPasswordMutation,
+			reset_password_mutation,
+		},
 	},
-	graphql_queries::reset_password::{ResetPasswordMutation, reset_password_mutation},
+	leptos::{
+		prelude::*,
+		task::spawn_local,
+	},
+	leptos_router::hooks::{
+		use_navigate,
+		use_query_map,
+	},
+	thaw::*,
 };
-use leptos::{prelude::*, task::spawn_local};
-use leptos_router::hooks::{use_navigate, use_query_map};
-use thaw::*;
 
 #[component]
 pub fn ResetPassword() -> impl IntoView {
@@ -50,8 +66,10 @@ pub fn ResetPassword() -> impl IntoView {
 
 		is_loading.set(true);
 		spawn_local(async move {
-			let variables =
-				reset_password_mutation::Variables { token: token_val, new_password: password_val };
+			let variables = reset_password_mutation::Variables {
+				token: token_val,
+				new_password: password_val,
+			};
 
 			match ResetPasswordMutation::run(api_url, variables).await {
 				Ok(_) => {

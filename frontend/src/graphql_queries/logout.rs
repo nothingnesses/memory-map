@@ -1,6 +1,11 @@
-use crate::{graphql_queries::logout::logout_mutation::Variables, post_graphql_with_auth};
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
+use {
+	crate::{
+		graphql_queries::logout::logout_mutation::Variables,
+		post_graphql_with_auth,
+	},
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
+};
 
 #[derive(GraphQLQuery)]
 #[graphql(

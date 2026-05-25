@@ -1,11 +1,14 @@
-use crate::{
-	graphql_queries::s3_objects::s3_objects_query::{
-		S3ObjectsQueryS3Objects as S3Object, Variables,
+use {
+	crate::{
+		graphql_queries::s3_objects::s3_objects_query::{
+			S3ObjectsQueryS3Objects as S3Object,
+			Variables,
+		},
+		post_graphql_with_auth,
 	},
-	post_graphql_with_auth,
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

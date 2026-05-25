@@ -37,7 +37,7 @@ Users can browse the map, click markers and explore media galleries tied to real
 
 ### 1. Install dependencies
 
-You’ll need:
+You'll need:
 
 - [Nix Package Manager](https://nixos.org/download/)
 - [nix-direnv](https://github.com/nix-community/nix-direnv?tab=readme-ov-file#installation)
@@ -102,7 +102,14 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just servers`: Start PostgreSQL and MinIO via Nix.
 - `just backend`: Start the Axum backend with hot-reloading (via Bacon).
 - `just frontend`: Start the Leptos frontend (via Trunk).
-- `just prepare`: Format code, run lints, and execute tests. Run this before submitting a PR.
+- `just fmt`: Format Rust, Nix, Markdown, YAML, and TOML files.
+- `just check`: Run `cargo check` for the workspace.
+- `just clippy`: Run Clippy with warnings treated as errors.
+- `just deny`: Check Rust dependencies with `cargo-deny`.
+- `just doc`: Build documentation with warnings treated as errors and run ASCII/link checks.
+- `just test`: Run the workspace test suite with cached output.
+- `just frontend-build`: Build the frontend with Trunk.
+- `just verify`: Run the full verification suite before submitting a PR.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
 - `just scan-hardcoded`: Scan the codebase for hardcoded secrets or values.
 
@@ -124,34 +131,35 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 
 ```
 memory-map/
-│
-├── .direnv/         # Direnv environment cache
-├── backend/         # Axum and GraphQL backend
-├── data/            # Database and storage volumes
-├── devenv/          # Nix development environment
-├── frontend/        # Leptos and UnoCSS frontend
-├── shared/          # Shared utilities & types
-├── .env.example     # Environment configuration template
-├── justfile         # Development commands
-├── Cargo.toml       # Rust workspace configuration
-├── Cargo.lock       # Rust dependency lock file
-└── README.md        # Project documentation
+|-- .direnv/         # Direnv environment cache
+|-- backend/         # Axum and GraphQL backend
+|-- data/            # Database and storage volumes
+|-- devenv/          # Nix development environment
+|-- frontend/        # Leptos and UnoCSS frontend
+|-- shared/          # Shared utilities and types
+|-- .env.example     # Environment configuration template
+|-- justfile         # Development commands
+|-- Cargo.toml       # Rust workspace configuration
+|-- Cargo.lock       # Rust dependency lock file
+`-- README.md        # Project documentation
 ```
 
 ## Contributing
 
-We welcome contributions! Please ensure you run the preparation script before making a PR:
+We welcome contributions! Please ensure you run the verification suite before making a PR:
 
 ```sh
-just prepare
+just verify
 ```
 
 This command will:
 
-- Format code (`nix fmt`, `cargo fmt`)
-- Run clippy lints
+- Format code and config
+- Run workspace checks and Clippy
+- Check dependency licenses and advisories
 - Generate documentation
 - Run tests
+- Build the frontend
 
 ## License
 

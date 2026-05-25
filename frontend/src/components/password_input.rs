@@ -1,5 +1,10 @@
-use leptos::prelude::*;
-use lucide_leptos::{Eye, EyeOff};
+use {
+	leptos::prelude::*,
+	lucide_leptos::{
+		Eye,
+		EyeOff,
+	},
+};
 
 #[component]
 pub fn PasswordInput(

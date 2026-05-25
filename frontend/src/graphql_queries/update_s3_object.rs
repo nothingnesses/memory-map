@@ -1,11 +1,14 @@
-use crate::{
-	graphql_queries::update_s3_object::update_s3_object_mutation::{
-		UpdateS3ObjectMutationUpdateS3Object as S3Object, Variables,
+use {
+	crate::{
+		graphql_queries::update_s3_object::update_s3_object_mutation::{
+			UpdateS3ObjectMutationUpdateS3Object as S3Object,
+			Variables,
+		},
+		post_graphql_with_auth,
 	},
-	post_graphql_with_auth,
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

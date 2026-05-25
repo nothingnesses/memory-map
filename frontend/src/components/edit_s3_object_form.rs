@@ -1,35 +1,67 @@
-use crate::{
-	AppConfig,
-	constants::{
-		BUTTON_CANCEL, BUTTON_SUBMIT, LABEL_ALLOWED_USERS, LABEL_NAME, LABEL_PUBLICITY,
-		LABEL_SET_DATE_TIME, LABEL_SET_LATITUDE, LABEL_SET_LONGITUDE, LATITUDE_MAX, LATITUDE_MIN,
-		LONGITUDE_MAX, LONGITUDE_MIN, MSG_ERROR_LOADING_OBJECT, MSG_INVALID_EMAILS,
-		MSG_MISSING_USERS, MSG_OBJECT_UPDATED, MSG_UPDATE_FAILED, OPTION_DEFAULT, OPTION_PRIVATE,
-		OPTION_PUBLIC, OPTION_SELECTED_USERS, PLACEHOLDER_ALLOWED_USERS, TITLE_INVALID_EMAILS,
-		TITLE_SUCCESS, TITLE_WARNING,
+use {
+	crate::{
+		AppConfig,
+		constants::{
+			BUTTON_CANCEL,
+			BUTTON_SUBMIT,
+			LABEL_ALLOWED_USERS,
+			LABEL_NAME,
+			LABEL_PUBLICITY,
+			LABEL_SET_DATE_TIME,
+			LABEL_SET_LATITUDE,
+			LABEL_SET_LONGITUDE,
+			LATITUDE_MAX,
+			LATITUDE_MIN,
+			LONGITUDE_MAX,
+			LONGITUDE_MIN,
+			MSG_ERROR_LOADING_OBJECT,
+			MSG_INVALID_EMAILS,
+			MSG_MISSING_USERS,
+			MSG_OBJECT_UPDATED,
+			MSG_UPDATE_FAILED,
+			OPTION_DEFAULT,
+			OPTION_PRIVATE,
+			OPTION_PUBLIC,
+			OPTION_SELECTED_USERS,
+			PLACEHOLDER_ALLOWED_USERS,
+			TITLE_INVALID_EMAILS,
+			TITLE_SUCCESS,
+			TITLE_WARNING,
+		},
+		dump_errors,
+		errors::use_context_safe,
+		graphql_queries::{
+			s3_object_by_id::S3ObjectByIdQuery,
+			s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
+			types::PublicityOverride,
+			update_s3_object::{
+				UpdateS3ObjectMutation,
+				update_s3_object_mutation::{
+					LocationInput,
+					UpdateS3ObjectInput,
+					Variables,
+				},
+			},
+		},
+		iso_to_local_datetime_value,
+		js_date_value_to_iso,
 	},
-	dump_errors,
-	errors::use_context_safe,
-	graphql_queries::{
-		s3_object_by_id::S3ObjectByIdQuery,
-		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
-		types::PublicityOverride,
-		update_s3_object::{
-			UpdateS3ObjectMutation,
-			update_s3_object_mutation::{LocationInput, UpdateS3ObjectInput, Variables},
+	email_address::EmailAddress,
+	leptos::{
+		logging::debug_error,
+		prelude::*,
+		task::spawn_local,
+		web_sys::{
+			MouseEvent,
+			SubmitEvent,
 		},
 	},
-	iso_to_local_datetime_value, js_date_value_to_iso,
+	std::{
+		collections::HashSet,
+		str::FromStr,
+	},
+	thaw::*,
 };
-use email_address::EmailAddress;
-use leptos::{
-	logging::debug_error,
-	prelude::*,
-	task::spawn_local,
-	web_sys::{MouseEvent, SubmitEvent},
-};
-use std::{collections::HashSet, str::FromStr};
-use thaw::*;
 
 /// Component for editing an existing S3 object.
 ///
@@ -86,8 +118,8 @@ pub fn EditS3ObjectForm(
 				set_latitude.set(Some(loc.latitude));
 				set_longitude.set(Some(loc.longitude));
 			}
-			if let Some(iso_str) = s3_object.made_on
-				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
+			if let Some(iso_str) = s3_object.made_on &&
+				let Some(local_str) = iso_to_local_datetime_value(&iso_str)
 			{
 				set_made_on.set(local_str);
 			}
@@ -106,8 +138,8 @@ pub fn EditS3ObjectForm(
 				set_latitude.set(Some(loc.latitude));
 				set_longitude.set(Some(loc.longitude));
 			}
-			if let Some(iso_str) = s3_object.made_on
-				&& let Some(local_str) = iso_to_local_datetime_value(&iso_str)
+			if let Some(iso_str) = s3_object.made_on &&
+				let Some(local_str) = iso_to_local_datetime_value(&iso_str)
 			{
 				set_made_on.set(local_str);
 			}
@@ -129,7 +161,10 @@ pub fn EditS3ObjectForm(
 		let allowed_users_val = allowed_users.get();
 
 		let location = if let (Some(lat), Some(lon)) = (lat_val, lon_val) {
-			Some(LocationInput { latitude: lat, longitude: lon })
+			Some(LocationInput {
+				latitude: lat,
+				longitude: lon,
+			})
 		} else {
 			None
 		};
@@ -205,8 +240,8 @@ pub fn EditS3ObjectForm(
 						.filter(|u| !returned_users.contains(u))
 						.collect();
 
-					if !missing_users.is_empty()
-						&& let Some(toaster) = toaster
+					if !missing_users.is_empty() &&
+						let Some(toaster) = toaster
 					{
 						toaster.dispatch_toast(
 							move || {

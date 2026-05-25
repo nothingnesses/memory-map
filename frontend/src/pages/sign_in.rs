@@ -1,20 +1,43 @@
-use crate::{
-	AppConfig,
-	components::password_input::PasswordInput,
-	constants::{
-		BUTTON_FORGOT_PASSWORD, BUTTON_SIGN_IN, ERR_SYSTEM_CONFIG_MISSING, LABEL_EMAIL,
-		LABEL_PASSWORD, LINK_REGISTER, MSG_ENTER_EMAIL_RESET, MSG_RESET_EMAIL_SENT, TITLE_SIGN_IN,
+use {
+	crate::{
+		AppConfig,
+		components::password_input::PasswordInput,
+		constants::{
+			BUTTON_FORGOT_PASSWORD,
+			BUTTON_SIGN_IN,
+			ERR_SYSTEM_CONFIG_MISSING,
+			LABEL_EMAIL,
+			LABEL_PASSWORD,
+			LINK_REGISTER,
+			MSG_ENTER_EMAIL_RESET,
+			MSG_RESET_EMAIL_SENT,
+			TITLE_SIGN_IN,
+		},
+		errors::{
+			AppError,
+			use_context_safe,
+			use_error_context,
+		},
+		graphql_queries::{
+			config::ConfigQuery,
+			login::{
+				LoginMutation,
+				login_mutation,
+			},
+			request_password_reset::{
+				RequestPasswordResetMutation,
+				request_password_reset_mutation,
+			},
+		},
 	},
-	errors::{AppError, use_context_safe, use_error_context},
-	graphql_queries::{
-		config::ConfigQuery,
-		login::{LoginMutation, login_mutation},
-		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
+	leptos::{
+		ev,
+		prelude::*,
+		task::spawn_local,
 	},
+	leptos_router::components::A,
+	thaw::*,
 };
-use leptos::{ev, prelude::*, task::spawn_local};
-use leptos_router::components::A;
-use thaw::*;
 
 #[component]
 pub fn SignIn() -> impl IntoView {
@@ -50,7 +73,10 @@ pub fn SignIn() -> impl IntoView {
 
 		is_loading.set(true);
 		spawn_local(async move {
-			let variables = login_mutation::Variables { email: email_val, password: password_val };
+			let variables = login_mutation::Variables {
+				email: email_val,
+				password: password_val,
+			};
 
 			match LoginMutation::run(api_url, variables).await {
 				Ok(_) => {
@@ -80,7 +106,9 @@ pub fn SignIn() -> impl IntoView {
 
 		is_loading.set(true);
 		spawn_local(async move {
-			let variables = request_password_reset_mutation::Variables { email: email_val };
+			let variables = request_password_reset_mutation::Variables {
+				email: email_val,
+			};
 
 			match RequestPasswordResetMutation::run(api_url, variables).await {
 				Ok(_) => {

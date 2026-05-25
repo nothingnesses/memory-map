@@ -1,25 +1,55 @@
-use crate::{
-	AppConfig, CallbackAnyView,
-	components::s3_object::S3Object as S3ObjectComponent,
-	constants::{
-		BUTTON_CANCEL, BUTTON_CLOSE, BUTTON_SAVE, ERR_SYSTEM_CONFIG_MISSING, ERROR_TITLE,
-		LABEL_ALLOWED_USERS, MSG_INVALID_EMAILS, MSG_MISSING_USERS, MSG_OBJECT_PUBLICITY_UPDATED,
-		MSG_UPDATE_FAILED, OPTION_DEFAULT, OPTION_PRIVATE, OPTION_PUBLIC, OPTION_SELECTED_USERS,
-		PLACEHOLDER_ALLOWED_USERS, TITLE_INVALID_EMAILS, TITLE_SUCCESS, TITLE_WARNING,
-	},
-	graphql_queries::{
-		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
-		update_s3_object::{
-			PublicityOverride, UpdateS3ObjectMutation,
-			update_s3_object_mutation::{LocationInput, UpdateS3ObjectInput, Variables},
+use {
+	crate::{
+		AppConfig,
+		CallbackAnyView,
+		components::s3_object::S3Object as S3ObjectComponent,
+		constants::{
+			BUTTON_CANCEL,
+			BUTTON_CLOSE,
+			BUTTON_SAVE,
+			ERR_SYSTEM_CONFIG_MISSING,
+			ERROR_TITLE,
+			LABEL_ALLOWED_USERS,
+			MSG_INVALID_EMAILS,
+			MSG_MISSING_USERS,
+			MSG_OBJECT_PUBLICITY_UPDATED,
+			MSG_UPDATE_FAILED,
+			OPTION_DEFAULT,
+			OPTION_PRIVATE,
+			OPTION_PUBLIC,
+			OPTION_SELECTED_USERS,
+			PLACEHOLDER_ALLOWED_USERS,
+			TITLE_INVALID_EMAILS,
+			TITLE_SUCCESS,
+			TITLE_WARNING,
+		},
+		graphql_queries::{
+			s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+			update_s3_object::{
+				PublicityOverride,
+				UpdateS3ObjectMutation,
+				update_s3_object_mutation::{
+					LocationInput,
+					UpdateS3ObjectInput,
+					Variables,
+				},
+			},
 		},
 	},
+	email_address::EmailAddress,
+	leptos::{
+		html::Select,
+		logging::debug_error,
+		prelude::*,
+		task::spawn_local,
+	},
+	lucide_leptos::Users,
+	std::{
+		collections::HashSet,
+		str::FromStr,
+	},
+	thaw::*,
 };
-use email_address::EmailAddress;
-use leptos::{html::Select, logging::debug_error, prelude::*, task::spawn_local};
-use lucide_leptos::Users;
-use std::{collections::HashSet, str::FromStr};
-use thaw::*;
 
 #[component]
 pub fn S3ObjectTableRow(
@@ -63,9 +93,10 @@ pub fn S3ObjectTableRow(
 		let s3_object = s3_object.get();
 		let api_url = config.api_url.clone();
 		spawn_local(async move {
-			let location = s3_object
-				.location
-				.map(|loc| LocationInput { latitude: loc.latitude, longitude: loc.longitude });
+			let location = s3_object.location.map(|loc| LocationInput {
+				latitude: loc.latitude,
+				longitude: loc.longitude,
+			});
 
 			let made_on = s3_object.made_on;
 
@@ -107,8 +138,8 @@ pub fn S3ObjectTableRow(
 							.filter(|u| !returned_users.contains(u))
 							.collect();
 
-						if !missing_users.is_empty()
-							&& let Some(toaster) = toaster
+						if !missing_users.is_empty() &&
+							let Some(toaster) = toaster
 						{
 							toaster.dispatch_toast(
 								move || {

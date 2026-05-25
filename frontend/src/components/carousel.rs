@@ -1,14 +1,38 @@
-use crate::{
-	CallbackAnyView, ModularAdd, ModularSubtract,
-	components::full_size_s3_object::FullSizeS3Object,
-	components::s3_object::S3Object as S3ObjectComponent,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+use {
+	crate::{
+		CallbackAnyView,
+		ModularAdd,
+		ModularSubtract,
+		components::{
+			full_size_s3_object::FullSizeS3Object,
+			s3_object::S3Object as S3ObjectComponent,
+		},
+		graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	},
+	leptos::{
+		ev,
+		logging::debug_log,
+		prelude::*,
+	},
+	lucide_leptos::{
+		ChevronLeft,
+		ChevronRight,
+		Pause,
+		Play,
+		RotateCcw,
+		RotateCw,
+		X,
+	},
+	std::{
+		collections::HashMap,
+		time,
+	},
+	thaw::*,
+	web_sys::{
+		js_sys,
+		wasm_bindgen::JsValue,
+	},
 };
-use leptos::{ev, logging::debug_log, prelude::*};
-use lucide_leptos::{ChevronLeft, ChevronRight, Pause, Play, RotateCcw, RotateCw, X};
-use std::{collections::HashMap, time};
-use thaw::*;
-use web_sys::{js_sys, wasm_bindgen::JsValue};
 
 #[component]
 pub fn Carousel(
@@ -139,8 +163,8 @@ pub fn Carousel(
 	let local_autoplay_duration = RwSignal::new(autoplay_duration.get_untracked());
 
 	Effect::new(move |_| {
-		if is_playing.get()
-			&& let Ok(handle) = set_interval_with_handle(
+		if is_playing.get() &&
+			let Ok(handle) = set_interval_with_handle(
 				move || {
 					next_slide();
 				},

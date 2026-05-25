@@ -1,5 +1,7 @@
-use crate::graphql_queries::me::me_query::MeQueryMe;
-use leptos::prelude::*;
+use {
+	crate::graphql_queries::me::me_query::MeQueryMe,
+	leptos::prelude::*,
+};
 
 #[derive(Clone, Copy)]
 pub struct UserContext {

@@ -1,6 +1,11 @@
-use crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects;
-use leptos::{either::either, prelude::*};
-use mime::Mime;
+use {
+	crate::graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
+	leptos::{
+		either::either,
+		prelude::*,
+	},
+	mime::Mime,
+};
 
 #[component]
 pub fn S3Object(

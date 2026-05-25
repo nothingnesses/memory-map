@@ -1,26 +1,44 @@
-use crate::{
-	AppConfig, CallbackAnyView,
-	components::s3_object_table_rows::S3ObjectTableRows,
-	constants::{
-		BUTTON_CLOSE, BUTTON_DELETE_SELECTED, BUTTON_NO, BUTTON_YES, ERR_SYSTEM_CONFIG_MISSING,
-		HEADER_ACTIONS, HEADER_CONTENT_TYPE, HEADER_ID, HEADER_LOCATION, HEADER_MADE_ON,
-		HEADER_NAME, HEADER_SELECT, HEADER_VIEW, MSG_CONFIRM_DELETE, MSG_DELETE_FAILED,
-		MSG_DELETE_SUCCESS,
+use {
+	crate::{
+		AppConfig,
+		CallbackAnyView,
+		components::s3_object_table_rows::S3ObjectTableRows,
+		constants::{
+			BUTTON_CLOSE,
+			BUTTON_DELETE_SELECTED,
+			BUTTON_NO,
+			BUTTON_YES,
+			ERR_SYSTEM_CONFIG_MISSING,
+			HEADER_ACTIONS,
+			HEADER_CONTENT_TYPE,
+			HEADER_ID,
+			HEADER_LOCATION,
+			HEADER_MADE_ON,
+			HEADER_NAME,
+			HEADER_SELECT,
+			HEADER_VIEW,
+			MSG_CONFIRM_DELETE,
+			MSG_DELETE_FAILED,
+			MSG_DELETE_SUCCESS,
+		},
+		dump_errors,
+		graphql_queries::{
+			delete_s3_objects::DeleteS3ObjectsMutation,
+			s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+		},
 	},
-	dump_errors,
-	graphql_queries::{
-		delete_s3_objects::DeleteS3ObjectsMutation,
-		s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	leptos::{
+		logging::{
+			debug_error,
+			debug_log,
+		},
+		prelude::*,
+		task::spawn_local,
 	},
+	lucide_leptos::Trash,
+	std::collections::HashSet,
+	thaw::*,
 };
-use leptos::{
-	logging::{debug_error, debug_log},
-	prelude::*,
-	task::spawn_local,
-};
-use lucide_leptos::Trash;
-use std::collections::HashSet;
-use thaw::*;
 
 #[component]
 pub fn S3ObjectsTable(

@@ -1,11 +1,14 @@
-use crate::{
-	graphql_queries::s3_object_by_id::s3_object_by_id_query::{
-		S3ObjectByIdQueryS3ObjectById as S3Object, Variables,
+use {
+	crate::{
+		graphql_queries::s3_object_by_id::s3_object_by_id_query::{
+			S3ObjectByIdQueryS3ObjectById as S3Object,
+			Variables,
+		},
+		post_graphql_with_auth,
 	},
-	post_graphql_with_auth,
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -26,7 +29,9 @@ impl S3ObjectByIdQuery {
 		Ok(post_graphql_with_auth::<S3ObjectByIdQuery, _>(
 			&reqwest::Client::new(),
 			api_url,
-			Variables { id },
+			Variables {
+				id,
+			},
 		)
 		.await?
 		.data

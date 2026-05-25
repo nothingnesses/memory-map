@@ -1,10 +1,16 @@
-use crate::{
-	CallbackAnyView, components::s3_object_table_row::S3ObjectTableRow,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+use {
+	crate::{
+		CallbackAnyView,
+		components::s3_object_table_row::S3ObjectTableRow,
+		graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	},
+	leptos::prelude::*,
+	lucide_leptos::{
+		Pencil,
+		Trash,
+	},
+	std::collections::HashSet,
 };
-use leptos::prelude::*;
-use lucide_leptos::{Pencil, Trash};
-use std::collections::HashSet;
 
 #[component]
 pub fn S3ObjectTableRows(

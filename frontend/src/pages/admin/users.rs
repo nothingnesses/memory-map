@@ -1,19 +1,49 @@
-use crate::{
-	AppConfig,
-	constants::{
-		BUTTON_RESET_PASSWORD, BUTTON_SAVE, ERR_SYSTEM_CONFIG_MISSING, HEADER_ACTIONS,
-		HEADER_CREATED_AT, HEADER_EMAIL, HEADER_ID, HEADER_ROLE, LOADING_TEXT,
-		MSG_FAILED_LOAD_USERS, OPTION_ADMIN, OPTION_USER, TITLE_USERS,
+use {
+	crate::{
+		AppConfig,
+		constants::{
+			BUTTON_RESET_PASSWORD,
+			BUTTON_SAVE,
+			ERR_SYSTEM_CONFIG_MISSING,
+			HEADER_ACTIONS,
+			HEADER_CREATED_AT,
+			HEADER_EMAIL,
+			HEADER_ID,
+			HEADER_ROLE,
+			LOADING_TEXT,
+			MSG_FAILED_LOAD_USERS,
+			OPTION_ADMIN,
+			OPTION_USER,
+			TITLE_USERS,
+		},
+		errors::{
+			AppError,
+			use_context_safe,
+			use_error_context,
+		},
+		graphql_queries::{
+			admin_update_user::{
+				AdminUpdateUserMutation,
+				admin_update_user_mutation,
+			},
+			request_password_reset::{
+				RequestPasswordResetMutation,
+				request_password_reset_mutation,
+			},
+			users::{
+				UserRole,
+				UsersQuery,
+			},
+		},
 	},
-	errors::{AppError, use_context_safe, use_error_context},
-	graphql_queries::{
-		admin_update_user::{AdminUpdateUserMutation, admin_update_user_mutation},
-		request_password_reset::{RequestPasswordResetMutation, request_password_reset_mutation},
-		users::{UserRole, UsersQuery},
+	leptos::{
+		prelude::*,
+		task::spawn_local,
+		wasm_bindgen::JsCast,
+		web_sys::HtmlSelectElement,
 	},
+	thaw::*,
 };
-use leptos::{prelude::*, task::spawn_local, wasm_bindgen::JsCast, web_sys::HtmlSelectElement};
-use thaw::*;
 
 #[component]
 pub fn Users() -> impl IntoView {
@@ -33,8 +63,11 @@ pub fn Users() -> impl IntoView {
 		loading.set(true);
 		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
-			let variables =
-				admin_update_user_mutation::Variables { id, role: None, email: Some(email) };
+			let variables = admin_update_user_mutation::Variables {
+				id,
+				role: None,
+				email: Some(email),
+			};
 			if let Err(e) = AdminUpdateUserMutation::run(api_url, variables).await {
 				error_ctx.report(AppError::GraphQL(e.to_string()));
 			}
@@ -48,8 +81,11 @@ pub fn Users() -> impl IntoView {
 		loading.set(true);
 		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
-			let variables =
-				admin_update_user_mutation::Variables { id, role: Some(new_role), email: None };
+			let variables = admin_update_user_mutation::Variables {
+				id,
+				role: Some(new_role),
+				email: None,
+			};
 			if let Err(e) = AdminUpdateUserMutation::run(api_url, variables).await {
 				error_ctx.report(AppError::GraphQL(e.to_string()));
 			}
@@ -63,7 +99,9 @@ pub fn Users() -> impl IntoView {
 		loading.set(true);
 		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
-			let variables = request_password_reset_mutation::Variables { email };
+			let variables = request_password_reset_mutation::Variables {
+				email,
+			};
 			if let Err(e) = RequestPasswordResetMutation::run(api_url, variables).await {
 				error_ctx.report(AppError::GraphQL(e.to_string()));
 			}

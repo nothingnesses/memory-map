@@ -1,9 +1,11 @@
-use crate::{
-	graphql_queries::request_password_reset::request_password_reset_mutation::Variables,
-	post_graphql_with_auth,
+use {
+	crate::{
+		graphql_queries::request_password_reset::request_password_reset_mutation::Variables,
+		post_graphql_with_auth,
+	},
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

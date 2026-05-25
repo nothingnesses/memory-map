@@ -1,10 +1,14 @@
 #![allow(dead_code)]
-use crate::{
-	auth::UserContext, constants::ERR_SYSTEM_USER_CONTEXT_MISSING_MSG, errors::use_context_safe,
-	graphql_queries::me::UserRole,
+use {
+	crate::{
+		auth::UserContext,
+		constants::ERR_SYSTEM_USER_CONTEXT_MISSING_MSG,
+		errors::use_context_safe,
+		graphql_queries::me::UserRole,
+	},
+	leptos::prelude::*,
+	leptos_router::hooks::use_navigate,
 };
-use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 
 #[component]
 pub fn ProtectedRoute(

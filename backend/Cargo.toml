@@ -2,6 +2,7 @@
 name = "backend"
 version = "0.1.0"
 edition = "2024"
+license = "BlueOak-1.0.0"
 
 [dependencies]
 anyhow = "1.0"
@@ -47,3 +48,6 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

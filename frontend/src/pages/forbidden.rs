@@ -1,5 +1,10 @@
-use crate::constants::{MSG_403, TITLE_403};
-use leptos::prelude::*;
+use {
+	crate::constants::{
+		MSG_403,
+		TITLE_403,
+	},
+	leptos::prelude::*,
+};
 
 #[component]
 pub fn Forbidden() -> impl IntoView {

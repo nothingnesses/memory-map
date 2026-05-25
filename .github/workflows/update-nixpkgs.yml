@@ -1,0 +1,30 @@
+name: Update nixpkgs
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Update nixpkgs input
+        run: nix flake update nixpkgs --flake ./devenv/
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update nixpkgs input"
+          branch: update-nixpkgs
+          title: "chore: update nixpkgs input"
+          body: |
+            Automated weekly update of the `nixpkgs` flake input.
