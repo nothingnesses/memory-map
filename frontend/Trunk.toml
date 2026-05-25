@@ -65,4 +65,4 @@ stage = "pre_build"
 # Command to run
 command = "pnpm"
 # Arguments to pass to command
-command_arguments = ["dlx", "@unocss/cli"]
+command_arguments = ["exec", "unocss"]

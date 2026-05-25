@@ -1,13 +1,34 @@
-use crate::constants::{
-	ERR_CASBIN, ERR_CONFIG, ERR_CREATE_POOL, ERR_DB, ERR_EMAIL, ERR_EMAIL_ADDRESS, ERR_FORBIDDEN,
-	ERR_HASHING, ERR_INTERNAL_SERVER, ERR_INVALID_NUMBER, ERR_IO, ERR_MIGRATION, ERR_MULTIPART,
-	ERR_NOT_FOUND, ERR_POOL, ERR_SMTP, ERR_SYSTEM_TIME, ERR_UNAUTHORIZED, ERR_VALIDATION,
+use {
+	crate::constants::{
+		ERR_CASBIN,
+		ERR_CONFIG,
+		ERR_CREATE_POOL,
+		ERR_DB,
+		ERR_EMAIL,
+		ERR_EMAIL_ADDRESS,
+		ERR_FORBIDDEN,
+		ERR_HASHING,
+		ERR_INTERNAL_SERVER,
+		ERR_INVALID_NUMBER,
+		ERR_IO,
+		ERR_MIGRATION,
+		ERR_MULTIPART,
+		ERR_NOT_FOUND,
+		ERR_POOL,
+		ERR_SMTP,
+		ERR_SYSTEM_TIME,
+		ERR_UNAUTHORIZED,
+		ERR_VALIDATION,
+	},
+	axum::{
+		http::StatusCode,
+		response::{
+			IntoResponse,
+			Response,
+		},
+	},
+	std::fmt,
 };
-use axum::{
-	http::StatusCode,
-	response::{IntoResponse, Response},
-};
-use std::fmt;
 
 #[derive(Debug)]
 pub enum AppError {

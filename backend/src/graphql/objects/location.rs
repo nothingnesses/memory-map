@@ -1,8 +1,15 @@
-use async_graphql::{InputObject, SimpleObject};
-use serde::Serialize;
-use tokio_postgres::Row;
-
-use crate::{parse_latitude, parse_longitude};
+use {
+	crate::{
+		parse_latitude,
+		parse_longitude,
+	},
+	async_graphql::{
+		InputObject,
+		SimpleObject,
+	},
+	serde::Serialize,
+	tokio_postgres::Row,
+};
 
 #[derive(SimpleObject, InputObject, Clone, Debug, Serialize)]
 #[graphql(concrete(name = "Location", input_name = "LocationInput", params()))]

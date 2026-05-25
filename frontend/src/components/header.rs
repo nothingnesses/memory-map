@@ -1,16 +1,38 @@
-use crate::{
-	AppConfig,
-	auth::UserContext,
-	constants::{
-		ARIA_CLOSE_MENU, ARIA_OPEN_MENU, BUTTON_LOGOUT, ERR_SYSTEM_CONFIG_MISSING,
-		HEADER_LAYER_CLASSES, LINK_ACCOUNT, LINK_MAP, LINK_OBJECTS, LINK_SIGN_IN, LINK_USERS,
+use {
+	crate::{
+		AppConfig,
+		auth::UserContext,
+		constants::{
+			ARIA_CLOSE_MENU,
+			ARIA_OPEN_MENU,
+			BUTTON_LOGOUT,
+			ERR_SYSTEM_CONFIG_MISSING,
+			HEADER_LAYER_CLASSES,
+			LINK_ACCOUNT,
+			LINK_MAP,
+			LINK_OBJECTS,
+			LINK_SIGN_IN,
+			LINK_USERS,
+		},
+		errors::use_context_safe,
+		graphql_queries::{
+			logout::LogoutMutation,
+			me::UserRole,
+		},
 	},
-	errors::use_context_safe,
-	graphql_queries::{logout::LogoutMutation, me::UserRole},
+	leptos::{
+		prelude::*,
+		task::spawn_local,
+	},
+	leptos_router::{
+		components::A,
+		hooks::use_navigate,
+	},
+	lucide_leptos::{
+		Menu,
+		X,
+	},
 };
-use leptos::{prelude::*, task::spawn_local};
-use leptos_router::{components::A, hooks::use_navigate};
-use lucide_leptos::{Menu, X};
 
 /// The Header component containing the navigation menu.
 /// It supports a toggleable menu for mobile/desktop views and handles

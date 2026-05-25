@@ -1,25 +1,41 @@
 // Force recompile
-use async_graphql::{
-	http::GraphiQLSource,
-	{Context, Error as GraphQLError},
+use {
+	async_graphql::{
+		Context,
+		Error as GraphQLError,
+		http::GraphiQLSource,
+	},
+	axum::{
+		body::Bytes,
+		extract::FromRef,
+		response::{
+			self,
+			IntoResponse,
+		},
+	},
+	axum_extra::extract::cookie::Key,
+	casbin::Enforcer,
+	deadpool::managed::{
+		Manager as ManagedManager,
+		Object,
+		Pool,
+	},
+	deadpool_postgres::Manager,
+	minio::s3,
+	moka::future::Cache,
+	std::{
+		fmt,
+		sync::{
+			Arc,
+			atomic::AtomicU64,
+		},
+		time::{
+			SystemTime,
+			UNIX_EPOCH,
+		},
+	},
+	tokio::sync::RwLock,
 };
-use axum::{
-	body::Bytes,
-	extract::FromRef,
-	response::{self, IntoResponse},
-};
-use axum_extra::extract::cookie::Key;
-use casbin::Enforcer;
-use deadpool::managed::{Manager as ManagedManager, Object, Pool};
-use deadpool_postgres::Manager;
-use minio::s3;
-use moka::future::Cache;
-use std::{
-	fmt,
-	sync::{Arc, atomic::AtomicU64},
-	time::{SystemTime, UNIX_EPOCH},
-};
-use tokio::sync::RwLock;
 
 pub mod constants;
 pub mod controllers;
@@ -98,7 +114,9 @@ pub struct AppState<M: ManagedManager, W: From<Object<M>>> {
 
 impl<M: ManagedManager, W: From<Object<M>>> Clone for AppState<M, W> {
 	fn clone(&self) -> Self {
-		Self { inner: self.inner.clone() }
+		Self {
+			inner: self.inner.clone(),
+		}
 	}
 }
 
@@ -160,14 +178,14 @@ pub async fn graphiql() -> impl IntoResponse {
 }
 
 pub fn parse_latitude(latitude: f64) -> Result<f64, errors::AppError> {
-	if (-90.0..=90.0).contains(&latitude) {
+	if (-90.0 ..= 90.0).contains(&latitude) {
 		return Ok(latitude);
 	}
 	Err(errors::AppError::Validation(format!("{latitude} is not a valid latitude value.")))
 }
 
 pub fn parse_longitude(longitude: f64) -> Result<f64, errors::AppError> {
-	if (-180.0..=180.0).contains(&longitude) {
+	if (-180.0 ..= 180.0).contains(&longitude) {
 		return Ok(longitude);
 	}
 	Err(errors::AppError::Validation(format!("{longitude} is not a valid longitude value.")))
@@ -182,4 +200,39 @@ pub struct CasbinUser {
 #[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
 pub struct CasbinObject {
 	pub user_id: i64,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{
+		errors::AppError,
+		parse_latitude,
+		parse_longitude,
+	};
+
+	#[test]
+	fn parse_latitude_accepts_boundary_values() {
+		assert!(parse_latitude(-90.0).is_ok());
+		assert!(parse_latitude(0.0).is_ok());
+		assert!(parse_latitude(90.0).is_ok());
+	}
+
+	#[test]
+	fn parse_latitude_rejects_out_of_range_values() {
+		assert!(matches!(parse_latitude(-90.1), Err(AppError::Validation(_))));
+		assert!(matches!(parse_latitude(90.1), Err(AppError::Validation(_))));
+	}
+
+	#[test]
+	fn parse_longitude_accepts_boundary_values() {
+		assert!(parse_longitude(-180.0).is_ok());
+		assert!(parse_longitude(0.0).is_ok());
+		assert!(parse_longitude(180.0).is_ok());
+	}
+
+	#[test]
+	fn parse_longitude_rejects_out_of_range_values() {
+		assert!(matches!(parse_longitude(-180.1), Err(AppError::Validation(_))));
+		assert!(matches!(parse_longitude(180.1), Err(AppError::Validation(_))));
+	}
 }

@@ -5,3 +5,18 @@ members = [
 	"frontend",
 	"shared",
 ]
+
+[workspace.lints.clippy]
+expect_used = "warn"
+indexing_slicing = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+codegen-units = 1

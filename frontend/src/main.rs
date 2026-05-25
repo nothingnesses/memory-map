@@ -1,5 +1,11 @@
-use frontend::{App, AppConfig, constants::*};
-use leptos::prelude::*;
+use {
+	frontend::{
+		App,
+		AppConfig,
+		constants::*,
+	},
+	leptos::prelude::*,
+};
 
 fn main() {
 	// set up logging

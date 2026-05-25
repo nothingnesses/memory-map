@@ -1,5 +1,6 @@
 {
 	"devDependencies": {
+		"@unocss/cli": "66.5.4",
 		"@unocss/preset-wind4": "^66.5.4",
 		"unocss": "^66.5.4"
 	},

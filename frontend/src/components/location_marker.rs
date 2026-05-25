@@ -1,9 +1,11 @@
-use crate::{
-	components::gallery::Gallery,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+use {
+	crate::{
+		components::gallery::Gallery,
+		graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	},
+	leptos::prelude::*,
+	leptos_leaflet::prelude::*,
 };
-use leptos::prelude::*;
-use leptos_leaflet::prelude::*;
 
 #[component]
 pub fn LocationMarker(

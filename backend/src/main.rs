@@ -1,47 +1,116 @@
-use anyhow::Context;
-use async_graphql::{EmptySubscription, Schema};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
-use axum::{
-	Router,
-	body::{Body, to_bytes},
-	extract::{DefaultBodyLimit, Extension, State},
-	http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header, request::Parts},
-	middleware::{self, Next},
-	response::IntoResponse,
-	routing::{get, post},
-};
-use axum_extra::extract::cookie::{Cookie, Key, PrivateCookieJar};
-use backend::{
-	AppState, Config, SharedState, UserId,
-	constants::{
-		BODY_MAX_SIZE_LIMIT_BYTES, CACHE_MAX_CAPACITY, CACHE_TTL_SECONDS, GRAPHQL_BODY_LIMIT_BYTES,
+use {
+	anyhow::Context,
+	async_graphql::{
+		EmptySubscription,
+		Schema,
 	},
-	controllers::api::locations::post as post_locations,
-	db::queries::SELECT_USER_EXISTS_QUERY,
-	graphiql,
-	graphql::queries::{mutation::Mutation, query::Query},
-	migrations,
-};
-use casbin::{CoreApi, Enforcer};
-use deadpool::managed::Object;
-use deadpool_postgres::{Manager, Runtime};
-use dotenvy::dotenv;
-use minio::s3::{ClientBuilder, creds::StaticProvider, http::BaseUrl};
-use moka::future::Cache;
-use std::{
-	collections::hash_map::DefaultHasher,
-	hash::{Hash, Hasher},
-	ops::DerefMut,
-	sync::{
-		Arc, Mutex,
-		atomic::{AtomicU64, Ordering},
+	async_graphql_axum::{
+		GraphQLRequest,
+		GraphQLResponse,
 	},
-	time::{Duration, SystemTime, UNIX_EPOCH},
+	axum::{
+		Router,
+		body::{
+			Body,
+			to_bytes,
+		},
+		extract::{
+			DefaultBodyLimit,
+			Extension,
+			State,
+		},
+		http::{
+			HeaderMap,
+			HeaderValue,
+			Method,
+			Request,
+			StatusCode,
+			header,
+			request::Parts,
+		},
+		middleware::{
+			self,
+			Next,
+		},
+		response::IntoResponse,
+		routing::{
+			get,
+			post,
+		},
+	},
+	axum_extra::extract::cookie::{
+		Cookie,
+		Key,
+		PrivateCookieJar,
+	},
+	backend::{
+		AppState,
+		Config,
+		SharedState,
+		UserId,
+		constants::{
+			BODY_MAX_SIZE_LIMIT_BYTES,
+			CACHE_MAX_CAPACITY,
+			CACHE_TTL_SECONDS,
+			GRAPHQL_BODY_LIMIT_BYTES,
+		},
+		controllers::api::locations::post as post_locations,
+		db::queries::SELECT_USER_EXISTS_QUERY,
+		graphiql,
+		graphql::queries::{
+			mutation::Mutation,
+			query::Query,
+		},
+		migrations,
+	},
+	casbin::{
+		CoreApi,
+		Enforcer,
+	},
+	deadpool::managed::Object,
+	deadpool_postgres::{
+		Manager,
+		Runtime,
+	},
+	dotenvy::dotenv,
+	minio::s3::{
+		ClientBuilder,
+		creds::StaticProvider,
+		http::BaseUrl,
+	},
+	moka::future::Cache,
+	std::{
+		collections::hash_map::DefaultHasher,
+		hash::{
+			Hash,
+			Hasher,
+		},
+		ops::DerefMut,
+		sync::{
+			Arc,
+			Mutex,
+			atomic::{
+				AtomicU64,
+				Ordering,
+			},
+		},
+		time::{
+			Duration,
+			SystemTime,
+			UNIX_EPOCH,
+		},
+	},
+	tokio::{
+		net::TcpListener,
+		sync::RwLock,
+	},
+	tokio_postgres::NoTls,
+	tower_http::cors::{
+		AllowOrigin,
+		CorsLayer,
+	},
+	tracing_subscriber::EnvFilter,
 };
-use tokio::{net::TcpListener, sync::RwLock};
-use tokio_postgres::NoTls;
-use tower_http::cors::{AllowOrigin, CorsLayer};
-use tracing_subscriber::EnvFilter;
 
 async fn caching_middleware(
 	State(state): State<AppState<Manager, Object<Manager>>>,
@@ -60,9 +129,9 @@ async fn caching_middleware(
 	// Return early if it's a mutation.
 	// Mutations change state and should not be cached. Caching them would prevent
 	// the server from executing the mutation on subsequent requests.
-	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes)
-		&& let Some(query) = json.get("query").and_then(|q| q.as_str())
-		&& query.trim().to_lowercase().starts_with("mutation")
+	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) &&
+		let Some(query) = json.get("query").and_then(|q| q.as_str()) &&
+		query.trim().to_lowercase().starts_with("mutation")
 	{
 		let req = Request::from_parts(parts, Body::from(bytes));
 		return Ok(next.run(req).await.into_response());
@@ -128,8 +197,8 @@ async fn graphql_handler(
 ) -> (PrivateCookieJar, GraphQLResponse) {
 	let mut req = req.into_inner();
 
-	if let Some(cookie) = jar.get("auth_token")
-		&& let Ok(user_id) = cookie.value().parse::<i64>()
+	if let Some(cookie) = jar.get("auth_token") &&
+		let Ok(user_id) = cookie.value().parse::<i64>()
 	{
 		// Verify user exists in database
 		let user_exists = if let Ok(client) = state.inner.pool.get().await {
@@ -232,7 +301,9 @@ async fn main() -> anyhow::Result<()> {
 		enforcer,
 	});
 
-	let app_state = AppState { inner: shared_state.clone() };
+	let app_state = AppState {
+		inner: shared_state.clone(),
+	};
 
 	let schema = Schema::build(Query, Mutation, EmptySubscription)
 		.data(shared_state.clone())
@@ -243,8 +314,8 @@ async fn main() -> anyhow::Result<()> {
 		.allow_origin(AllowOrigin::predicate(
 			move |origin: &HeaderValue, _request_parts: &Parts| {
 				let origin_bytes = origin.as_bytes();
-				origin_bytes == frontend_url.as_bytes()
-					|| origin_bytes == cors_allowed_origins.as_bytes()
+				origin_bytes == frontend_url.as_bytes() ||
+					origin_bytes == cors_allowed_origins.as_bytes()
 			},
 		))
 		.allow_methods([Method::GET, Method::POST])

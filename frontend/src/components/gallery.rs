@@ -1,9 +1,12 @@
-use crate::{
-	CallbackAnyView, components::carousel::Carousel,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+use {
+	crate::{
+		CallbackAnyView,
+		components::carousel::Carousel,
+		graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	},
+	leptos::prelude::*,
+	thaw::*,
 };
-use leptos::prelude::*;
-use thaw::*;
 
 #[component]
 pub fn Gallery(

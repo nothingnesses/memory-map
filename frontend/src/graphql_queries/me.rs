@@ -1,9 +1,14 @@
-use crate::{
-	graphql_queries::me::me_query::{MeQueryMe as User, Variables},
-	post_graphql_with_auth,
+use {
+	crate::{
+		graphql_queries::me::me_query::{
+			MeQueryMe as User,
+			Variables,
+		},
+		post_graphql_with_auth,
+	},
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -14,7 +19,10 @@ use leptos::error::Error;
 )]
 pub struct MeQuery;
 
-pub use crate::graphql_queries::types::{PublicityDefault, UserRole};
+pub use crate::graphql_queries::types::{
+	PublicityDefault,
+	UserRole,
+};
 
 impl MeQuery {
 	pub async fn run(api_url: String) -> Result<Option<User>, Error> {

@@ -1,36 +1,88 @@
-use crate::{
-	CasbinObject, CasbinUser, ContextWrapper, SharedState, UserId,
-	db::queries::{
-		ADMIN_UPDATE_USER_QUERY, DELETE_OBJECT_ALLOWED_USERS_QUERY, DELETE_OBJECTS_QUERY,
-		DELETE_PASSWORD_RESET_TOKEN_QUERY, INSERT_OBJECT_ALLOWED_USER_QUERY,
-		INSERT_PASSWORD_RESET_TOKEN_QUERY, INSERT_USER_QUERY, SELECT_PASSWORD_RESET_TOKEN_QUERY,
-		SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, SELECT_USER_COUNT_BY_EMAIL_QUERY,
-		SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY,
-		SELECT_USERS_BY_EMAILS_QUERY, UPDATE_OBJECT_QUERY, UPDATE_USER_EMAIL_QUERY,
-		UPDATE_USER_PASSWORD_QUERY, UPDATE_USER_PUBLICITY_QUERY, UPSERT_OBJECT_QUERY,
+use {
+	crate::{
+		CasbinObject,
+		CasbinUser,
+		ContextWrapper,
+		SharedState,
+		UserId,
+		db::queries::{
+			ADMIN_UPDATE_USER_QUERY,
+			DELETE_OBJECT_ALLOWED_USERS_QUERY,
+			DELETE_OBJECTS_QUERY,
+			DELETE_PASSWORD_RESET_TOKEN_QUERY,
+			INSERT_OBJECT_ALLOWED_USER_QUERY,
+			INSERT_PASSWORD_RESET_TOKEN_QUERY,
+			INSERT_USER_QUERY,
+			SELECT_PASSWORD_RESET_TOKEN_QUERY,
+			SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
+			SELECT_USER_COUNT_BY_EMAIL_QUERY,
+			SELECT_USER_PASSWORD_HASH_BY_ID_QUERY,
+			SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY,
+			SELECT_USERS_BY_EMAILS_QUERY,
+			UPDATE_OBJECT_QUERY,
+			UPDATE_USER_EMAIL_QUERY,
+			UPDATE_USER_PASSWORD_QUERY,
+			UPDATE_USER_PUBLICITY_QUERY,
+			UPSERT_OBJECT_QUERY,
+		},
+		email::send_password_reset_email,
+		errors::AppError,
+		graphql::objects::{
+			location::Location,
+			s3_object::{
+				PublicityOverride,
+				S3Object,
+			},
+			user::{
+				PublicityDefault,
+				User,
+			},
+		},
 	},
-	email::send_password_reset_email,
-	errors::AppError,
-	graphql::objects::{
-		location::Location,
-		s3_object::{PublicityOverride, S3Object},
-		user::{PublicityDefault, User},
+	anyhow::Context as AnyhowContext,
+	argon2::{
+		Argon2,
+		PasswordHash,
+		PasswordHasher,
+		PasswordVerifier,
+		password_hash::SaltString,
 	},
+	async_graphql::{
+		Context,
+		Error as GraphQLError,
+		ID,
+		InputObject,
+		Object,
+	},
+	axum_extra::extract::cookie::{
+		Cookie,
+		SameSite,
+	},
+	casbin::CoreApi,
+	deadpool_postgres::{
+		Client,
+		Manager,
+	},
+	email_address::EmailAddress,
+	futures::future::join_all,
+	jiff::Timestamp,
+	minio::s3::{
+		Client as MinioClient,
+		builders::ObjectToDelete,
+		types::S3Api,
+	},
+	rand::{
+		Rng,
+		distributions::Alphanumeric,
+		rngs::OsRng,
+	},
+	std::sync::{
+		Arc,
+		Mutex,
+	},
+	time::Duration,
+	tracing,
 };
-use anyhow::Context as AnyhowContext;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
-use async_graphql::{Context, Error as GraphQLError, ID, InputObject, Object};
-use axum_extra::extract::cookie::{Cookie, SameSite};
-use casbin::CoreApi;
-use deadpool_postgres::{Client, Manager};
-use email_address::EmailAddress;
-use futures::future::join_all;
-use jiff::Timestamp;
-use minio::s3::{Client as MinioClient, builders::ObjectToDelete, types::S3Api};
-use rand::{Rng, distributions::Alphanumeric, rngs::OsRng};
-use std::sync::{Arc, Mutex};
-use time::Duration;
-use tracing;
 
 #[derive(InputObject)]
 pub struct UpdateS3ObjectInput {
@@ -276,11 +328,16 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
 
 		let objects = S3Object::where_ids(ctx, &ids).await?;
 		for obj in &objects {
-			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
+			let casbin_obj = CasbinObject {
+				user_id: obj.user_id.unwrap_or(0),
+			};
 			enforcer
 				.enforce((casbin_user.clone(), casbin_obj, "delete"))
 				.map_err(AppError::from)?
@@ -318,10 +375,15 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
 
 		let obj = S3Object::where_id(ctx, id_int).await?;
-		let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
+		let casbin_obj = CasbinObject {
+			user_id: obj.user_id.unwrap_or(0),
+		};
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
 		}
@@ -361,10 +423,15 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
 
 		if let Ok(obj) = S3Object::where_name(ctx, input.name.clone()).await {
-			let casbin_obj = CasbinObject { user_id: obj.user_id.unwrap_or(0) };
+			let casbin_obj = CasbinObject {
+				user_id: obj.user_id.unwrap_or(0),
+			};
 			if !enforcer
 				.enforce((casbin_user.clone(), casbin_obj, "update"))
 				.map_err(GraphQLError::from)?
@@ -372,7 +439,9 @@ impl Mutation {
 				return Err(GraphQLError::new("Forbidden"));
 			}
 		} else {
-			let casbin_obj = CasbinObject { user_id };
+			let casbin_obj = CasbinObject {
+				user_id,
+			};
 			if !enforcer.enforce((casbin_user, casbin_obj, "create")).map_err(GraphQLError::from)? {
 				return Err(GraphQLError::new("Forbidden"));
 			}
@@ -414,8 +483,13 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
+		let casbin_obj = CasbinObject {
+			user_id,
+		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
@@ -586,8 +660,13 @@ impl Mutation {
 		let user = User::by_id(ctx, user_id.0)
 			.await?
 			.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id.0, role: user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id: user_id.0 };
+		let casbin_user = CasbinUser {
+			id: user_id.0,
+			role: user.role.to_string(),
+		};
+		let casbin_obj = CasbinObject {
+			user_id: user_id.0,
+		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
@@ -642,8 +721,13 @@ impl Mutation {
 		let user = User::by_id(ctx, user_id.0)
 			.await?
 			.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id.0, role: user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id: user_id.0 };
+		let casbin_user = CasbinUser {
+			id: user_id.0,
+			role: user.role.to_string(),
+		};
+		let casbin_obj = CasbinObject {
+			user_id: user_id.0,
+		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
@@ -784,8 +868,13 @@ impl Mutation {
 		let current_user = User::by_id(ctx, user_id.0)
 			.await?
 			.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser { id: user_id.0, role: current_user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id: target_id };
+		let casbin_user = CasbinUser {
+			id: user_id.0,
+			role: current_user.role.to_string(),
+		};
+		let casbin_obj = CasbinObject {
+			user_id: target_id,
+		};
 
 		if !enforcer
 			.enforce((casbin_user, casbin_obj, "manage_user"))

@@ -1,20 +1,29 @@
-use crate::{
-	AppConfig,
-	components::{
-		edit_s3_object_form::EditS3ObjectForm, file_upload::FileUpload,
-		s3_objects_table::S3ObjectsTable,
+use {
+	crate::{
+		AppConfig,
+		components::{
+			edit_s3_object_form::EditS3ObjectForm,
+			file_upload::FileUpload,
+			s3_objects_table::S3ObjectsTable,
+		},
+		constants::{
+			BUTTON_ADD_OBJECT,
+			BUTTON_CLOSE,
+			ERR_SYSTEM_CONFIG_MISSING,
+			TITLE_ADD_OBJECT,
+			TITLE_EDIT_OBJECT,
+			TITLE_OBJECTS,
+		},
+		dump_errors,
+		errors::use_context_safe,
+		graphql_queries::s3_objects::{
+			S3ObjectsQuery,
+			s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+		},
 	},
-	constants::{
-		BUTTON_ADD_OBJECT, BUTTON_CLOSE, ERR_SYSTEM_CONFIG_MISSING, TITLE_ADD_OBJECT,
-		TITLE_EDIT_OBJECT, TITLE_OBJECTS,
-	},
-	dump_errors,
-	errors::use_context_safe,
-	graphql_queries::s3_objects::S3ObjectsQuery,
-	graphql_queries::s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
+	leptos::prelude::*,
+	thaw::*,
 };
-use leptos::prelude::*;
-use thaw::*;
 
 /// The Objects page component.
 ///

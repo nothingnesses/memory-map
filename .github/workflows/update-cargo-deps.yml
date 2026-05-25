@@ -1,0 +1,33 @@
+name: Update Cargo dependencies
+
+on:
+  schedule:
+    - cron: "0 7 * * 4"
+  workflow_dispatch:
+
+env:
+  SKIP_DIRENV: "1"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Update Cargo dependencies
+        run: nix develop ./devenv/ --command cargo update
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update Cargo dependencies"
+          branch: update-cargo-deps
+          title: "chore: update Cargo dependencies"
+          body: |
+            Automated weekly update of Cargo.lock dependencies.

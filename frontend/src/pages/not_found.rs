@@ -1,5 +1,10 @@
-use crate::constants::{MSG_404, TITLE_404};
-use leptos::prelude::*;
+use {
+	crate::constants::{
+		MSG_404,
+		TITLE_404,
+	},
+	leptos::prelude::*,
+};
 
 /// 404 Not Found Page
 #[component]

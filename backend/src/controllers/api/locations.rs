@@ -1,28 +1,40 @@
-use crate::{
-	AppState,
-	constants::{
-		ERR_DB_CLIENT, ERR_FAILED_READ_BYTES, ERR_MULTIPART_MISSING_CONTENT_TYPE,
-		ERR_MULTIPART_MISSING_FILENAME, ERR_MULTIPART_MISSING_NAME, ERR_UNSUPPORTED_FILE_TYPE,
-		ERR_UPLOAD_MINIO,
+use {
+	crate::{
+		AppState,
+		constants::{
+			ERR_DB_CLIENT,
+			ERR_FAILED_READ_BYTES,
+			ERR_MULTIPART_MISSING_CONTENT_TYPE,
+			ERR_MULTIPART_MISSING_FILENAME,
+			ERR_MULTIPART_MISSING_NAME,
+			ERR_UNSUPPORTED_FILE_TYPE,
+			ERR_UPLOAD_MINIO,
+		},
+		errors::AppError,
+		graphql::{
+			objects::{
+				location::Location,
+				s3_object::PublicityOverride,
+			},
+			queries::mutation::Mutation,
+		},
 	},
-	errors::AppError,
-	graphql::{
-		objects::{location::Location, s3_object::PublicityOverride},
-		queries::mutation::Mutation,
+	anyhow::Context,
+	axum::{
+		Json,
+		body::Bytes,
+		extract::{
+			Multipart,
+			State,
+		},
+		response::IntoResponse,
 	},
+	axum_extra::extract::cookie::PrivateCookieJar,
+	axum_macros::debug_handler,
+	deadpool::managed::Object,
+	deadpool_postgres::Manager,
+	shared::ALLOWED_MIME_TYPES,
 };
-use anyhow::Context;
-use axum::{
-	Json,
-	body::Bytes,
-	extract::{Multipart, State},
-	response::IntoResponse,
-};
-use axum_extra::extract::cookie::PrivateCookieJar;
-use axum_macros::debug_handler;
-use deadpool::managed::Object;
-use deadpool_postgres::Manager;
-use shared::ALLOWED_MIME_TYPES;
 
 #[derive(Debug)]
 struct FileData {
@@ -37,8 +49,8 @@ pub async fn post(
 	jar: PrivateCookieJar,
 	mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-	let user_id = if let Some(cookie) = jar.get("auth_token")
-		&& let Ok(id) = cookie.value().parse::<i64>()
+	let user_id = if let Some(cookie) = jar.get("auth_token") &&
+		let Ok(id) = cookie.value().parse::<i64>()
 	{
 		id
 	} else {
@@ -58,22 +70,22 @@ pub async fn post(
 
 		match name.as_str() {
 			"latitude" => {
-				if let Ok(txt) = field.text().await
-					&& let Ok(val) = txt.parse::<f64>()
+				if let Ok(txt) = field.text().await &&
+					let Ok(val) = txt.parse::<f64>()
 				{
 					latitude = Some(val);
 				}
 			}
 			"longitude" => {
-				if let Ok(txt) = field.text().await
-					&& let Ok(val) = txt.parse::<f64>()
+				if let Ok(txt) = field.text().await &&
+					let Ok(val) = txt.parse::<f64>()
 				{
 					longitude = Some(val);
 				}
 			}
 			"made_on" => {
-				if let Ok(txt) = field.text().await
-					&& !txt.is_empty()
+				if let Ok(txt) = field.text().await &&
+					!txt.is_empty()
 				{
 					// Store the ISO 8601 UTC timestamp string
 					made_on = Some(txt);
@@ -104,7 +116,11 @@ pub async fn post(
 					.bytes()
 					.await
 					.map_err(|e| AppError::Validation(format!("{}{}", ERR_FAILED_READ_BYTES, e)))?;
-				files.push(FileData { filename, content_type, bytes });
+				files.push(FileData {
+					filename,
+					content_type,
+					bytes,
+				});
 			}
 			_ => {}
 		}
@@ -136,7 +152,10 @@ pub async fn post(
 
 		let client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
-			Some(Location { latitude, longitude })
+			Some(Location {
+				latitude,
+				longitude,
+			})
 		} else {
 			None
 		};

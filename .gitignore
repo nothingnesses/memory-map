@@ -2,3 +2,8 @@ target/
 data/
 .env
 .direnv/
+.cache/test-output/
+.claude/worktrees/
+.codex/worktrees/
+.pre-commit-config.yaml
+.playwright-mcp/

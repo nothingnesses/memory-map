@@ -1,32 +1,72 @@
-use crate::{
-	components::{header::Header, protected_route::ProtectedRoute},
-	constants::ERR_SYSTEM_CONFIG_MISSING,
-	errors::{provide_error_context, use_error_context},
-	pages::{
-		account::Account, admin::users::Users, home::Home, objects::Objects, register::Register,
-		reset_password::ResetPassword, sign_in::SignIn,
+use {
+	crate::{
+		components::{
+			header::Header,
+			protected_route::ProtectedRoute,
+		},
+		constants::ERR_SYSTEM_CONFIG_MISSING,
+		errors::{
+			provide_error_context,
+			use_error_context,
+		},
+		pages::{
+			account::Account,
+			admin::users::Users,
+			home::Home,
+			objects::Objects,
+			register::Register,
+			reset_password::ResetPassword,
+			sign_in::SignIn,
+		},
+	},
+	auth::UserContext,
+	graphql_queries::me::MeQuery,
+	leptos::{
+		ev,
+		html,
+		prelude::*,
+		wasm_bindgen::{
+			JsCast,
+			JsValue,
+		},
+		web_sys::{
+			self,
+			js_sys,
+		},
+	},
+	leptos_meta::*,
+	leptos_router::{
+		components::*,
+		path,
+	},
+	std::{
+		error,
+		io,
+		ops::{
+			Add,
+			Deref,
+			Rem,
+			Sub,
+		},
+	},
+	thaw::{
+		ConfigProvider,
+		Toast,
+		ToastBody,
+		ToastIntent,
+		ToastOptions,
+		ToastTitle,
+		ToasterInjection,
+		ToasterProvider,
+	},
+	wasm_bindgen_futures::JsFuture,
+	web_sys::{
+		RequestCredentials,
+		RequestInit,
+		RequestMode,
+		Response,
 	},
 };
-use auth::UserContext;
-use graphql_queries::me::MeQuery;
-use leptos::{
-	ev, html,
-	prelude::*,
-	wasm_bindgen::{JsCast, JsValue},
-	web_sys::{self, js_sys},
-};
-use leptos_meta::*;
-use leptos_router::{components::*, path};
-use std::{
-	error, io,
-	ops::{Add, Deref, Rem, Sub},
-};
-use thaw::{
-	ConfigProvider, Toast, ToastBody, ToastIntent, ToastOptions, ToastTitle, ToasterInjection,
-	ToasterProvider,
-};
-use wasm_bindgen_futures::JsFuture;
-use web_sys::{RequestCredentials, RequestInit, RequestMode, Response};
 
 // Modules
 pub mod auth;
@@ -49,8 +89,8 @@ fn GlobalErrorDisplay() -> impl IntoView {
 	let toaster = use_context::<ToasterInjection>();
 
 	Effect::new(move |_| {
-		if let Some(e) = error.get()
-			&& let Some(toaster) = toaster
+		if let Some(e) = error.get() &&
+			let Some(toaster) = toaster
 		{
 			toaster.dispatch_toast(
 				move || {
@@ -86,8 +126,8 @@ fn Shell(children: Children) -> impl IntoView {
 		translate_y.set_value(current);
 
 		// Only update the CSS variable if the menu is closed
-		if !menu_open.get()
-			&& let Some(el) = page_wrapper_ref.get()
+		if !menu_open.get() &&
+			let Some(el) = page_wrapper_ref.get()
 		{
 			let _ = el
 				.deref()

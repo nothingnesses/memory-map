@@ -1,12 +1,30 @@
-use crate::{
-	ContextWrapper,
-	db::queries::{SELECT_ALL_USERS_QUERY, SELECT_USER_BY_EMAIL_QUERY, SELECT_USER_BY_ID_QUERY},
+use {
+	crate::{
+		ContextWrapper,
+		db::queries::{
+			SELECT_ALL_USERS_QUERY,
+			SELECT_USER_BY_EMAIL_QUERY,
+			SELECT_USER_BY_ID_QUERY,
+		},
+	},
+	async_graphql::{
+		Context,
+		Enum,
+		Error as GraphQLError,
+		ID,
+		Object,
+	},
+	jiff::Timestamp,
+	postgres_types::{
+		FromSql,
+		ToSql,
+	},
+	std::{
+		fmt,
+		str::FromStr,
+	},
+	tokio_postgres::Row,
 };
-use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
-use jiff::Timestamp;
-use postgres_types::{FromSql, ToSql};
-use std::{fmt, str::FromStr};
-use tokio_postgres::Row;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum UserRole {

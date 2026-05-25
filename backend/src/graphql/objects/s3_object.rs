@@ -1,21 +1,44 @@
-use crate::{
-	ContextWrapper, SharedState,
-	db::queries::{
-		SELECT_ALL_OBJECTS_QUERY, SELECT_OBJECT_BY_ID_QUERY, SELECT_OBJECT_BY_NAME_QUERY,
-		SELECT_OBJECTS_BY_IDS_QUERY, SELECT_OBJECTS_BY_USER_ID_QUERY, SELECT_VISIBLE_OBJECTS_QUERY,
+use {
+	crate::{
+		ContextWrapper,
+		SharedState,
+		db::queries::{
+			SELECT_ALL_OBJECTS_QUERY,
+			SELECT_OBJECT_BY_ID_QUERY,
+			SELECT_OBJECT_BY_NAME_QUERY,
+			SELECT_OBJECTS_BY_IDS_QUERY,
+			SELECT_OBJECTS_BY_USER_ID_QUERY,
+			SELECT_VISIBLE_OBJECTS_QUERY,
+		},
+		graphql::objects::location::Location,
 	},
-	graphql::objects::location::Location,
+	async_graphql::{
+		Context,
+		Enum,
+		Error as GraphQLError,
+		ID,
+		Object,
+	},
+	axum::http::Method,
+	deadpool_postgres::Manager,
+	futures::future::join_all,
+	jiff::Timestamp,
+	minio::s3::types::S3Api,
+	postgres_types::{
+		FromSql,
+		ToSql,
+	},
+	serde::{
+		Serialize,
+		Serializer,
+	},
+	std::{
+		fmt,
+		str::FromStr,
+		sync::Arc,
+	},
+	tokio_postgres::Row,
 };
-use async_graphql::{Context, Enum, Error as GraphQLError, ID, Object};
-use axum::http::Method;
-use deadpool_postgres::Manager;
-use futures::future::join_all;
-use jiff::Timestamp;
-use minio::s3::types::S3Api;
-use postgres_types::{FromSql, ToSql};
-use serde::{Serialize, Serializer};
-use std::{fmt, str::FromStr, sync::Arc};
-use tokio_postgres::Row;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, ToSql, FromSql, Serialize)]
 #[postgres(name = "publicity_override")]
@@ -63,8 +86,7 @@ fn serialize_timestamp<S>(
 	serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
-	S: Serializer,
-{
+	S: Serializer, {
 	match timestamp {
 		Some(ts) => serializer.serialize_str(&ts.to_string()),
 		None => serializer.serialize_none(),

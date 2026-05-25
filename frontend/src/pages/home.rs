@@ -1,13 +1,19 @@
-use crate::{
-	components::location_markers::LocationMarkers,
-	constants::{
-		MAP_INITIAL_LAT, MAP_INITIAL_LNG, MAP_INITIAL_ZOOM, MAP_TITLE, TILE_LAYER_ATTRIBUTION,
-		TILE_LAYER_URL,
+use {
+	crate::{
+		components::location_markers::LocationMarkers,
+		constants::{
+			MAP_INITIAL_LAT,
+			MAP_INITIAL_LNG,
+			MAP_INITIAL_ZOOM,
+			MAP_TITLE,
+			TILE_LAYER_ATTRIBUTION,
+			TILE_LAYER_URL,
+		},
+		dump_errors,
 	},
-	dump_errors,
+	leptos::prelude::*,
+	leptos_leaflet::prelude::*,
 };
-use leptos::prelude::*;
-use leptos_leaflet::prelude::*;
 
 /// Default Home Page
 #[component]

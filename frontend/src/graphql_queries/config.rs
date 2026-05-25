@@ -1,9 +1,14 @@
-use crate::{
-	graphql_queries::config::config_query::{ConfigQueryConfig as PublicConfig, Variables},
-	post_graphql,
+use {
+	crate::{
+		graphql_queries::config::config_query::{
+			ConfigQueryConfig as PublicConfig,
+			Variables,
+		},
+		post_graphql,
+	},
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

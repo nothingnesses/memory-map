@@ -1,4 +1,10 @@
 set dotenv-load
+set shell := ["bash", "-c"]
+
+# Load the Nix development environment via direnv for local recipes. CI invokes
+# recipes via `nix develop --command just`, so SKIP_DIRENV=1 bypasses the prefix.
+skip_direnv := env_var_or_default("SKIP_DIRENV", "")
+direnv_prefix := if skip_direnv != "" { "" } else { "direnv exec . " }
 
 # Build mode configuration.
 mode := env_var_or_default("BUILD_MODE", "debug")
@@ -7,28 +13,225 @@ log_prefix := if mode == "debug" { "RUST_LOG=debug" } else { "" }
 
 # Display list of commands.
 default:
-    just -l
+	@just --list
+
+# Approve the direnv environment after reviewing `.envrc` and Nix flake changes.
+allow-env:
+	direnv allow
 
 # Start PostgreSQL and Minio servers.
 servers:
-    nix run ./devenv
+	{{ direnv_prefix }} nix run ./devenv
 
 # Start backend server.
 backend:
-    cd backend; {{log_prefix}} bacon run -- {{release_flag}}
+	{{ direnv_prefix }} bash -c 'cd backend; {{ log_prefix }} bacon run -- {{ release_flag }}'
 
 # Start frontend server. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
 frontend:
-    cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; trunk serve {{release_flag}} --skip-version-check --offline --open
+	{{ direnv_prefix }} bash -c 'cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; env -u NO_COLOR trunk serve {{ release_flag }} --skip-version-check --offline --open'
 
 # Regenerate "frontend/graphql/schema.json".
 regenerate-schema:
-    graphql-client introspect-schema http://localhost:8000 > frontend/graphql/schema.json
+	{{ direnv_prefix }} graphql-client introspect-schema http://localhost:8000 > frontend/graphql/schema.json
 
-# Prepare the project before pushing.
-prepare:
-    cd devenv; nix fmt; cd ..; cargo fmt; cargo doc --no-deps; cargo clippy; cargo test
+# Format all files through the Nix formatter.
+fmt:
+	{{ direnv_prefix }} bash -c 'cd devenv && nix fmt'
+
+# Check without building.
+[positional-arguments]
+check *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --workspace --all-targets --all-features
+	fi
+	{{ direnv_prefix }} cargo check "$@"
+
+# Run clippy with warnings treated as errors.
+[positional-arguments]
+clippy *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --workspace --all-targets --all-features
+	fi
+	{{ direnv_prefix }} cargo clippy "$@" -- -D warnings
+
+# Build documentation with warnings treated as errors and enforce ASCII docs.
+[positional-arguments]
+doc *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	ascii_roots=()
+	for path in README.md CONTRIBUTING.md AGENTS.md frontend/README.md backend/src frontend/src shared/src; do
+		if [[ -e "$path" ]]; then
+			ascii_roots+=("$path")
+		fi
+	done
+
+	matches=$({{ direnv_prefix }} rg -nP '[^[:ascii:]]' "${ascii_roots[@]}" -g '*.rs' -g '*.md' || true)
+	if [[ -n "$matches" ]]; then
+		echo "ERROR: Non-ASCII characters found in source or documentation files. Use ASCII equivalents." >&2
+		echo "" >&2
+		echo "Offending lines:" >&2
+		echo "$matches" >&2
+		exit 1
+	fi
+
+	{{ direnv_prefix }} lychee --offline --no-progress README.md frontend/README.md
+
+	if [ "$#" -eq 0 ]; then
+		set -- --workspace --all-features --no-deps
+	fi
+	{{ direnv_prefix }} env RUSTDOCFLAGS="-D warnings" cargo doc "$@"
+
+# Build the Rust workspace.
+[positional-arguments]
+build *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --workspace --all-targets --all-features
+	fi
+	{{ direnv_prefix }} cargo build "$@"
+
+# Build the frontend application through Trunk.
+frontend-build:
+	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build {{ release_flag }} --skip-version-check'
+
+# Run any cargo subcommand except test; use `just test` for tests.
+[positional-arguments]
+cargo *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		echo "ERROR: cargo subcommand required." >&2
+		exit 2
+	fi
+	if [ "$1" = "test" ]; then
+		echo "ERROR: Use 'just test' instead of 'just cargo test'." >&2
+		exit 1
+	fi
+	{{ direnv_prefix }} cargo "$@"
+
+# Run tests with output caching. Re-runs only when tracked source files change.
+[positional-arguments]
+test *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	mkdir -p .cache/test-output
+	ARGS=$(printf '%q ' "$@")
+	CONTENT_HASH=$(git ls-files -z | xargs -0 md5sum 2>/dev/null | md5sum | cut -c1-32 || true)
+	CACHE_KEY=$(echo "${ARGS}:${CONTENT_HASH}" | md5sum | cut -c1-12)
+	OUTPUT_FILE=".cache/test-output/test-output-${CACHE_KEY}.txt"
+	STATUS_FILE=".cache/test-output/test-output-${CACHE_KEY}.status"
+	if [ -s "$OUTPUT_FILE" ] && [ -s "$STATUS_FILE" ]; then
+		echo "No source changes, proceeding to print cached test outputs:"
+		(trap '' PIPE; cat "$OUTPUT_FILE")
+		echo "Finished printing cached test outputs."
+		exit "$(cat "$STATUS_FILE")"
+	else
+		echo "No cached outputs currently present, proceeding to run tests:"
+		TEMP_FILE="${OUTPUT_FILE}.tmp"
+		TEMP_STATUS_FILE="${STATUS_FILE}.tmp"
+		rm -f "$TEMP_FILE"
+		rm -f "$TEMP_STATUS_FILE"
+		trap 'rm -f "$TEMP_FILE" "$TEMP_STATUS_FILE"' INT TERM HUP
+		RC=0
+		if [ "$#" -eq 0 ]; then
+			set -- --workspace --all-features
+		fi
+		{{ direnv_prefix }} cargo test "$@" > "$TEMP_FILE" 2>&1 || RC=$?
+		if [ ! -s "$TEMP_FILE" ]; then
+			rm -f "$TEMP_FILE"
+			rm -f "$TEMP_STATUS_FILE"
+			exit "${RC:-1}"
+		fi
+		printf '%s\n' "$RC" > "$TEMP_STATUS_FILE"
+		mv "$TEMP_FILE" "$OUTPUT_FILE"
+		mv "$TEMP_STATUS_FILE" "$STATUS_FILE"
+		(trap '' PIPE; cat "$OUTPUT_FILE")
+		echo "Test outputs and exit status saved to cache files:"
+		echo "  output: $OUTPUT_FILE"
+		echo "  status: $STATUS_FILE"
+		exit "$RC"
+	fi
+
+# Remove build artifacts and test cache.
+clean:
+	{{ direnv_prefix }} cargo clean
+	rm -rf .cache/test-output/
+
+# Check licenses and advisories with cargo-deny.
+deny:
+	{{ direnv_prefix }} cargo deny check
+
+# Run an allowed just recipe and filter its output with a caller-provided rg regex.
+[positional-arguments]
+filtered recipe filter *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	recipe="$1"
+	filter="$2"
+	shift 2
+
+	if [ -z "$filter" ]; then
+		echo "ERROR: filtered requires a non-empty rg regex." >&2
+		exit 2
+	fi
+
+	case "$recipe" in
+		build|check|clippy|deny|doc|fmt|frontend-build|test|verify) ;;
+		*)
+			echo "ERROR: unsupported filtered recipe: $recipe" >&2
+			exit 2
+			;;
+	esac
+
+	for arg in "$@"; do
+		case "$arg" in
+			*$'\n'*|*$'\r'*|*[\;\&\|\\\<\>\`\$\'\"\(\)\{\}]*)
+				echo "ERROR: unsafe filtered recipe argument: $arg" >&2
+				exit 2
+				;;
+		esac
+	done
+
+	output=$(mktemp -t just-filtered.XXXXXX)
+	trap 'rm -f "$output"' EXIT
+
+	set +e
+	just --one "$recipe" "$@" > "$output" 2>&1
+	recipe_status=$?
+	set -e
+
+	rg_status=0
+	rg -n -m 300 -- "$filter" "$output" || rg_status=$?
+	if [ "$rg_status" -eq 2 ]; then
+		exit 2
+	fi
+
+	if [ "$rg_status" -ne 0 ] && [ "$recipe_status" -ne 0 ]; then
+		echo "=== no filter matches; last 80 lines ===" >&2
+		tail -n 80 "$output" >&2
+	fi
+
+	exit "$recipe_status"
 
 # Scan for hardcoded values.
 scan-hardcoded:
-    ./scan_hardcoded.sh
+	./scripts/scan_hardcoded.sh
+
+# Verify: fmt, check, clippy, deny, doc, test, frontend build.
+verify:
+	just fmt
+	just check
+	just clippy
+	just deny
+	just doc
+	just test
+	just frontend-build

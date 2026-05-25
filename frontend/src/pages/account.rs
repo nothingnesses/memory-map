@@ -1,25 +1,52 @@
-use crate::{
-	AppConfig,
-	auth::UserContext,
-	components::password_input::PasswordInput,
-	constants::{
-		BUTTON_UPDATE_EMAIL, BUTTON_UPDATE_PASSWORD, ERR_SYSTEM_CONFIG_MISSING,
-		ERR_SYSTEM_USER_CONTEXT_MISSING_MSG, LABEL_CONFIRM_NEW_PASSWORD, LABEL_DEFAULT_PUBLICITY,
-		LABEL_NEW_EMAIL, LABEL_NEW_PASSWORD, LABEL_OLD_PASSWORD, MSG_EMAIL_UPDATED,
-		MSG_NEW_PASSWORDS_DO_NOT_MATCH, MSG_PASSWORD_UPDATED, MSG_PUBLICITY_UPDATED,
-		OPTION_PRIVATE, OPTION_PUBLIC, TITLE_ACCOUNT_SETTINGS, TITLE_CHANGE_EMAIL,
-		TITLE_CHANGE_PASSWORD, TITLE_DEFAULT_PUBLICITY,
+use {
+	crate::{
+		AppConfig,
+		auth::UserContext,
+		components::password_input::PasswordInput,
+		constants::{
+			BUTTON_UPDATE_EMAIL,
+			BUTTON_UPDATE_PASSWORD,
+			ERR_SYSTEM_CONFIG_MISSING,
+			ERR_SYSTEM_USER_CONTEXT_MISSING_MSG,
+			LABEL_CONFIRM_NEW_PASSWORD,
+			LABEL_DEFAULT_PUBLICITY,
+			LABEL_NEW_EMAIL,
+			LABEL_NEW_PASSWORD,
+			LABEL_OLD_PASSWORD,
+			MSG_EMAIL_UPDATED,
+			MSG_NEW_PASSWORDS_DO_NOT_MATCH,
+			MSG_PASSWORD_UPDATED,
+			MSG_PUBLICITY_UPDATED,
+			OPTION_PRIVATE,
+			OPTION_PUBLIC,
+			TITLE_ACCOUNT_SETTINGS,
+			TITLE_CHANGE_EMAIL,
+			TITLE_CHANGE_PASSWORD,
+			TITLE_DEFAULT_PUBLICITY,
+		},
+		errors::use_context_safe,
+		graphql_queries::{
+			change_email::{
+				ChangeEmailMutation,
+				change_email_mutation,
+			},
+			change_password::{
+				ChangePasswordMutation,
+				change_password_mutation,
+			},
+			me::PublicityDefault,
+			update_user_publicity::{
+				UpdateUserPublicityMutation,
+				update_user_publicity_mutation,
+			},
+		},
 	},
-	errors::use_context_safe,
-	graphql_queries::{
-		change_email::{ChangeEmailMutation, change_email_mutation},
-		change_password::{ChangePasswordMutation, change_password_mutation},
-		me::PublicityDefault,
-		update_user_publicity::{UpdateUserPublicityMutation, update_user_publicity_mutation},
+	leptos::{
+		prelude::*,
+		task::spawn_local,
 	},
+	thaw::*,
 };
-use leptos::{prelude::*, task::spawn_local};
-use thaw::*;
 
 #[component]
 pub fn Account() -> impl IntoView {
@@ -61,7 +88,9 @@ pub fn Account() -> impl IntoView {
 		is_email_loading.set(true);
 		let api_url = config.with_value(|c| c.api_url.clone());
 		spawn_local(async move {
-			let variables = change_email_mutation::Variables { new_email: email_val };
+			let variables = change_email_mutation::Variables {
+				new_email: email_val,
+			};
 			match ChangeEmailMutation::run(api_url, variables).await {
 				Ok(_) => {
 					email_message.set(Some(MSG_EMAIL_UPDATED.to_string()));
@@ -115,8 +144,9 @@ pub fn Account() -> impl IntoView {
 			is_publicity_loading.set(true);
 			let api_url = config.with_value(|c| c.api_url.clone());
 			spawn_local(async move {
-				let variables =
-					update_user_publicity_mutation::Variables { default_publicity: new_publicity };
+				let variables = update_user_publicity_mutation::Variables {
+					default_publicity: new_publicity,
+				};
 				match UpdateUserPublicityMutation::run(api_url, variables).await {
 					Ok(_) => {
 						publicity_message.set(Some(MSG_PUBLICITY_UPDATED.to_string()));

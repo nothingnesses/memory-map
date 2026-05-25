@@ -1,11 +1,14 @@
-use crate::{
-	graphql_queries::admin_update_user::admin_update_user_mutation::{
-		AdminUpdateUserMutationAdminUpdateUser as User, Variables,
+use {
+	crate::{
+		graphql_queries::admin_update_user::admin_update_user_mutation::{
+			AdminUpdateUserMutationAdminUpdateUser as User,
+			Variables,
+		},
+		post_graphql_with_auth,
 	},
-	post_graphql_with_auth,
+	graphql_client::GraphQLQuery,
+	leptos::error::Error,
 };
-use graphql_client::GraphQLQuery;
-use leptos::error::Error;
 
 #[derive(GraphQLQuery)]
 #[graphql(

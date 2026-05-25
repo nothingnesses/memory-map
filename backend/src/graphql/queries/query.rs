@@ -1,11 +1,27 @@
-use crate::{
-	CasbinObject, CasbinUser, SharedState, UserId,
-	graphql::objects::{config::PublicConfig, s3_object::S3Object, user::User},
+use {
+	crate::{
+		CasbinObject,
+		CasbinUser,
+		SharedState,
+		UserId,
+		graphql::objects::{
+			config::PublicConfig,
+			s3_object::S3Object,
+			user::User,
+		},
+	},
+	async_graphql::{
+		Context,
+		Error as GraphQLError,
+		Object,
+	},
+	casbin::CoreApi,
+	deadpool_postgres::{
+		Client,
+		Manager,
+	},
+	std::sync::Arc,
 };
-use async_graphql::{Context, Error as GraphQLError, Object};
-use casbin::CoreApi;
-use deadpool_postgres::{Client, Manager};
-use std::sync::Arc;
 
 pub struct Query;
 
@@ -18,7 +34,9 @@ impl Query {
 		let state = ctx
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
-		Ok(PublicConfig { enable_registration: state.config.enable_registration })
+		Ok(PublicConfig {
+			enable_registration: state.config.enable_registration,
+		})
 	}
 
 	async fn me(
@@ -46,9 +64,14 @@ impl Query {
 		let user =
 			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
 
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
 		// Dummy object for system-level permission
-		let casbin_obj = CasbinObject { user_id: 0 };
+		let casbin_obj = CasbinObject {
+			user_id: 0,
+		};
 
 		if !enforcer
 			.enforce((casbin_user, casbin_obj, "read_all_users"))
@@ -75,8 +98,13 @@ impl Query {
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		let enforcer = state.enforcer.read().await;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id: object.user_id.unwrap_or(0) };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
+		let casbin_obj = CasbinObject {
+			user_id: object.user_id.unwrap_or(0),
+		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
@@ -100,8 +128,13 @@ impl Query {
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		let enforcer = state.enforcer.read().await;
-		let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
-		let casbin_obj = CasbinObject { user_id: object.user_id.unwrap_or(0) };
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
+		let casbin_obj = CasbinObject {
+			user_id: object.user_id.unwrap_or(0),
+		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
 			return Err(GraphQLError::new("Forbidden"));
@@ -126,8 +159,13 @@ impl Query {
 				anyhow::anyhow!(e.message).context("Shared state not found in context")
 			})?;
 			let enforcer = state.enforcer.read().await;
-			let casbin_user = CasbinUser { id: user_id, role: user.role.to_string() };
-			let casbin_obj = CasbinObject { user_id: 0 }; // System level object
+			let casbin_user = CasbinUser {
+				id: user_id,
+				role: user.role.to_string(),
+			};
+			let casbin_obj = CasbinObject {
+				user_id: 0,
+			}; // System level object
 
 			if enforcer
 				.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))

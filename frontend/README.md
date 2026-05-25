@@ -1,79 +1,38 @@
-<picture>
-    <source srcset="https://raw.githubusercontent.com/leptos-rs/leptos/main/docs/logos/Leptos_logo_Solid_White.svg" media="(prefers-color-scheme: dark)">
-    <img src="https://raw.githubusercontent.com/leptos-rs/leptos/main/docs/logos/Leptos_logo_RGB.svg" alt="Leptos Logo">
-</picture>
+# Memory Map Frontend
 
-# Leptos Client-Side Rendered (CSR) App Starter Template
+The frontend is a Leptos CSR application built with Trunk, UnoCSS, and Leaflet.
 
-This is a template for use with the [Leptos][Leptos] web framework using the [Trunk][Trunk] tool to compile and serve your app in development.
+## Development
 
-## Creating your repo from the template
-
-This template requires you to have `cargo-generate` and `trunk` installed. [`leptosfmt`](https://github.com/bram209/leptosfmt) is optional but highly recommended. You can install them with
+Run the frontend through the project task runner from the repository root:
 
 ```sh
-cargo install cargo-generate trunk leptosfmt
+just frontend
 ```
 
+The app is served at `http://localhost:3000/`.
 
-To set up your project with this template, run
+The frontend expects the backend to be available at the URL configured in
+`frontend/public/config.json`.
+
+## Build
+
+To build the frontend:
 
 ```sh
-cargo generate --git https://github.com/leptos-rs/start-trunk
+just frontend-build
 ```
 
-to generate your new project, then
+This runs `pnpm install --frozen-lockfile --prefer-offline` and then builds the
+application through Trunk.
 
-```sh
-cd frontend
-```
+## GraphQL
 
-to go to your newly created project.
+GraphQL operations live in `frontend/graphql/`, and generated Rust query modules
+live in `frontend/src/graphql_queries/`.
 
-By default, this template uses Rust `nightly` and requires that you've installed the `wasm` compilation target for your toolchain.
+When the backend schema changes:
 
-
-Sass and Tailwind are also supported by the Trunk build tool, but are optional additions: [see here for more info on how to set those up with Trunk][Trunk-instructions].
-
-
-If you don't have Rust nightly, you can install it with
-```sh
-rustup toolchain install nightly --allow-downgrade
-```
-
-You can add the `wasm` compilation target to rust using
-```sh
-rustup target add wasm32-unknown-unknown
-```
-
-
-## Developing your Leptos CSR project
-
-To develop your Leptos CSR project, running
-
-```sh
-trunk serve --port 3000 --open
-```
-
-will open your app in your default browser at `http://localhost:3000`.
-
-
-## Deploying your Leptos CSR project
-
-To build a Leptos CSR app for release, use the command
-
-```sh
-trunk build --release
-```
-
-This will output the files necessary to run your app into the `dist` folder; you can then use any static site host to serve these files.
-
-For further information about hosting Leptos CSR apps, please refer to [the Leptos Book chapter on deployment available here][deploy-csr].
-
-
-[Leptos]: https://github.com/leptos-rs/leptos
-
-[Trunk]: https://github.com/trunk-rs/trunk
-[Trunk-instructions]: https://trunkrs.dev/assets/
-
-[deploy-csr]: https://book.leptos.dev/deployment/csr.html
+1. Start the backend with `just backend`.
+2. Regenerate the schema with `just regenerate-schema`.
+3. Rebuild or check the frontend.
