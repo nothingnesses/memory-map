@@ -781,6 +781,7 @@ dependencies = [
  "postgres-types",
  "rand 0.8.6",
  "refinery",
+ "reqwest",
  "serde",
  "serde_json",
  "shared",

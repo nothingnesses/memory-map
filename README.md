@@ -115,6 +115,9 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just deny`: Check Rust dependencies with `cargo-deny`.
 - `just doc`: Build documentation with warnings treated as errors and run ASCII/link checks.
 - `just test`: Run the workspace test suite.
+- `just storage-test`: Run ignored storage integration tests against the
+  configured S3-compatible endpoint. Missing local storage skips by default; set
+  `STORAGE_TEST_REQUIRE_SERVICE=true` to fail instead.
 - `just frontend-build`: Build the frontend with Trunk.
 - `just verify`: Run the full verification suite before submitting a PR.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.

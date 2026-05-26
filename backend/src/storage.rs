@@ -24,10 +24,66 @@ use {
 		},
 	},
 	std::{
+		env,
 		fmt,
 		time::Duration,
 	},
 };
+
+#[derive(Clone, Debug)]
+pub struct StorageConfig {
+	pub endpoint_url: String,
+	pub access_key: String,
+	pub secret_key: String,
+	pub bucket_name: String,
+	pub region: String,
+	pub force_path_style: bool,
+	pub presigned_url_ttl_seconds: u64,
+}
+
+impl StorageConfig {
+	pub const MAX_PRESIGNED_URL_TTL_SECONDS: u64 = 604_800;
+
+	pub fn from_env() -> anyhow::Result<Self> {
+		let config = Self {
+			endpoint_url: required_env("S3_ENDPOINT_URL")?,
+			access_key: required_env("S3_ACCESS_KEY")?,
+			secret_key: required_env("S3_SECRET_KEY")?,
+			bucket_name: required_env("S3_BUCKET_NAME")?,
+			region: env_or_default("S3_REGION", "us-east-1"),
+			force_path_style: parse_bool_env("S3_FORCE_PATH_STYLE", true)?,
+			presigned_url_ttl_seconds: env_or_default("S3_PRESIGNED_URL_TTL_SECONDS", "604800")
+				.parse()
+				.context("S3_PRESIGNED_URL_TTL_SECONDS must be an unsigned integer")?,
+		};
+		config.validate()?;
+		Ok(config)
+	}
+
+	pub fn validate(&self) -> anyhow::Result<()> {
+		if !(1 ..= Self::MAX_PRESIGNED_URL_TTL_SECONDS).contains(&self.presigned_url_ttl_seconds) {
+			anyhow::bail!(
+				"s3_presigned_url_ttl_seconds must be between 1 and {}",
+				Self::MAX_PRESIGNED_URL_TTL_SECONDS
+			);
+		}
+		Ok(())
+	}
+}
+
+impl From<&Config> for StorageConfig {
+	fn from(config: &Config) -> Self {
+		Self {
+			endpoint_url: config.s3_endpoint_url.clone(),
+			access_key: config.s3_access_key.clone(),
+			secret_key: config.s3_secret_key.clone(),
+			bucket_name: config.s3_bucket_name.clone(),
+			region: config.s3_region.clone(),
+			force_path_style: config.s3_force_path_style,
+			presigned_url_ttl_seconds: config.s3_presigned_url_ttl_seconds,
+		}
+	}
+}
 
 #[derive(Clone)]
 pub struct StorageClient {
@@ -38,27 +94,32 @@ pub struct StorageClient {
 
 impl StorageClient {
 	pub fn from_config(config: &Config) -> anyhow::Result<Self> {
+		Self::from_storage_config(&StorageConfig::from(config))
+	}
+
+	pub fn from_storage_config(config: &StorageConfig) -> anyhow::Result<Self> {
+		config.validate()?;
 		let credentials = Credentials::new(
-			config.s3_access_key.clone(),
-			config.s3_secret_key.clone(),
+			config.access_key.clone(),
+			config.secret_key.clone(),
 			None,
 			None,
 			"memory-map",
 		);
 		let sdk_config = aws_sdk_s3::Config::builder()
 			.behavior_version(BehaviorVersion::latest())
-			.region(Region::new(config.s3_region.clone()))
+			.region(Region::new(config.region.clone()))
 			.credentials_provider(credentials)
-			.endpoint_url(config.s3_endpoint_url.clone())
-			.force_path_style(config.s3_force_path_style)
+			.endpoint_url(config.endpoint_url.clone())
+			.force_path_style(config.force_path_style)
 			.build();
 		let presigning_config =
-			PresigningConfig::expires_in(Duration::from_secs(config.s3_presigned_url_ttl_seconds))
+			PresigningConfig::expires_in(Duration::from_secs(config.presigned_url_ttl_seconds))
 				.context("Failed to configure S3 presigned URL expiry")?;
 
 		Ok(Self {
 			client: Client::from_conf(sdk_config),
-			bucket_name: config.s3_bucket_name.clone(),
+			bucket_name: config.bucket_name.clone(),
 			presigning_config,
 		})
 	}
@@ -219,4 +280,27 @@ fn create_bucket_error_means_existing_bucket(error: &SdkError<CreateBucketError>
 	error.as_service_error().is_some_and(|error| {
 		error.is_bucket_already_exists() || error.is_bucket_already_owned_by_you()
 	})
+}
+
+fn required_env(name: &str) -> anyhow::Result<String> {
+	env::var(name).with_context(|| format!("{name} must be set"))
+}
+
+fn env_or_default(
+	name: &str,
+	default: &str,
+) -> String {
+	env::var(name).unwrap_or_else(|_| default.to_string())
+}
+
+fn parse_bool_env(
+	name: &str,
+	default: bool,
+) -> anyhow::Result<bool> {
+	let value = env_or_default(name, if default { "true" } else { "false" });
+	match value.to_ascii_lowercase().as_str() {
+		"1" | "true" | "yes" | "on" => Ok(true),
+		"0" | "false" | "no" | "off" => Ok(false),
+		_ => anyhow::bail!("{name} must be a boolean"),
+	}
 }

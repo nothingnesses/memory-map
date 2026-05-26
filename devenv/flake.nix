@@ -76,6 +76,25 @@
                 # For Leptos
                 targets.wasm32-unknown-unknown.stable.rust-std
               ];
+            appRustPlatform = pkgs.makeRustPlatform {
+              cargo = rustToolchain;
+              rustc = rustToolchain;
+            };
+            appSource =
+              let
+                root = toString ./..;
+              in
+              lib.cleanSourceWith {
+                src = ./..;
+                filter =
+                  path: type:
+                  let
+                    rel = lib.removePrefix "${root}/" (toString path);
+                  in
+                  !(lib.hasPrefix "target/" rel)
+                  && !(lib.hasPrefix "data/" rel)
+                  && !(lib.hasPrefix "frontend/node_modules/" rel);
+              };
             rustfsPkgs = pkgs.extend (import inputs.rust-overlay);
             rustfsToolchain = rustfsPkgs.rust-bin.stable.latest.default.override {
               extensions = [ "rust-src" ];
@@ -87,6 +106,22 @@
             rustfsPackage = pkgs.callPackage ./packages/rustfs.nix {
               rustPlatform = rustfsRustPlatform;
               rustfsSrc = inputs.rustfs-src;
+            };
+            storageBootstrap = appRustPlatform.buildRustPackage {
+              pname = "memory-map-storage-bootstrap";
+              version = "0.1.0";
+              src = appSource;
+              cargoLock.lockFile = ../Cargo.lock;
+              cargoBuildFlags = [
+                "-p"
+                "backend"
+                "--bin"
+                "memory-map-storage-bootstrap"
+              ];
+              doCheck = false;
+              nativeBuildInputs = [ pkgs.pkg-config ];
+              buildInputs = [ pkgs.openssl ];
+              meta.mainProgram = "memory-map-storage-bootstrap";
             };
 
             dbName = "db";
@@ -204,66 +239,19 @@
             };
             rustfsBootstrap = pkgs.writeShellApplication {
               name = "memory-map-rustfs-bootstrap";
-              runtimeInputs = [
-                pkgs.coreutils
-                pkgs.curl
-                pkgs.gnugrep
-              ];
+              runtimeInputs = [ storageBootstrap ];
               text = ''
                 set -euo pipefail
 
-                health_body="$(mktemp)"
-                response_body="$(mktemp)"
-                trap 'rm -f "$health_body" "$response_body"' EXIT
+                export S3_ENDPOINT_URL="${s3EndpointUrl}"
+                export S3_ACCESS_KEY="${s3AccessKey}"
+                export S3_SECRET_KEY="${s3SecretKey}"
+                export S3_BUCKET_NAME="${s3BucketName}"
+                export S3_REGION="${s3Region}"
+                export S3_FORCE_PATH_STYLE=true
+                export S3_PRESIGNED_URL_TTL_SECONDS=604800
 
-                curl --fail --silent --show-error --max-time 5 --output "$health_body" "${s3EndpointUrl}/health/ready"
-                if ! grep -Eq '"service"[[:space:]]*:[[:space:]]*"rustfs-endpoint"' "$health_body"; then
-                  cat "$health_body" >&2
-                  echo "RustFS readiness probe did not identify a RustFS service at ${s3EndpointUrl}" >&2
-                  exit 1
-                fi
-
-                auth_args=(
-                  --aws-sigv4 "aws:amz:${s3Region}:s3"
-                  --user "${s3AccessKey}:${s3SecretKey}"
-                  --silent
-                  --show-error
-                  --max-time 5
-                )
-
-                curl --fail "''${auth_args[@]}" "${s3EndpointUrl}/" >/dev/null
-
-                bucket_status="$(curl "''${auth_args[@]}" --head --output "$response_body" --write-out "%{http_code}" "${s3EndpointUrl}/${s3BucketName}" || true)"
-                case "$bucket_status" in
-                  200)
-                    exit 0
-                    ;;
-                  404)
-                    ;;
-                  *)
-                    cat "$response_body" >&2
-                    echo "Failed to check bucket ${s3BucketName}; HTTP $bucket_status" >&2
-                    exit 1
-                    ;;
-                esac
-
-                http_code="$(curl "''${auth_args[@]}" --request PUT --output "$response_body" --write-out "%{http_code}" "${s3EndpointUrl}/${s3BucketName}" || true)"
-                case "$http_code" in
-                  200|409)
-                    ;;
-                  *)
-                    cat "$response_body" >&2
-                    echo "Failed to create bucket ${s3BucketName}; HTTP $http_code" >&2
-                    exit 1
-                    ;;
-                esac
-
-                bucket_status="$(curl "''${auth_args[@]}" --head --output "$response_body" --write-out "%{http_code}" "${s3EndpointUrl}/${s3BucketName}" || true)"
-                if [ "$bucket_status" != 200 ]; then
-                  cat "$response_body" >&2
-                  echo "Failed to verify bucket ${s3BucketName}; HTTP $bucket_status" >&2
-                  exit 1
-                fi
+                exec memory-map-storage-bootstrap
               '';
             };
 
@@ -351,11 +339,12 @@
             };
 
             overlayAttrs = {
-              inherit (config.packages) rustToolchain rustfs;
+              inherit (config.packages) rustToolchain rustfs storageBootstrap;
             };
 
             packages.rustToolchain = rustToolchain;
             packages.rustfs = rustfsPackage;
+            packages.storageBootstrap = storageBootstrap;
 
             # `process-compose.foo` will add a flake package output called "foo".
             # Therefore, this will add a default package that you can build using

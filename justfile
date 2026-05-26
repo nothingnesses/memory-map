@@ -131,6 +131,16 @@ test *args:
 	fi
 	{{ direnv_prefix }} cargo test "$@"
 
+# Run storage integration tests against a configured S3-compatible service.
+[positional-arguments]
+storage-test *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --ignored --nocapture
+	fi
+	{{ direnv_prefix }} cargo test -p backend --test storage -- "$@"
+
 # Remove build artifacts.
 clean:
 	{{ direnv_prefix }} cargo clean
@@ -155,7 +165,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		build|check|clippy|deny|doc|fmt|frontend-build|test|verify) ;;
+		build|check|clippy|deny|doc|fmt|frontend-build|storage-test|test|verify) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2
