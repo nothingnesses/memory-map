@@ -8,7 +8,7 @@ use {
 			ERR_MULTIPART_MISSING_FILENAME,
 			ERR_MULTIPART_MISSING_NAME,
 			ERR_UNSUPPORTED_FILE_TYPE,
-			ERR_UPLOAD_MINIO,
+			ERR_UPLOAD_STORAGE,
 		},
 		errors::AppError,
 		graphql::{
@@ -143,12 +143,12 @@ pub async fn post(
 
 		state
 			.inner
-			.minio_client
+			.s3_client
 			.put_object_content(&state.inner.bucket_name, &file.filename, file.bytes)
 			.content_type(file.content_type)
 			.send()
 			.await
-			.context(ERR_UPLOAD_MINIO)?;
+			.context(ERR_UPLOAD_STORAGE)?;
 
 		let client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {

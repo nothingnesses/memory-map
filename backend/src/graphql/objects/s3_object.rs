@@ -254,7 +254,7 @@ impl S3Object {
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
 		Ok(data
-			.minio_client
+			.s3_client
 			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
 			.send()
 			.await?
@@ -266,7 +266,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.minio_client
+		data.s3_client
 			.get_object(&data.bucket_name, &self.name)
 			.send()
 			.await?

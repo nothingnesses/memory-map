@@ -67,7 +67,7 @@ use {
 	futures::future::join_all,
 	jiff::Timestamp,
 	minio::s3::{
-		Client as MinioClient,
+		Client as S3Client,
 		builders::ObjectToDelete,
 		types::S3Api,
 	},
@@ -117,7 +117,7 @@ pub struct Mutation;
 impl Mutation {
 	pub async fn delete_s3_objects_worker(
 		db_client: &Client,
-		minio_client: &MinioClient,
+		s3_client: &S3Client,
 		bucket_name: &str,
 		ids: &[i64],
 	) -> Result<Vec<S3Object>, AppError> {
@@ -144,11 +144,11 @@ impl Mutation {
 		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
 
 		if !objects_to_delete.is_empty() {
-			minio_client
+			s3_client
 				.delete_objects::<_, ObjectToDelete>(bucket_name, objects_to_delete)
 				.send()
 				.await
-				.context("Failed to delete objects from MinIO")?;
+				.context("Failed to delete objects from S3 storage")?;
 		}
 
 		Ok(objects)
@@ -313,7 +313,7 @@ impl Mutation {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let wrapper = ContextWrapper(ctx);
 		let bucket_name = wrapper.get_bucket_name()?;
-		let minio_client = wrapper.get_minio_client()?;
+		let s3_client = wrapper.get_s3_client()?;
 		let client = wrapper.get_db_client().await?;
 		let ids: Vec<i64> = ids
 			.into_iter()
@@ -345,7 +345,7 @@ impl Mutation {
 				.ok_or_else(|| GraphQLError::new("Forbidden"))?;
 		}
 
-		let result = Self::delete_s3_objects_worker(&client, minio_client, bucket_name, &ids)
+		let result = Self::delete_s3_objects_worker(&client, s3_client, bucket_name, &ids)
 			.await
 			.map_err(GraphQLError::from)?;
 

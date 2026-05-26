@@ -54,10 +54,12 @@ pub struct Config {
 	pub smtp_from: String,
 	pub cookie_secret: String,
 	pub frontend_url: String,
-	pub minio_access_key: String,
-	pub minio_secret_key: String,
-	pub minio_url: String,
+	pub s3_endpoint_url: String,
+	pub s3_access_key: String,
+	pub s3_secret_key: String,
 	pub s3_bucket_name: String,
+	pub s3_region: String,
+	pub s3_force_path_style: bool,
 	pub server_host: String,
 	pub server_port: u16,
 	pub cors_allowed_origins: String,
@@ -66,6 +68,10 @@ pub struct Config {
 impl Config {
 	pub fn from_env() -> Result<Self, errors::AppError> {
 		let cfg = config::Config::builder()
+			.set_default("s3_region", "us-east-1")
+			.map_err(errors::AppError::from)?
+			.set_default("s3_force_path_style", true)
+			.map_err(errors::AppError::from)?
 			.add_source(config::Environment::default().separator("__"))
 			.build()
 			.map_err(errors::AppError::from)?;
@@ -79,7 +85,7 @@ pub struct UserId(pub i64);
 
 pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
-	pub minio_client: s3::Client,
+	pub s3_client: s3::Client,
 	pub bucket_name: String,
 	pub last_modified: AtomicU64,
 	pub response_cache: Cache<u64, Bytes>,
@@ -139,7 +145,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 	) -> fmt::Result {
 		f.debug_struct("SharedState")
 			.field("pool", &"Pool")
-			.field("minio_client", &self.minio_client)
+			.field("s3_client", &self.s3_client)
 			.field("bucket_name", &self.bucket_name)
 			.field("last_modified", &self.last_modified)
 			.field("response_cache", &"Cache<u64, Bytes>")
@@ -157,11 +163,11 @@ impl<'a> ContextWrapper<'a> {
 		Ok(pool.get().await?)
 	}
 
-	pub fn get_minio_client(&self) -> Result<&s3::Client, GraphQLError> {
+	pub fn get_s3_client(&self) -> Result<&s3::Client, GraphQLError> {
 		Ok(&self
 			.0
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
-			.minio_client)
+			.s3_client)
 	}
 
 	pub fn get_bucket_name(&self) -> Result<&str, GraphQLError> {

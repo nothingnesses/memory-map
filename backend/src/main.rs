@@ -259,16 +259,26 @@ async fn main() -> anyhow::Result<()> {
 			.context("Failed to run database migrations")?;
 	}
 
-	// Initialise minio client
-	let base_url = cfg.minio_url.parse::<BaseUrl>().context("Failed to parse MinIO URL")?;
-	tracing::info!("Trying to connect to MinIO at: `{:?}`", base_url);
+	// Initialise S3 client
+	let mut base_url =
+		cfg.s3_endpoint_url.parse::<BaseUrl>().context("Failed to parse S3 endpoint URL")?;
+	base_url.region.clone_from(&cfg.s3_region);
+	if cfg.s3_force_path_style {
+		base_url.virtual_style = false;
+	}
+	tracing::info!(
+		"S3 endpoint configured: `{:?}` (region: {}, force path-style: {})",
+		base_url,
+		cfg.s3_region,
+		cfg.s3_force_path_style
+	);
 
-	let static_provider = StaticProvider::new(&cfg.minio_access_key, &cfg.minio_secret_key, None);
+	let static_provider = StaticProvider::new(&cfg.s3_access_key, &cfg.s3_secret_key, None);
 
-	let minio_client = ClientBuilder::new(base_url)
+	let s3_client = ClientBuilder::new(base_url)
 		.provider(Some(Box::new(static_provider)))
 		.build()
-		.context("Failed to build MinIO client")?;
+		.context("Failed to build S3 client")?;
 
 	let bucket_name = cfg.s3_bucket_name.clone();
 
@@ -292,7 +302,7 @@ async fn main() -> anyhow::Result<()> {
 	let key = Key::from(cfg.cookie_secret.as_bytes());
 	let shared_state = Arc::new(SharedState {
 		pool,
-		minio_client,
+		s3_client,
 		bucket_name,
 		last_modified,
 		response_cache,
