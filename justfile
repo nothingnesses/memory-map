@@ -141,6 +141,23 @@ storage-test *args:
 	fi
 	{{ direnv_prefix }} cargo test -p backend --test storage -- "$@"
 
+# Run storage integration tests against the headless local service graph.
+storage-ci:
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	log_file="${PROCESS_COMPOSE_LOG:-process-compose.log}"
+	port="${PROCESS_COMPOSE_PORT:-8080}"
+
+	cleanup() {
+		{{ direnv_prefix }} nix run ./devenv -- --port "$port" down || true
+	}
+	trap cleanup EXIT
+
+	{{ direnv_prefix }} nix run ./devenv -- --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
+	{{ direnv_prefix }} nix run ./devenv -- --port "$port" project is-ready --wait
+	STORAGE_TEST_REQUIRE_SERVICE=true just storage-test
+
 # Remove build artifacts.
 clean:
 	{{ direnv_prefix }} cargo clean
@@ -165,7 +182,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		build|check|clippy|deny|doc|fmt|frontend-build|storage-test|test|verify) ;;
+		build|check|clippy|deny|doc|fmt|frontend-build|storage-ci|storage-test|test|verify) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2

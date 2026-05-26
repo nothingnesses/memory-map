@@ -77,3 +77,19 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix develop ./devenv/ --command just frontend-build
+
+  storage-integration:
+    name: Storage Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - run: nix develop ./devenv/ --command just storage-ci
+      - name: Upload process-compose log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: process-compose-log
+          path: process-compose.log
+          if-no-files-found: ignore
