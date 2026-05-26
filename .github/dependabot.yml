@@ -1,0 +1,13 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "07:00"
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
