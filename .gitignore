@@ -7,3 +7,4 @@ data/
 .codex/worktrees/
 .pre-commit-config.yaml
 .playwright-mcp/
+*.code-workspace
