@@ -8,6 +8,14 @@
     # @todo Look into https://github.com/OpenMaxIO/openmaxio-object-browser or https://github.com/rustfs/rustfs
     nixpkgs-minio.url = "github:NixOS/nixpkgs/e6f23dc08d3624daab7094b701aa3954923c6bbb";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
+    rustfs-src = {
+      url = "github:rustfs/rustfs/1.0.0-beta.4";
+      flake = false;
+    };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -73,6 +81,14 @@
                 # For Leptos
                 targets.wasm32-unknown-unknown.stable.rust-std
               ];
+            rustfsPkgs = pkgs.extend (import inputs.rust-overlay);
+            rustfsToolchain = rustfsPkgs.rust-bin.stable.latest.default.override {
+              extensions = [ "rust-src" ];
+            };
+            rustfsRustPlatform = pkgs.makeRustPlatform {
+              cargo = rustfsToolchain;
+              rustc = rustfsToolchain;
+            };
 
             treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
               # Cargo.toml lives at the repo root (one level above devenv/).
@@ -165,10 +181,14 @@
             };
 
             overlayAttrs = {
-              inherit (config.packages) rustToolchain;
+              inherit (config.packages) rustToolchain rustfs;
             };
 
             packages.rustToolchain = rustToolchain;
+            packages.rustfs = pkgs.callPackage ./packages/rustfs.nix {
+              rustPlatform = rustfsRustPlatform;
+              rustfsSrc = inputs.rustfs-src;
+            };
 
             # `process-compose.foo` will add a flake package output called "foo".
             # Therefore, this will add a default package that you can build using
