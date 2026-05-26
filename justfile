@@ -19,9 +19,13 @@ default:
 allow-env:
 	direnv allow
 
-# Start PostgreSQL and Minio servers.
+# Start PostgreSQL and RustFS servers.
 servers:
 	{{ direnv_prefix }} nix run ./devenv
+
+# Remove local service state created by current and legacy service recipes.
+clean-service-state:
+	rm -rf data/postgres data/rustfs data/pg1 data/minio1
 
 # Start backend server.
 backend:

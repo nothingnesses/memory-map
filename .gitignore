@@ -1,5 +1,8 @@
 target/
-data/
+data/minio1/
+data/pg1/
+data/postgres/
+data/rustfs/
 .env
 .direnv/
 /result

@@ -70,10 +70,10 @@ You can optionally configure the build mode and other settings by editing `.env`
 just servers
 ```
 
-MinIO object storage becomes available at: [http://localhost:9001/login](http://localhost:9001/login)
+RustFS S3-compatible storage becomes available at: [http://localhost:9001/login](http://localhost:9001/login)
 
-- **Username:** `minioadmin`
-- **Password:** `minioadmin`
+- **Username:** `memorymapdev`
+- **Password:** `memorymapdevsecret`
 
 ### 5. Start backend
 
@@ -99,7 +99,8 @@ Frontend app: [http://localhost:3000/](http://localhost:3000/)
 
 The project uses [Just](https://github.com/casey/just) as a task runner.
 
-- `just servers`: Start PostgreSQL and MinIO via Nix.
+- `just servers`: Start PostgreSQL and RustFS via Nix.
+- `just clean-service-state`: Remove local PostgreSQL and storage service state.
 - `just backend`: Start the Axum backend with hot-reloading (via Bacon).
 - `just frontend`: Start the Leptos frontend (via Trunk).
 - `just fmt`: Format Rust, Nix, Markdown, YAML, and TOML files.
@@ -121,7 +122,7 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 |                         | [UnoCSS](https://unocss.dev/)                             |
 | Backend                 | [Axum](https://github.com/tokio-rs/axum)                  |
 |                         | [GraphQL](https://graphql.org)                            |
-| Storage                 | [MinIO](https://min.io)                                   |
+| Storage                 | [RustFS](https://rustfs.com/)                             |
 | Database                | [PostgreSQL](https://www.postgresql.org)                  |
 | Development Environment | [Nix package manager](https://nixos.org)                  |
 |                         | [nix-direnv](https://github.com/nix-community/nix-direnv) |
