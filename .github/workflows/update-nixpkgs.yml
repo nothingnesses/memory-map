@@ -1,4 +1,4 @@
-name: Update nixpkgs
+name: Update Nix flake inputs
 
 on:
   schedule:
@@ -23,8 +23,8 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Update nixpkgs input
-        run: nix flake update nixpkgs --flake ./devenv/
+      - name: Update Nix flake inputs
+        run: nix flake update --flake ./devenv/
 
       - name: Check for changes
         id: diff
@@ -44,8 +44,8 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.app-token.outputs.token }}
-          commit-message: "chore: update nixpkgs input"
-          branch: update-nixpkgs
-          title: "chore: update nixpkgs input"
+          commit-message: "chore: update Nix flake inputs"
+          branch: update-nix-flake-inputs
+          title: "chore: update Nix flake inputs"
           body: |
-            Automated weekly update of the `nixpkgs` flake input.
+            Automated weekly update of moving Nix flake inputs.
