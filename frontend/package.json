@@ -1,8 +1,8 @@
 {
 	"devDependencies": {
-		"@unocss/cli": "66.5.4",
-		"@unocss/preset-wind4": "^66.5.4",
-		"unocss": "^66.5.4"
+		"@unocss/cli": "66.7.0",
+		"@unocss/preset-wind4": "^66.7.0",
+		"unocss": "^66.7.0"
 	},
 	"dependencies": {
 		"leaflet": "^1.9.4"
