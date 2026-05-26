@@ -207,11 +207,21 @@
               runtimeInputs = [
                 pkgs.coreutils
                 pkgs.curl
+                pkgs.gnugrep
               ];
               text = ''
                 set -euo pipefail
 
-                curl --fail --silent --show-error --max-time 5 "${s3EndpointUrl}/health/ready" >/dev/null
+                health_body="$(mktemp)"
+                response_body="$(mktemp)"
+                trap 'rm -f "$health_body" "$response_body"' EXIT
+
+                curl --fail --silent --show-error --max-time 5 --output "$health_body" "${s3EndpointUrl}/health/ready"
+                if ! grep -Eq '"service"[[:space:]]*:[[:space:]]*"rustfs-endpoint"' "$health_body"; then
+                  cat "$health_body" >&2
+                  echo "RustFS readiness probe did not identify a RustFS service at ${s3EndpointUrl}" >&2
+                  exit 1
+                fi
 
                 auth_args=(
                   --aws-sigv4 "aws:amz:${s3Region}:s3"
@@ -222,9 +232,6 @@
                 )
 
                 curl --fail "''${auth_args[@]}" "${s3EndpointUrl}/" >/dev/null
-
-                response_body="$(mktemp)"
-                trap 'rm -f "$response_body"' EXIT
 
                 bucket_status="$(curl "''${auth_args[@]}" --head --output "$response_body" --write-out "%{http_code}" "${s3EndpointUrl}/${s3BucketName}" || true)"
                 case "$bucket_status" in
