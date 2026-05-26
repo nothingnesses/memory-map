@@ -28,18 +28,10 @@ just check           # Run cargo check
 just clippy          # Run Clippy with warnings as errors
 just deny            # Check dependency licenses and advisories
 just doc             # Build docs and run ASCII/link checks
-just test            # Run tests with cached output
+just test            # Run tests
 just frontend-build  # Build the Trunk frontend
 just verify          # Run the full verification suite
 ```
-
-## Tests
-
-`just test` caches command output under `.cache/test-output/`. The cache key is
-based on tracked file contents and the test arguments.
-
-After creating a new source or test file, run `git add <file>` once so the cache
-can see it. Use `just clean` to clear build artifacts and cached test output.
 
 ## Documentation And Text
 

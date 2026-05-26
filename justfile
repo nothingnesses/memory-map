@@ -117,53 +117,19 @@ cargo *args:
 	fi
 	{{ direnv_prefix }} cargo "$@"
 
-# Run tests with output caching. Re-runs only when tracked source files change.
+# Run tests.
 [positional-arguments]
 test *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	mkdir -p .cache/test-output
-	ARGS=$(printf '%q ' "$@")
-	CONTENT_HASH=$(git ls-files -z | xargs -0 md5sum 2>/dev/null | md5sum | cut -c1-32 || true)
-	CACHE_KEY=$(echo "${ARGS}:${CONTENT_HASH}" | md5sum | cut -c1-12)
-	OUTPUT_FILE=".cache/test-output/test-output-${CACHE_KEY}.txt"
-	STATUS_FILE=".cache/test-output/test-output-${CACHE_KEY}.status"
-	if [ -s "$OUTPUT_FILE" ] && [ -s "$STATUS_FILE" ]; then
-		echo "No source changes, proceeding to print cached test outputs:"
-		(trap '' PIPE; cat "$OUTPUT_FILE")
-		echo "Finished printing cached test outputs."
-		exit "$(cat "$STATUS_FILE")"
-	else
-		echo "No cached outputs currently present, proceeding to run tests:"
-		TEMP_FILE="${OUTPUT_FILE}.tmp"
-		TEMP_STATUS_FILE="${STATUS_FILE}.tmp"
-		rm -f "$TEMP_FILE"
-		rm -f "$TEMP_STATUS_FILE"
-		trap 'rm -f "$TEMP_FILE" "$TEMP_STATUS_FILE"' INT TERM HUP
-		RC=0
-		if [ "$#" -eq 0 ]; then
-			set -- --workspace --all-features
-		fi
-		{{ direnv_prefix }} cargo test "$@" > "$TEMP_FILE" 2>&1 || RC=$?
-		if [ ! -s "$TEMP_FILE" ]; then
-			rm -f "$TEMP_FILE"
-			rm -f "$TEMP_STATUS_FILE"
-			exit "${RC:-1}"
-		fi
-		printf '%s\n' "$RC" > "$TEMP_STATUS_FILE"
-		mv "$TEMP_FILE" "$OUTPUT_FILE"
-		mv "$TEMP_STATUS_FILE" "$STATUS_FILE"
-		(trap '' PIPE; cat "$OUTPUT_FILE")
-		echo "Test outputs and exit status saved to cache files:"
-		echo "  output: $OUTPUT_FILE"
-		echo "  status: $STATUS_FILE"
-		exit "$RC"
+	if [ "$#" -eq 0 ]; then
+		set -- --workspace --all-features
 	fi
+	{{ direnv_prefix }} cargo test "$@"
 
-# Remove build artifacts and test cache.
+# Remove build artifacts.
 clean:
 	{{ direnv_prefix }} cargo clean
-	rm -rf .cache/test-output/
 
 # Check licenses and advisories with cargo-deny.
 deny:

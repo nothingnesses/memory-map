@@ -107,7 +107,7 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just clippy`: Run Clippy with warnings treated as errors.
 - `just deny`: Check Rust dependencies with `cargo-deny`.
 - `just doc`: Build documentation with warnings treated as errors and run ASCII/link checks.
-- `just test`: Run the workspace test suite with cached output.
+- `just test`: Run the workspace test suite.
 - `just frontend-build`: Build the frontend with Trunk.
 - `just verify`: Run the full verification suite before submitting a PR.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
