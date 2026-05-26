@@ -21,7 +21,6 @@ use {
 		Pool,
 	},
 	deadpool_postgres::Manager,
-	minio::s3,
 	moka::future::Cache,
 	std::{
 		fmt,
@@ -43,6 +42,9 @@ pub mod db;
 pub mod email;
 pub mod errors;
 pub mod graphql;
+pub mod storage;
+
+use storage::StorageClient;
 
 #[derive(Debug, serde::Deserialize, Clone)]
 pub struct Config {
@@ -60,6 +62,7 @@ pub struct Config {
 	pub s3_bucket_name: String,
 	pub s3_region: String,
 	pub s3_force_path_style: bool,
+	pub s3_presigned_url_ttl_seconds: u64,
 	pub server_host: String,
 	pub server_port: u16,
 	pub cors_allowed_origins: String,
@@ -72,10 +75,18 @@ impl Config {
 			.map_err(errors::AppError::from)?
 			.set_default("s3_force_path_style", true)
 			.map_err(errors::AppError::from)?
+			.set_default("s3_presigned_url_ttl_seconds", 604_800)
+			.map_err(errors::AppError::from)?
 			.add_source(config::Environment::default().separator("__"))
 			.build()
 			.map_err(errors::AppError::from)?;
-		cfg.try_deserialize().map_err(errors::AppError::from)
+		let config: Self = cfg.try_deserialize().map_err(errors::AppError::from)?;
+		if !(1 ..= 604_800).contains(&config.s3_presigned_url_ttl_seconds) {
+			return Err(errors::AppError::Internal(anyhow::anyhow!(
+				"s3_presigned_url_ttl_seconds must be between 1 and 604800"
+			)));
+		}
+		Ok(config)
 	}
 }
 
@@ -85,8 +96,7 @@ pub struct UserId(pub i64);
 
 pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
-	pub s3_client: s3::Client,
-	pub bucket_name: String,
+	pub storage: StorageClient,
 	pub last_modified: AtomicU64,
 	pub response_cache: Cache<u64, Bytes>,
 	pub key: Key,
@@ -145,8 +155,7 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 	) -> fmt::Result {
 		f.debug_struct("SharedState")
 			.field("pool", &"Pool")
-			.field("s3_client", &self.s3_client)
-			.field("bucket_name", &self.bucket_name)
+			.field("storage", &self.storage)
 			.field("last_modified", &self.last_modified)
 			.field("response_cache", &"Cache<u64, Bytes>")
 			.field("enforcer", &"Enforcer")
@@ -163,19 +172,11 @@ impl<'a> ContextWrapper<'a> {
 		Ok(pool.get().await?)
 	}
 
-	pub fn get_s3_client(&self) -> Result<&s3::Client, GraphQLError> {
+	pub fn get_storage_client(&self) -> Result<&StorageClient, GraphQLError> {
 		Ok(&self
 			.0
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
-			.s3_client)
-	}
-
-	pub fn get_bucket_name(&self) -> Result<&str, GraphQLError> {
-		Ok(self
-			.0
-			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
-			.bucket_name
-			.as_str())
+			.storage)
 	}
 }
 

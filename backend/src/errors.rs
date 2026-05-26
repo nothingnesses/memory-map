@@ -115,12 +115,6 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for AppError {
 	}
 }
 
-impl From<minio::s3::error::Error> for AppError {
-	fn from(err: minio::s3::error::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!(err))
-	}
-}
-
 impl From<argon2::password_hash::Error> for AppError {
 	fn from(err: argon2::password_hash::Error) -> Self {
 		AppError::Internal(anyhow::anyhow!("{}{}", ERR_HASHING, err))

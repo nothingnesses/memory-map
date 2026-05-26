@@ -19,11 +19,9 @@ use {
 		ID,
 		Object,
 	},
-	axum::http::Method,
 	deadpool_postgres::Manager,
 	futures::future::join_all,
 	jiff::Timestamp,
-	minio::s3::types::S3Api,
 	postgres_types::{
 		FromSql,
 		ToSql,
@@ -253,12 +251,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		Ok(data
-			.s3_client
-			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
-			.send()
-			.await?
-			.url)
+		data.storage.presigned_get_url(&self.name).await.map_err(GraphQLError::from)
 	}
 
 	async fn content_type(
@@ -266,14 +259,6 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.s3_client
-			.get_object(&data.bucket_name, &self.name)
-			.send()
-			.await?
-			.headers
-			.get("Content-Type")
-			.and_then(|content_type| content_type.to_str().ok())
-			.map(|s| s.to_string())
-			.ok_or_else(|| "Invalid Content-Type".into())
+		data.storage.object_content_type(&self.name).await.map_err(GraphQLError::from)
 	}
 }

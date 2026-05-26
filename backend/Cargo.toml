@@ -9,6 +9,13 @@ anyhow = "1.0"
 argon2 = "0.5"
 async-graphql = "7.1"
 async-graphql-axum = "7.1"
+aws-credential-types = "1.2.14"
+aws-sdk-s3 = { version = "1.133.0", default-features = false, features = [
+	"default-https-client",
+	"http-1x",
+	"rt-tokio",
+	"sigv4a"
+] }
 axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.12", features = [
 	"cookie",
@@ -32,7 +39,6 @@ lettre = { version = "0.11", features = [
 	"tokio1",
 	"tokio1-native-tls"
 ] }
-minio = "0.3"
 moka = { version = "0.12", features = ["future"] }
 postgres-types = { version = "0.2", features = ["derive"] }
 rand = "0.8"

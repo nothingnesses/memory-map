@@ -38,6 +38,7 @@ use {
 				User,
 			},
 		},
+		storage::StorageClient,
 	},
 	anyhow::Context as AnyhowContext,
 	argon2::{
@@ -66,11 +67,6 @@ use {
 	email_address::EmailAddress,
 	futures::future::join_all,
 	jiff::Timestamp,
-	minio::s3::{
-		Client as S3Client,
-		builders::ObjectToDelete,
-		types::S3Api,
-	},
 	rand::{
 		Rng,
 		distributions::Alphanumeric,
@@ -117,8 +113,7 @@ pub struct Mutation;
 impl Mutation {
 	pub async fn delete_s3_objects_worker(
 		db_client: &Client,
-		s3_client: &S3Client,
-		bucket_name: &str,
+		storage: &StorageClient,
 		ids: &[i64],
 	) -> Result<Vec<S3Object>, AppError> {
 		tracing::debug!("IDs to delete: {:?}", ids);
@@ -138,17 +133,13 @@ impl Mutation {
 				))
 			})?;
 
-		let objects_to_delete: Vec<ObjectToDelete> =
-			objects.iter().map(|object| ObjectToDelete::from(&object.name)).collect();
+		let objects_to_delete: Vec<String> =
+			objects.iter().map(|object| object.name.clone()).collect();
 
 		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
 
 		if !objects_to_delete.is_empty() {
-			s3_client
-				.delete_objects::<_, ObjectToDelete>(bucket_name, objects_to_delete)
-				.send()
-				.await
-				.context("Failed to delete objects from S3 storage")?;
+			storage.delete_objects(&objects_to_delete).await?;
 		}
 
 		Ok(objects)
@@ -312,8 +303,7 @@ impl Mutation {
 	) -> Result<Vec<S3Object>, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let wrapper = ContextWrapper(ctx);
-		let bucket_name = wrapper.get_bucket_name()?;
-		let s3_client = wrapper.get_s3_client()?;
+		let storage = wrapper.get_storage_client()?;
 		let client = wrapper.get_db_client().await?;
 		let ids: Vec<i64> = ids
 			.into_iter()
@@ -345,7 +335,7 @@ impl Mutation {
 				.ok_or_else(|| GraphQLError::new("Forbidden"))?;
 		}
 
-		let result = Self::delete_s3_objects_worker(&client, s3_client, bucket_name, &ids)
+		let result = Self::delete_s3_objects_worker(&client, storage, &ids)
 			.await
 			.map_err(GraphQLError::from)?;
 

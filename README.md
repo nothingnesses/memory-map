@@ -64,10 +64,11 @@ You can optionally configure the build mode and other settings by editing `.env`
 - `BUILD_MODE="release"`: Optimised build, smaller binaries, slower compilation.
 - Database, SMTP, and S3 storage configurations.
 - Local storage uses `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
-  `S3_BUCKET_NAME`, `S3_REGION`, and `S3_FORCE_PATH_STYLE`.
+  `S3_BUCKET_NAME`, `S3_REGION`, `S3_FORCE_PATH_STYLE`, and
+  `S3_PRESIGNED_URL_TTL_SECONDS`.
 - The default local S3 API endpoint is `http://127.0.0.1:9000/`, with region
   `us-east-1`, bucket `memory-map`, and path-style addressing enabled for
-  RustFS.
+  RustFS. Presigned media URLs default to a seven-day lifetime.
 
 ### 4. Start database & storage
 

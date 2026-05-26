@@ -62,6 +62,7 @@ use {
 			query::Query,
 		},
 		migrations,
+		storage::StorageClient,
 	},
 	casbin::{
 		CoreApi,
@@ -73,11 +74,6 @@ use {
 		Runtime,
 	},
 	dotenvy::dotenv,
-	minio::s3::{
-		ClientBuilder,
-		creds::StaticProvider,
-		http::BaseUrl,
-	},
 	moka::future::Cache,
 	std::{
 		collections::hash_map::DefaultHasher,
@@ -259,28 +255,14 @@ async fn main() -> anyhow::Result<()> {
 			.context("Failed to run database migrations")?;
 	}
 
-	// Initialise S3 client
-	let mut base_url =
-		cfg.s3_endpoint_url.parse::<BaseUrl>().context("Failed to parse S3 endpoint URL")?;
-	base_url.region.clone_from(&cfg.s3_region);
-	if cfg.s3_force_path_style {
-		base_url.virtual_style = false;
-	}
+	// Initialise S3 storage client
 	tracing::info!(
-		"S3 endpoint configured: `{:?}` (region: {}, force path-style: {})",
-		base_url,
+		"S3 endpoint configured: {} (region: {}, force path-style: {})",
+		cfg.s3_endpoint_url,
 		cfg.s3_region,
 		cfg.s3_force_path_style
 	);
-
-	let static_provider = StaticProvider::new(&cfg.s3_access_key, &cfg.s3_secret_key, None);
-
-	let s3_client = ClientBuilder::new(base_url)
-		.provider(Some(Box::new(static_provider)))
-		.build()
-		.context("Failed to build S3 client")?;
-
-	let bucket_name = cfg.s3_bucket_name.clone();
+	let storage = StorageClient::from_config(&cfg).context("Failed to build S3 storage client")?;
 
 	let last_modified = AtomicU64::new(
 		SystemTime::now()
@@ -302,8 +284,7 @@ async fn main() -> anyhow::Result<()> {
 	let key = Key::from(cfg.cookie_secret.as_bytes());
 	let shared_state = Arc::new(SharedState {
 		pool,
-		s3_client,
-		bucket_name,
+		storage,
 		last_modified,
 		response_cache,
 		key: key.clone(),

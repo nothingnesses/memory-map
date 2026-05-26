@@ -8,7 +8,6 @@ use {
 			ERR_MULTIPART_MISSING_FILENAME,
 			ERR_MULTIPART_MISSING_NAME,
 			ERR_UNSUPPORTED_FILE_TYPE,
-			ERR_UPLOAD_STORAGE,
 		},
 		errors::AppError,
 		graphql::{
@@ -134,21 +133,19 @@ pub async fn post(
 	let mut uploaded_objects = Vec::new();
 
 	for file in files {
+		let FileData {
+			filename,
+			content_type,
+			bytes,
+		} = file;
 		tracing::debug!(
 			" - Name: {}, Type: {}, Size: {} bytes",
-			file.filename,
-			file.content_type,
-			file.bytes.len()
+			filename,
+			content_type,
+			bytes.len()
 		);
 
-		state
-			.inner
-			.s3_client
-			.put_object_content(&state.inner.bucket_name, &file.filename, file.bytes)
-			.content_type(file.content_type)
-			.send()
-			.await
-			.context(ERR_UPLOAD_STORAGE)?;
+		state.inner.storage.upload_object(&filename, bytes, content_type).await?;
 
 		let client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
 		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
@@ -162,7 +159,7 @@ pub async fn post(
 
 		match Mutation::upsert_s3_object_worker(
 			&client,
-			file.filename,
+			filename,
 			made_on.clone(),
 			location,
 			user_id,
