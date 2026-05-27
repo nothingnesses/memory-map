@@ -445,8 +445,7 @@
                 pkgs.trunk
                 # https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
                 pkgs.dart-sass
-                # Stable had 0.2.105 and we needed 0.2.106, so we're using unstable here
-                pkgs.unstable.wasm-bindgen-cli
+                pkgs.unstable.wasm-bindgen-cli_0_2_118
                 # Needed for building in release mode
                 pkgs.binaryen
                 # For link checking in markdown
@@ -459,6 +458,10 @@
               ];
 
               env = {
+                # Keep Cargo subcommands on the flake-selected toolchain even
+                # when the parent shell exports stale toolchain paths.
+                CARGO = "${config.packages.rustToolchain}/bin/cargo";
+                RUSTC = "${config.packages.rustToolchain}/bin/rustc";
                 # Required by rust-analyzer
                 RUST_SRC_PATH = "${config.packages.rustToolchain}/lib/rustlib/src/rust/library";
               };
