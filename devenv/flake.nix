@@ -475,6 +475,9 @@
                 # when the parent shell exports stale toolchain paths.
                 CARGO = "${config.packages.rustToolchain}/bin/cargo";
                 RUSTC = "${config.packages.rustToolchain}/bin/rustc";
+                LD_LIBRARY_PATH = lib.makeLibraryPath [
+                  pkgs.openssl
+                ];
                 # Required by rust-analyzer
                 RUST_SRC_PATH = "${config.packages.rustToolchain}/lib/rustlib/src/rust/library";
               };

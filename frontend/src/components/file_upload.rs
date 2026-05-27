@@ -38,11 +38,11 @@ use {
 			HtmlFormElement,
 			MouseEvent,
 			Request,
+			RequestCredentials,
 			RequestInit,
 			SubmitEvent,
 		},
 	},
-	leptos_router::components::Form,
 	shared::ALLOWED_MIME_TYPES,
 	thaw::*,
 	wasm_bindgen_futures::JsFuture,
@@ -114,6 +114,7 @@ pub fn FileUpload(
 		spawn_local(async move {
 			let options = RequestInit::new();
 			options.set_method("POST");
+			options.set_credentials(RequestCredentials::Include);
 			options.set_body(&form_data);
 
 			let url = format!("{api_url}/api/locations/");
@@ -163,7 +164,7 @@ pub fn FileUpload(
 	};
 	view! {
 		<ErrorBoundary fallback=dump_errors>
-			<Form action="" on:submit=on_submit>
+			<form on:submit=on_submit>
 				<div class="relative grid gap-4">
 					<label>
 						<div class="font-bold">{LABEL_SET_LATITUDE}</div>
@@ -200,8 +201,11 @@ pub fn FileUpload(
 						/>
 					</label>
 					<div class="grid grid-flow-col justify-start gap-4">
-						<Button class="w-fit">{BUTTON_SUBMIT}</Button>
+						<Button attr:r#type="submit" class="w-fit">
+							{BUTTON_SUBMIT}
+						</Button>
 						<Button
+							attr:r#type="button"
 							class="w-fit"
 							appearance=ButtonAppearance::Subtle
 							on_click=move |e: MouseEvent| {
@@ -213,7 +217,7 @@ pub fn FileUpload(
 						</Button>
 					</div>
 				</div>
-			</Form>
+			</form>
 		</ErrorBoundary>
 	}
 	.into_any()

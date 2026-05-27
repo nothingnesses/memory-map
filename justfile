@@ -29,7 +29,7 @@ clean-service-state:
 
 # Start backend server.
 backend:
-	{{ direnv_prefix }} bash -c 'cd backend; {{ log_prefix }} bacon run -- {{ release_flag }}'
+	{{ direnv_prefix }} bash -c 'cd backend; {{ log_prefix }} bacon run -- --bin backend {{ release_flag }}'
 
 # Create local frontend runtime config when missing.
 frontend-config:
