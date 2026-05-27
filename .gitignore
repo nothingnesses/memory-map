@@ -4,6 +4,7 @@ data/pg1/
 data/postgres/
 data/rustfs/
 .env
+frontend/public/config.json
 .direnv/
 /result
 /result-*

@@ -53,10 +53,14 @@ cd memory-map
 
 ```sh
 cp .env.example .env
+just frontend-config
 direnv allow
 ```
 
 This installs all dependencies and auto-loads the development shell whenever you enter the directory.
+
+`just frontend-config` creates the ignored local runtime config at
+`frontend/public/config.json` from `frontend/config.example.json`.
 
 You can optionally configure the build mode and other settings by editing `.env`:
 
@@ -108,6 +112,7 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just servers`: Start PostgreSQL and RustFS via Nix.
 - `just clean-service-state`: Remove local PostgreSQL and storage service state.
 - `just backend`: Start the Axum backend with hot-reloading (via Bacon).
+- `just frontend-config`: Create local frontend runtime config when missing.
 - `just frontend`: Start the Leptos frontend (via Trunk).
 - `just fmt`: Format Rust, Nix, Markdown, YAML, and TOML files.
 - `just check`: Run `cargo check` for the workspace.

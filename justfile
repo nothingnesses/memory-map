@@ -31,8 +31,15 @@ clean-service-state:
 backend:
 	{{ direnv_prefix }} bash -c 'cd backend; {{ log_prefix }} bacon run -- {{ release_flag }}'
 
+# Create local frontend runtime config when missing.
+frontend-config:
+	@if [ ! -f frontend/public/config.json ]; then \
+		cp frontend/config.example.json frontend/public/config.json; \
+		echo "Created frontend/public/config.json from frontend/config.example.json"; \
+	fi
+
 # Start frontend server. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
-frontend:
+frontend: frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; env -u NO_COLOR trunk serve {{ release_flag }} --skip-version-check --offline --open'
 
 # Regenerate "frontend/graphql/schema.json".
@@ -103,7 +110,7 @@ build *args:
 	{{ direnv_prefix }} cargo build "$@"
 
 # Build the frontend application through Trunk.
-frontend-build:
+frontend-build: frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build {{ release_flag }} --skip-version-check'
 
 # Run any cargo subcommand except test; use `just test` for tests.

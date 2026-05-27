@@ -61,7 +61,8 @@ from production secret management. Do not copy values from `.env.example` or
 ## Frontend Runtime Config
 
 The frontend is a static client-side rendered app. At runtime it fetches
-`/config.json` from the same origin as the frontend.
+`/config.json` from the same origin as the frontend. The concrete runtime file
+`frontend/public/config.json` is intentionally ignored by Git.
 
 Production must provide a concrete `/config.json` during deployment:
 
@@ -74,8 +75,10 @@ Production must provide a concrete `/config.json` during deployment:
 `api_url` is public runtime configuration, not a secret. It should point to the
 public backend GraphQL/API origin used by browsers.
 
-The local development API URL, `http://127.0.0.1:8000`, is not suitable for
-production. Do not deploy a frontend build with that runtime config.
+For local development, run `just frontend-config` to create
+`frontend/public/config.json` from `frontend/config.example.json`. The example
+uses the local backend API URL, `http://127.0.0.1:8000`, which is not suitable
+for production. Do not deploy a frontend build with that local runtime config.
 
 ## PostgreSQL
 
