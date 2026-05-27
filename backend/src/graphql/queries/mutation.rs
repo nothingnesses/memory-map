@@ -46,7 +46,10 @@ use {
 		PasswordHash,
 		PasswordHasher,
 		PasswordVerifier,
-		password_hash::SaltString,
+		password_hash::{
+			SaltString,
+			rand_core::OsRng,
+		},
 	},
 	async_graphql::{
 		Context,
@@ -68,9 +71,8 @@ use {
 	futures::future::join_all,
 	jiff::Timestamp,
 	rand::{
-		Rng,
-		distributions::Alphanumeric,
-		rngs::OsRng,
+		RngExt,
+		distr::Alphanumeric,
 	},
 	std::sync::{
 		Arc,
@@ -760,7 +762,7 @@ impl Mutation {
 		let user_opt = User::by_email(ctx, &email).await?;
 		if let Some(user) = user_opt {
 			let token: String =
-				rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
+				rand::rng().sample_iter(Alphanumeric).take(32).map(char::from).collect();
 
 			let token_hash = blake3::hash(token.as_bytes()).to_string();
 

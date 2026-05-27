@@ -3,9 +3,6 @@ all-features = true
 
 [advisories]
 ignore = [
-	# `instant` is pulled through casbin -> rhai. There is no safe upgrade for
-	# the crate itself; keep this visible in dependency migration work.
-	"RUSTSEC-2024-0384",
 	# `paste` is still used by the current Leptos ecosystem. There is no safe
 	# upgrade for the crate itself.
 	"RUSTSEC-2024-0436",
