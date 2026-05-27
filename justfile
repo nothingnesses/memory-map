@@ -70,7 +70,7 @@ doc *args:
 	set -euo pipefail
 
 	ascii_roots=()
-	for path in README.md CONTRIBUTING.md AGENTS.md frontend/README.md backend/src frontend/src shared/src; do
+	for path in README.md CONTRIBUTING.md AGENTS.md docs frontend/README.md backend/src frontend/src shared/src; do
 		if [[ -e "$path" ]]; then
 			ascii_roots+=("$path")
 		fi
@@ -85,7 +85,7 @@ doc *args:
 		exit 1
 	fi
 
-	{{ direnv_prefix }} lychee --offline --no-progress README.md frontend/README.md
+	{{ direnv_prefix }} lychee --offline --no-progress README.md docs/deployment.md frontend/README.md
 
 	if [ "$#" -eq 0 ]; then
 		set -- --workspace --all-features --no-deps

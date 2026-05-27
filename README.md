@@ -123,6 +123,11 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
 - `just scan-hardcoded`: Scan the codebase for hardcoded secrets or values.
 
+## Production Deployment
+
+Production uses real PostgreSQL, SMTP, S3-compatible storage, runtime secrets,
+and a generated frontend `/config.json`. See [Production Deployment](docs/deployment.md).
+
 ## Tech Stack
 
 | Layer                   | Technology                                                |
