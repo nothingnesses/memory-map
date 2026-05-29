@@ -1,5 +1,6 @@
 {
 	"devDependencies": {
+		"@playwright/test": "1.59.1",
 		"@unocss/cli": "66.7.0",
 		"@unocss/preset-wind4": "^66.7.0",
 		"unocss": "^66.7.0"

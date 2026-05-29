@@ -452,6 +452,8 @@
                 pkgs.just
                 pkgs.pnpm
                 pkgs.nodejs-slim
+                pkgs.playwright-driver
+                pkgs.playwright-driver.browsers
                 pkgs.graphql-client
                 # For Leptos
                 pkgs.leptosfmt
@@ -478,6 +480,8 @@
                 LD_LIBRARY_PATH = lib.makeLibraryPath [
                   pkgs.openssl
                 ];
+                PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+                PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
                 # Required by rust-analyzer
                 RUST_SRC_PATH = "${config.packages.rustToolchain}/lib/rustlib/src/rust/library";
               };

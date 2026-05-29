@@ -9,6 +9,9 @@ frontend/public/config.json
 /result
 /result-*
 process-compose.log
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
 .claude/worktrees/
 .codex/worktrees/
 .pre-commit-config.yaml
