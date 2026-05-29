@@ -1,5 +1,6 @@
 set dotenv-load
 set shell := ["bash", "-c"]
+set tempdir := "/tmp"
 
 # Load the Nix development environment via direnv for local recipes. CI invokes
 # recipes via `nix develop --command just`, so SKIP_DIRENV=1 bypasses the prefix.
@@ -165,6 +166,97 @@ storage-ci:
 	{{ direnv_prefix }} nix run ./devenv -- --port "$port" project is-ready --wait
 	STORAGE_TEST_REQUIRE_SERVICE=true just storage-test
 
+# Run Playwright E2E tests against the headless local service graph.
+e2e: frontend-config
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	source scripts/e2e-env.sh
+	mkdir -p "$E2E_LOG_DIR"
+
+	require_port_free() {
+		local port="$1"
+		local name="$2"
+
+		if (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
+			echo "ERROR: $name port $port is already in use." >&2
+			exit 1
+		fi
+	}
+
+	wait_for_backend() {
+		local response
+		local query='{"query":"query ConfigQuery { config { enableRegistration } }"}'
+
+		for _ in $(seq 1 120); do
+			if response=$(curl --fail --silent --show-error --max-time 2 \
+				-H 'Content-Type: application/json' \
+				--data "$query" \
+				"$E2E_BACKEND_URL/" 2>/dev/null) \
+				&& [[ "$response" == *'"enableRegistration"'* ]]; then
+				return 0
+			fi
+			sleep 1
+		done
+
+		echo "ERROR: backend did not become ready; see $E2E_LOG_DIR/backend.log." >&2
+		tail -n 80 "$E2E_LOG_DIR/backend.log" >&2 || true
+		exit 1
+	}
+
+	wait_for_frontend() {
+		for _ in $(seq 1 120); do
+			if curl --fail --silent --show-error --max-time 2 "$E2E_FRONTEND_URL/" >/dev/null 2>&1; then
+				return 0
+			fi
+			sleep 1
+		done
+
+		echo "ERROR: frontend did not become ready; see $E2E_LOG_DIR/frontend.log." >&2
+		tail -n 80 "$E2E_LOG_DIR/frontend.log" >&2 || true
+		exit 1
+	}
+
+	stop_pid() {
+		local pid="${1:-}"
+
+		if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+			kill "$pid" 2>/dev/null || true
+			wait "$pid" 2>/dev/null || true
+		fi
+	}
+
+	cleanup() {
+		local status=$?
+
+		trap - EXIT INT TERM
+		stop_pid "${frontend_pid:-}"
+		stop_pid "${backend_pid:-}"
+		{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
+		exit "$status"
+	}
+	trap cleanup EXIT INT TERM
+
+	require_port_free "$PG__PORT" "PostgreSQL"
+	require_port_free "9000" "RustFS API"
+	require_port_free "9001" "RustFS console"
+	require_port_free "$SERVER_PORT" "backend"
+	require_port_free "3000" "frontend"
+	require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
+
+	{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
+	{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
+
+	{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
+	backend_pid=$!
+	wait_for_backend
+
+	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && exec env -u NO_COLOR trunk serve --address 127.0.0.1 --port 3000 --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
+	frontend_pid=$!
+	wait_for_frontend
+
+	{{ direnv_prefix }} bash -c 'cd frontend && exec pnpm exec playwright test'
+
 # Remove build artifacts.
 clean:
 	{{ direnv_prefix }} cargo clean
@@ -189,7 +281,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		build|check|clippy|deny|doc|fmt|frontend-build|storage-ci|storage-test|test|verify) ;;
+		build|check|clippy|deny|doc|e2e|fmt|frontend-build|storage-ci|storage-test|test|verify) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2

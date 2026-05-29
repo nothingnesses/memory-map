@@ -93,7 +93,14 @@
                   in
                   !(lib.hasPrefix "target/" rel)
                   && !(lib.hasPrefix "data/" rel)
-                  && !(lib.hasPrefix "frontend/node_modules/" rel);
+                  && !(lib.hasPrefix "frontend/node_modules/" rel)
+                  && !(lib.hasPrefix "frontend/dist/" rel)
+                  && rel != "process-compose.log"
+                  && rel != "frontend/public/config.json"
+                  && !(lib.hasPrefix "e2e-logs/" rel)
+                  && !(lib.hasPrefix "frontend/playwright-report/" rel)
+                  && !(lib.hasPrefix "frontend/test-results/" rel)
+                  && !(lib.hasPrefix "frontend/blob-report/" rel);
               };
             rustfsPkgs = pkgs.extend (import inputs.rust-overlay);
             rustfsToolchain = rustfsPkgs.rust-bin.stable.latest.default.override {
@@ -450,6 +457,7 @@
                 # Stable didn't yet have cargo-generate, so we're using unstable here
                 pkgs.unstable.cargo-generate
                 pkgs.just
+                pkgs.curl
                 pkgs.pnpm
                 pkgs.nodejs-slim
                 pkgs.playwright-driver
