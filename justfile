@@ -174,6 +174,14 @@ e2e: frontend-config
 	source scripts/e2e-env.sh
 	mkdir -p "$E2E_LOG_DIR"
 
+	run_process_compose() {
+		if [[ "$PROCESS_COMPOSE_BIN" == "default" ]]; then
+			{{ direnv_prefix }} nix run ./devenv -- "$@"
+		else
+			{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" "$@"
+		fi
+	}
+
 	require_port_free() {
 		local port="$1"
 		local name="$2"
@@ -232,7 +240,7 @@ e2e: frontend-config
 		trap - EXIT INT TERM
 		stop_pid "${frontend_pid:-}"
 		stop_pid "${backend_pid:-}"
-		{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
+		run_process_compose --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
 		exit "$status"
 	}
 	trap cleanup EXIT INT TERM
@@ -244,8 +252,8 @@ e2e: frontend-config
 	require_port_free "3000" "frontend"
 	require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
 
-	{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
-	{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
+	run_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
+	run_process_compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
 
 	{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
 	backend_pid=$!

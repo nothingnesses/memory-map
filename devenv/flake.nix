@@ -445,7 +445,6 @@
               packages = [
                 pkgs.bashInteractive
                 config.packages.rustToolchain
-                config.process-compose."default".outputs.package
                 postgresPackage
                 pkgs.openssl
                 pkgs.pkg-config
