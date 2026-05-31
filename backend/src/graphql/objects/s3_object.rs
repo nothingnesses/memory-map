@@ -95,6 +95,8 @@ where
 pub struct S3Object {
 	pub id: ID,
 	pub name: String,
+	pub storage_key: String,
+	pub content_type: String,
 	#[serde(serialize_with = "serialize_timestamp")]
 	pub made_on: Option<Timestamp>,
 	pub location: Option<Location>,
@@ -106,6 +108,8 @@ pub struct S3Object {
 impl S3Object {
 	pub async fn try_from(row: Row) -> Result<Self, GraphQLError> {
 		let name: String = row.try_get("name")?;
+		let storage_key: String = row.try_get("storage_key")?;
+		let content_type: String = row.try_get("content_type")?;
 		let id: i64 = row.try_get("id")?;
 		let made_on: Option<Timestamp> = row.try_get("made_on")?;
 		let user_id: Option<i64> = row.try_get("user_id").ok();
@@ -116,6 +120,8 @@ impl S3Object {
 		Ok(S3Object {
 			id: id.into(),
 			name,
+			storage_key,
+			content_type,
 			made_on,
 			location: Location::try_from(row).ok(),
 			user_id,
@@ -251,14 +257,10 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.storage.presigned_get_url(&self.name).await.map_err(GraphQLError::from)
+		data.storage.presigned_get_url(&self.storage_key).await.map_err(GraphQLError::from)
 	}
 
-	async fn content_type(
-		&self,
-		ctx: &Context<'_>,
-	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.storage.object_content_type(&self.name).await.map_err(GraphQLError::from)
+	async fn content_type(&self) -> String {
+		self.content_type.clone()
 	}
 }

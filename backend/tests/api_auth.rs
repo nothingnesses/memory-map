@@ -234,6 +234,30 @@ impl TestApp {
 		Ok(count)
 	}
 
+	async fn object_storage_key(
+		&self,
+		object_name: &str,
+	) -> anyhow::Result<String> {
+		let client = self.state.pool.get().await?;
+		let storage_key = client
+			.query_one("SELECT storage_key FROM objects WHERE name = $1", &[&object_name])
+			.await?
+			.get(0);
+		Ok(storage_key)
+	}
+
+	async fn object_content_type(
+		&self,
+		object_name: &str,
+	) -> anyhow::Result<String> {
+		let client = self.state.pool.get().await?;
+		let content_type = client
+			.query_one("SELECT content_type FROM objects WHERE name = $1", &[&object_name])
+			.await?
+			.get(0);
+		Ok(content_type)
+	}
+
 	async fn storage_deletion_outbox_count(&self) -> anyhow::Result<i64> {
 		let client = self.state.pool.get().await?;
 		let count =
@@ -311,7 +335,6 @@ async fn unauthenticated_upload_is_rejected() -> anyhow::Result<()> {
 	assert_eq!(response.status, StatusCode::UNAUTHORIZED);
 	assert_eq!(response.text()?, "Unauthorized");
 	assert_eq!(app.object_count(&object_name).await?, 0);
-	assert!(app.state.storage.object_content_type(&object_name).await.is_err());
 
 	Ok(())
 }
@@ -364,7 +387,9 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 		.context("upload response is missing object id")?;
 	assert_eq!(json_path(uploaded_object, &["name"])?.as_str(), Some(object_name.as_str()));
 	assert_eq!(app.object_count(&object_name).await?, 1);
-	assert_eq!(app.state.storage.object_content_type(&object_name).await?, "image/svg+xml");
+	assert_eq!(app.object_content_type(&object_name).await?, "image/svg+xml");
+	let storage_key = app.object_storage_key(&object_name).await?;
+	assert_eq!(app.state.storage.object_content_type(&storage_key).await?, "image/svg+xml");
 
 	let protected_query = app
 		.graphql(
@@ -416,7 +441,7 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	assert_eq!(delete.status, StatusCode::OK);
 	assert_graphql_success(&delete.json()?)?;
 	assert_eq!(app.object_count(&object_name).await?, 0);
-	assert!(app.state.storage.object_content_type(&object_name).await.is_err());
+	assert!(app.state.storage.object_content_type(&storage_key).await.is_err());
 	assert_eq!(app.storage_deletion_outbox_count().await?, 0);
 
 	Ok(())
@@ -451,7 +476,6 @@ async fn invalid_upload_coordinates_do_not_leave_side_effects() -> anyhow::Resul
 		assert_eq!(response.status, StatusCode::BAD_REQUEST);
 		assert!(response.text()?.contains(expected_error));
 		assert_eq!(app.object_count(&object_name).await?, 0);
-		assert!(app.state.storage.object_content_type(&object_name).await.is_err());
 	}
 
 	Ok(())
@@ -482,7 +506,6 @@ async fn invalid_upload_timestamp_does_not_leave_side_effects() -> anyhow::Resul
 	assert_eq!(response.status, StatusCode::BAD_REQUEST);
 	assert!(response.text()?.contains("Invalid timestamp format"));
 	assert_eq!(app.object_count(&object_name).await?, 0);
-	assert!(app.state.storage.object_content_type(&object_name).await.is_err());
 
 	Ok(())
 }
@@ -509,7 +532,9 @@ async fn duplicate_upload_name_does_not_overwrite_existing_object() -> anyhow::R
 		.await?;
 	assert_eq!(first_upload.status, StatusCode::OK);
 	assert_eq!(app.object_count(&object_name).await?, 1);
-	assert_eq!(app.state.storage.object_content_type(&object_name).await?, "image/svg+xml");
+	assert_eq!(app.object_content_type(&object_name).await?, "image/svg+xml");
+	let storage_key = app.object_storage_key(&object_name).await?;
+	assert_eq!(app.state.storage.object_content_type(&storage_key).await?, "image/svg+xml");
 
 	let duplicate_upload = app
 		.upload_location(
@@ -522,7 +547,9 @@ async fn duplicate_upload_name_does_not_overwrite_existing_object() -> anyhow::R
 	assert_eq!(duplicate_upload.status, StatusCode::BAD_REQUEST);
 	assert!(duplicate_upload.text()?.contains("already exists"));
 	assert_eq!(app.object_count(&object_name).await?, 1);
-	assert_eq!(app.state.storage.object_content_type(&object_name).await?, "image/svg+xml");
+	assert_eq!(app.object_storage_key(&object_name).await?, storage_key);
+	assert_eq!(app.object_content_type(&object_name).await?, "image/svg+xml");
+	assert_eq!(app.state.storage.object_content_type(&storage_key).await?, "image/svg+xml");
 
 	Ok(())
 }

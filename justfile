@@ -161,6 +161,7 @@ storage-test *args:
 storage-ci:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	source scripts/service-graph.sh
 
 	log_file="${PROCESS_COMPOSE_LOG:-process-compose.log}"
 	port="${PROCESS_COMPOSE_PORT:-8080}"
@@ -168,14 +169,14 @@ storage-ci:
 
 	cleanup() {
 		if [[ "$process_compose_started" == "true" ]]; then
-			{{ direnv_prefix }} process-compose --port "$port" down || true
+			memory_map_process_compose --port "$port" down || true
 		fi
 	}
 	trap cleanup EXIT
 
-	{{ direnv_prefix }} nix run ./devenv -- --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
+	memory_map_start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
 	process_compose_started=true
-	{{ direnv_prefix }} process-compose --port "$port" project is-ready --wait
+	memory_map_process_compose --port "$port" project is-ready --wait
 	STORAGE_TEST_REQUIRE_SERVICE=true just storage-test
 
 # Run backend API/auth integration tests against configured local services.
@@ -195,45 +196,28 @@ backend-integration:
 	set -euo pipefail
 
 	source scripts/e2e-env.sh
+	source scripts/service-graph.sh
 	log_dir="${BACKEND_INTEGRATION_LOG_DIR:-backend-integration-logs}"
 	log_file="${BACKEND_INTEGRATION_PROCESS_COMPOSE_LOG:-$log_dir/process-compose.log}"
 	port="${BACKEND_INTEGRATION_PROCESS_COMPOSE_PORT:-$PROCESS_COMPOSE_PORT}"
 	mkdir -p "$log_dir"
 	process_compose_started=false
 
-	start_process_compose() {
-		if [[ "$PROCESS_COMPOSE_BIN" == "default" ]]; then
-			{{ direnv_prefix }} nix run ./devenv -- "$@"
-		else
-			{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" "$@"
-		fi
-	}
-
-	require_port_free() {
-		local port="$1"
-		local name="$2"
-
-		if (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
-			echo "ERROR: $name port $port is already in use." >&2
-			exit 1
-		fi
-	}
-
 	cleanup() {
 		if [[ "$process_compose_started" == "true" ]]; then
-			{{ direnv_prefix }} process-compose --port "$port" down >> "$log_dir/process-compose-down.log" 2>&1 || true
+			memory_map_process_compose --port "$port" down >> "$log_dir/process-compose-down.log" 2>&1 || true
 		fi
 	}
 	trap cleanup EXIT
 
-	require_port_free "$PG__PORT" "PostgreSQL"
-	require_port_free "9000" "RustFS API"
-	require_port_free "9001" "RustFS console"
-	require_port_free "$port" "process-compose"
+	memory_map_require_port_free "$PG__PORT" "PostgreSQL"
+	memory_map_require_port_free "9000" "RustFS API"
+	memory_map_require_port_free "9001" "RustFS console"
+	memory_map_require_port_free "$port" "process-compose"
 
-	start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
+	memory_map_start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
 	process_compose_started=true
-	{{ direnv_prefix }} process-compose --port "$port" project is-ready --wait
+	memory_map_process_compose --port "$port" project is-ready --wait
 	just backend-integration-test
 
 # Run Playwright E2E tests against the headless local service graph.
@@ -242,26 +226,9 @@ e2e: frontend-config
 	set -euo pipefail
 
 	source scripts/e2e-env.sh
+	source scripts/service-graph.sh
 	mkdir -p "$E2E_LOG_DIR"
 	process_compose_started=false
-
-	start_process_compose() {
-		if [[ "$PROCESS_COMPOSE_BIN" == "default" ]]; then
-			{{ direnv_prefix }} nix run ./devenv -- "$@"
-		else
-			{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" "$@"
-		fi
-	}
-
-	require_port_free() {
-		local port="$1"
-		local name="$2"
-
-		if (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
-			echo "ERROR: $name port $port is already in use." >&2
-			exit 1
-		fi
-	}
 
 	wait_for_backend() {
 		local response
@@ -296,41 +263,32 @@ e2e: frontend-config
 		exit 1
 	}
 
-	stop_pid() {
-		local pid="${1:-}"
-
-		if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-			kill "$pid" 2>/dev/null || true
-			wait "$pid" 2>/dev/null || true
-		fi
-	}
-
 	cleanup() {
 		local status=$?
 
 		trap - EXIT INT TERM
-		stop_pid "${frontend_pid:-}"
-		stop_pid "${backend_pid:-}"
+		memory_map_stop_pid "${frontend_pid:-}"
+		memory_map_stop_pid "${backend_pid:-}"
 		if [[ "$process_compose_started" == "true" ]]; then
-			{{ direnv_prefix }} process-compose --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
+			memory_map_process_compose --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
 		fi
 		exit "$status"
 	}
 	trap cleanup EXIT INT TERM
 
-	require_port_free "$PG__PORT" "PostgreSQL"
-	require_port_free "9000" "RustFS API"
-	require_port_free "9001" "RustFS console"
-	require_port_free "$SERVER_PORT" "backend"
-	require_port_free "3000" "frontend"
-	require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
+	memory_map_require_port_free "$PG__PORT" "PostgreSQL"
+	memory_map_require_port_free "9000" "RustFS API"
+	memory_map_require_port_free "9001" "RustFS console"
+	memory_map_require_port_free "$SERVER_PORT" "backend"
+	memory_map_require_port_free "3000" "frontend"
+	memory_map_require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
 
 	{{ direnv_prefix }} cargo build --bin backend
 	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build --skip-version-check --offline'
 
-	start_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
+	memory_map_start_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
 	process_compose_started=true
-	{{ direnv_prefix }} process-compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
+	memory_map_process_compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
 
 	{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
 	backend_pid=$!

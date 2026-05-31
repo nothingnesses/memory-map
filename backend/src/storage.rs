@@ -123,14 +123,14 @@ impl StorageClient {
 
 	pub async fn upload_object(
 		&self,
-		object_name: &str,
+		storage_key: &str,
 		bytes: impl Into<ByteStream>,
 		content_type: impl Into<String>,
 	) -> anyhow::Result<()> {
 		self.client
 			.put_object()
 			.bucket(&self.bucket_name)
-			.key(object_name)
+			.key(storage_key)
 			.body(bytes.into())
 			.content_type(content_type.into())
 			.send()
@@ -141,13 +141,13 @@ impl StorageClient {
 
 	pub async fn object_content_type(
 		&self,
-		object_name: &str,
+		storage_key: &str,
 	) -> anyhow::Result<String> {
 		let output = self
 			.client
 			.head_object()
 			.bucket(&self.bucket_name)
-			.key(object_name)
+			.key(storage_key)
 			.send()
 			.await
 			.context("Failed to read S3 object metadata")?;
@@ -159,13 +159,13 @@ impl StorageClient {
 
 	pub async fn presigned_get_url(
 		&self,
-		object_name: &str,
+		storage_key: &str,
 	) -> anyhow::Result<String> {
 		let request = self
 			.client
 			.get_object()
 			.bucket(&self.bucket_name)
-			.key(object_name)
+			.key(storage_key)
 			.presigned(self.presigning_config.clone())
 			.await
 			.context("Failed to generate S3 presigned GET URL")?;
@@ -174,23 +174,23 @@ impl StorageClient {
 
 	pub async fn delete_objects(
 		&self,
-		object_names: &[String],
+		storage_keys: &[String],
 	) -> anyhow::Result<()> {
-		for object_names in object_name_delete_batches(object_names) {
-			self.delete_object_batch(object_names).await?;
+		for storage_keys in storage_key_delete_batches(storage_keys) {
+			self.delete_object_batch(storage_keys).await?;
 		}
 		Ok(())
 	}
 
 	async fn delete_object_batch(
 		&self,
-		object_names: &[String],
+		storage_keys: &[String],
 	) -> anyhow::Result<()> {
-		let mut objects = Vec::with_capacity(object_names.len());
-		for object_name in object_names {
+		let mut objects = Vec::with_capacity(storage_keys.len());
+		for storage_key in storage_keys {
 			objects.push(
 				ObjectIdentifier::builder()
-					.key(object_name)
+					.key(storage_key)
 					.build()
 					.context("Failed to build S3 delete object identifier")?,
 			);
@@ -288,8 +288,8 @@ fn create_bucket_error_means_existing_bucket(error: &SdkError<CreateBucketError>
 	})
 }
 
-fn object_name_delete_batches(object_names: &[String]) -> impl Iterator<Item = &[String]> {
-	object_names.chunks(StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST)
+fn storage_key_delete_batches(storage_keys: &[String]) -> impl Iterator<Item = &[String]> {
+	storage_keys.chunks(StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST)
 }
 
 fn required_env(name: &str) -> anyhow::Result<String> {
@@ -320,7 +320,7 @@ mod tests {
 	use super::{
 		StorageClient,
 		StorageConfig,
-		object_name_delete_batches,
+		storage_key_delete_batches,
 	};
 
 	fn storage_config_with_ttl(presigned_url_ttl_seconds: u64) -> StorageConfig {
@@ -357,11 +357,11 @@ mod tests {
 
 	#[test]
 	fn delete_object_batches_respect_s3_multi_delete_limit() {
-		let object_names = (0 .. StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST + 1)
+		let storage_keys = (0 .. StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST + 1)
 			.map(|index| format!("object-{index}"))
 			.collect::<Vec<_>>();
 		let batch_lengths =
-			object_name_delete_batches(&object_names).map(<[String]>::len).collect::<Vec<_>>();
+			storage_key_delete_batches(&storage_keys).map(<[String]>::len).collect::<Vec<_>>();
 
 		assert_eq!(batch_lengths, vec![StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST, 1]);
 	}

@@ -14,5 +14,4 @@ pub mod s3_objects;
 pub mod types;
 pub mod update_s3_object;
 pub mod update_user_publicity;
-pub mod upsert_s3_object;
 pub mod users;

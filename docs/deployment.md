@@ -113,10 +113,11 @@ verifies bucket access on startup but does not create buckets at runtime. The
 local and CI bootstrap helper can create or verify a bucket for RustFS, but
 production bucket lifecycle should be managed intentionally by the deployment.
 
-Database object deletes enqueue storage cleanup in PostgreSQL before removing
-metadata rows. The backend drains that cleanup queue after deletes and once at
-startup. If storage deletion fails, the queue row remains for a later retry
-instead of losing track of the blob cleanup work.
+Database object deletes first mark metadata rows as delete-pending and enqueue
+cleanup by the immutable storage key, not the user-visible object name. The
+backend drains that cleanup queue after deletes and once at startup. If storage
+deletion fails, the queue row remains for a later retry instead of losing track
+of the blob cleanup work.
 
 ## Reverse Proxy And TLS
 

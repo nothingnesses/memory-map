@@ -35,7 +35,6 @@ use {
 		object_lifecycle::{
 			ObjectLifecycleService,
 			update_s3_object_metadata,
-			upsert_s3_object_metadata,
 		},
 	},
 	anyhow::Context as AnyhowContext,
@@ -81,15 +80,6 @@ use {
 #[derive(InputObject)]
 pub struct UpdateS3ObjectInput {
 	pub id: ID,
-	pub name: String,
-	pub made_on: Option<String>,
-	pub location: Option<Location>,
-	pub publicity: PublicityOverride,
-	pub allowed_users: Option<Vec<String>>,
-}
-
-#[derive(InputObject)]
-pub struct UpsertS3ObjectInput {
 	pub name: String,
 	pub made_on: Option<String>,
 	pub location: Option<Location>,
@@ -201,65 +191,6 @@ impl Mutation {
 			input.name,
 			input.made_on,
 			input.location,
-			input.publicity,
-			allowed_users,
-		)
-		.await
-		.map_err(GraphQLError::from)?;
-
-		state.update_last_modified();
-
-		Ok(result)
-	}
-
-	async fn upsert_s3_object(
-		&self,
-		ctx: &Context<'_>,
-		input: UpsertS3ObjectInput,
-	) -> Result<S3Object, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let mut client = ContextWrapper(ctx).get_db_client().await?;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
-		let enforcer = state.enforcer.read().await;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-
-		if let Ok(obj) = S3Object::where_name(ctx, input.name.clone()).await {
-			let casbin_obj = CasbinObject {
-				user_id: obj.user_id.unwrap_or(0),
-			};
-			if !enforcer
-				.enforce((casbin_user.clone(), casbin_obj, "update"))
-				.map_err(GraphQLError::from)?
-			{
-				return Err(GraphQLError::new("Forbidden"));
-			}
-		} else {
-			let casbin_obj = CasbinObject {
-				user_id,
-			};
-			if !enforcer.enforce((casbin_user, casbin_obj, "create")).map_err(GraphQLError::from)? {
-				return Err(GraphQLError::new("Forbidden"));
-			}
-		}
-
-		let allowed_users = input.allowed_users.unwrap_or_default();
-
-		let result = upsert_s3_object_metadata(
-			&mut client,
-			input.name,
-			input.made_on,
-			input.location,
-			user_id,
 			input.publicity,
 			allowed_users,
 		)

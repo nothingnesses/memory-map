@@ -1,72 +1,82 @@
-pub const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+pub const MARK_OBJECTS_DELETE_PENDING_QUERY: &str = "UPDATE objects
+SET storage_state = 'delete_pending', storage_state_updated_at = now()
+WHERE id = ANY($1) AND storage_state = 'available'
+RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
-pub const INSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id, publicity)
-VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5)
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+pub const INSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, storage_key, content_type, storage_state, made_on, location, user_id, publicity)
+VALUES ($1, $2, $3, 'pending_upload', $4::timestamptz, ST_GeomFromEWKT($5), $6, $7)
+RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+
+pub const FINALIZE_OBJECT_UPLOAD_QUERY: &str = "UPDATE objects
+SET storage_state = 'available', storage_state_updated_at = now()
+WHERE id = $1 AND storage_key = $2 AND storage_state = 'pending_upload'
+RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+
+pub const MARK_UPLOAD_DELETE_PENDING_QUERY: &str = "UPDATE objects
+SET storage_state = 'delete_pending', storage_state_updated_at = now()
+WHERE id = $1 AND storage_key = $2 AND storage_state IN ('pending_upload', 'available')
+RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 pub const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
 SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), publicity = $5
-WHERE id = $1
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+WHERE id = $1 AND storage_state = 'available'
+RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
-pub const UPSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id, publicity)
-VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5)
-ON CONFLICT (name) DO UPDATE
-SET made_on = EXCLUDED.made_on, location = EXCLUDED.location, publicity = EXCLUDED.publicity
-RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
-
-pub const SELECT_ALL_OBJECTS_QUERY: &str = "SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+pub const SELECT_ALL_OBJECTS_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
 COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
 FROM objects o
 LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
 LEFT JOIN users u ON oau.user_id = u.id
+WHERE o.storage_state = 'available'
 GROUP BY o.id;";
 
-pub const SELECT_OBJECT_BY_ID_QUERY: &str = "SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+pub const SELECT_OBJECT_BY_ID_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
 COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
 FROM objects o
 LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
 LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.id = $1
+WHERE o.id = $1 AND o.storage_state = 'available'
 GROUP BY o.id;";
 
-pub const SELECT_OBJECT_BY_NAME_QUERY: &str = "SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+pub const SELECT_OBJECT_BY_NAME_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
 COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
 FROM objects o
 LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
 LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.name = $1
+WHERE o.name = $1 AND o.storage_state = 'available'
 GROUP BY o.id;";
 
-pub const SELECT_OBJECTS_BY_IDS_QUERY: &str = "SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+pub const SELECT_OBJECTS_BY_IDS_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
 COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
 FROM objects o
 LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
 LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.id = ANY($1)
+WHERE o.id = ANY($1) AND o.storage_state = 'available'
 GROUP BY o.id;";
 
-pub const SELECT_OBJECTS_BY_USER_ID_QUERY: &str = "SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+pub const SELECT_OBJECTS_BY_USER_ID_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
 COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
 FROM objects o
 LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
 LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.user_id = $1
+WHERE o.user_id = $1 AND o.storage_state = 'available'
 GROUP BY o.id;";
 
-pub const SELECT_VISIBLE_OBJECTS_QUERY: &str = "SELECT o.id, o.name, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
+pub const SELECT_VISIBLE_OBJECTS_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
 COALESCE(array_agg(u_allowed.email) FILTER (WHERE u_allowed.email IS NOT NULL), '{}') AS allowed_users
 FROM objects o
 JOIN users u ON o.user_id = u.id
 LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
 LEFT JOIN users u_allowed ON oau.user_id = u_allowed.id
 WHERE
-	($1::BIGINT IS NOT NULL AND o.user_id = $1)
-	OR o.publicity = 'public'
-	OR (o.publicity = 'default' AND u.default_publicity = 'public')
-	OR (o.publicity = 'selected_users' AND $1::BIGINT IS NOT NULL AND $1 IN (SELECT user_id FROM object_allowed_users WHERE object_id = o.id))
+	o.storage_state = 'available' AND (
+		($1::BIGINT IS NOT NULL AND o.user_id = $1)
+		OR o.publicity = 'public'
+		OR (o.publicity = 'default' AND u.default_publicity = 'public')
+		OR (o.publicity = 'selected_users' AND $1::BIGINT IS NOT NULL AND $1 IN (SELECT user_id FROM object_allowed_users WHERE object_id = o.id))
+	)
 GROUP BY o.id;";
 
 pub const DELETE_OBJECT_ALLOWED_USERS_QUERY: &str =
@@ -89,21 +99,24 @@ pub const SELECT_USER_EXISTS_QUERY: &str = "SELECT 1 FROM users WHERE id = $1";
 pub const SELECT_USERS_BY_EMAILS_QUERY: &str = "SELECT id, email FROM users WHERE email = ANY($1)";
 
 pub const INSERT_OBJECT_STORAGE_DELETIONS_QUERY: &str =
-	"INSERT INTO object_storage_deletions (object_name)
-SELECT UNNEST($1::TEXT[])
-ON CONFLICT (object_name) DO NOTHING";
+	"INSERT INTO object_storage_deletions (storage_key, object_id)
+SELECT UNNEST($1::TEXT[]), UNNEST($2::BIGINT[])
+ON CONFLICT (storage_key) DO NOTHING";
 
-pub const SELECT_PENDING_OBJECT_STORAGE_DELETIONS_QUERY: &str = "SELECT object_name
+pub const SELECT_PENDING_OBJECT_STORAGE_DELETIONS_QUERY: &str = "SELECT storage_key
 FROM object_storage_deletions
 ORDER BY created_at
 LIMIT $1";
 
 pub const DELETE_OBJECT_STORAGE_DELETIONS_QUERY: &str =
-	"DELETE FROM object_storage_deletions WHERE object_name = ANY($1)";
+	"DELETE FROM object_storage_deletions WHERE storage_key = ANY($1)";
+
+pub const DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY: &str =
+	"DELETE FROM objects WHERE storage_key = ANY($1) AND storage_state = 'delete_pending'";
 
 pub const MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY: &str = "UPDATE object_storage_deletions
 SET attempts = attempts + 1, last_attempt_at = now(), last_error = $2
-WHERE object_name = ANY($1)";
+WHERE storage_key = ANY($1)";
 
 pub const SELECT_USER_COUNT_BY_EMAIL_QUERY: &str = "SELECT COUNT(*) FROM users WHERE email = $1";
 

@@ -177,7 +177,7 @@ pub async fn post(
 		{
 			Ok(s3_object) => uploaded_objects.push(s3_object),
 			Err(e) => {
-				tracing::error!("Failed to upsert object: {:?}", e);
+				tracing::error!("Failed to upload object: {:?}", e);
 				return Err(e);
 			}
 		}
