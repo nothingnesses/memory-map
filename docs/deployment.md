@@ -64,7 +64,9 @@ The frontend is a static client-side rendered app. At runtime it fetches
 `/config.json` from the same origin as the frontend. The concrete runtime file
 `frontend/public/config.json` is intentionally ignored by Git.
 
-Production must provide a concrete `/config.json` during deployment:
+Production must provide a concrete `/config.json` during deployment. The
+frontend build recipe requires `frontend/public/config.json` to exist, but it
+does not create the local example automatically:
 
 ```json
 {
@@ -107,8 +109,14 @@ Path-style guidance:
 - Other S3-compatible services should follow the provider's requirements.
 
 The configured bucket must be usable by the configured credentials. The backend
-storage helper can create or verify a bucket for local and CI RustFS, but
+verifies bucket access on startup but does not create buckets at runtime. The
+local and CI bootstrap helper can create or verify a bucket for RustFS, but
 production bucket lifecycle should be managed intentionally by the deployment.
+
+Database object deletes enqueue storage cleanup in PostgreSQL before removing
+metadata rows. The backend drains that cleanup queue after deletes and once at
+startup. If storage deletion fails, the queue row remains for a later retry
+instead of losing track of the blob cleanup work.
 
 ## Reverse Proxy And TLS
 

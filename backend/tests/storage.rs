@@ -27,7 +27,7 @@ async fn storage_roundtrip_against_configured_service() -> anyhow::Result<()> {
 	}
 
 	let storage = StorageClient::from_storage_config(&config)?;
-	storage.ensure_bucket_ready().await?;
+	storage.ensure_bucket_exists().await?;
 
 	let prefix = unique_prefix()?;
 	let first_object = format!("{prefix}/first.txt");

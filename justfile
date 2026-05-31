@@ -39,6 +39,14 @@ frontend-config:
 		echo "Created frontend/public/config.json from frontend/config.example.json"; \
 	fi
 
+# Require an explicit frontend runtime config for builds that copy /config.json.
+require-frontend-config:
+	@if [ ! -f frontend/public/config.json ]; then \
+		echo "ERROR: frontend/public/config.json is required for frontend-build." >&2; \
+		echo "Run 'just frontend-config' for local development or provide a deployment-specific config file." >&2; \
+		exit 1; \
+	fi
+
 # Start frontend server. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
 frontend: frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; env -u NO_COLOR trunk serve {{ release_flag }} --skip-version-check --offline --open'
@@ -111,7 +119,7 @@ build *args:
 	{{ direnv_prefix }} cargo build "$@"
 
 # Build the frontend application through Trunk.
-frontend-build: frontend-config
+frontend-build: require-frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build {{ release_flag }} --skip-version-check'
 
 # Run any cargo subcommand except test; use `just test` for tests.

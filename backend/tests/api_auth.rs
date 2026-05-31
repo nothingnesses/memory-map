@@ -23,7 +23,10 @@ use {
 		},
 		constants::BODY_MAX_SIZE_LIMIT_BYTES,
 		migrations,
-		storage::StorageClient,
+		storage::{
+			StorageClient,
+			StorageConfig,
+		},
 	},
 	casbin::{
 		CoreApi,
@@ -74,6 +77,49 @@ struct TestResponse {
 	body: Bytes,
 }
 
+struct UploadLocationRequest<'a> {
+	object_name: &'a str,
+	latitude: &'a str,
+	longitude: &'a str,
+	made_on: &'a str,
+	content_type: &'a str,
+	body: &'a [u8],
+}
+
+impl<'a> UploadLocationRequest<'a> {
+	fn svg(
+		object_name: &'a str,
+		latitude: &'a str,
+		longitude: &'a str,
+		body: &'a [u8],
+	) -> Self {
+		Self {
+			object_name,
+			latitude,
+			longitude,
+			made_on: "2026-05-31T12:00:00Z",
+			content_type: "image/svg+xml",
+			body,
+		}
+	}
+
+	fn with_made_on(
+		mut self,
+		made_on: &'a str,
+	) -> Self {
+		self.made_on = made_on;
+		self
+	}
+
+	fn with_content_type(
+		mut self,
+		content_type: &'a str,
+	) -> Self {
+		self.content_type = content_type;
+		self
+	}
+}
+
 impl TestResponse {
 	fn text(&self) -> anyhow::Result<&str> {
 		std::str::from_utf8(&self.body).context("response body is not valid UTF-8")
@@ -91,10 +137,10 @@ impl TestApp {
 		if !postgres_is_reachable(&cfg).await? {
 			return skip_or_fail("PostgreSQL is not reachable".to_string());
 		}
-		if !storage_endpoint_is_reachable(&cfg.s3_endpoint_url).await? {
+		if !storage_endpoint_is_reachable(&cfg.storage.endpoint_url).await? {
 			return skip_or_fail(format!(
 				"storage endpoint is not reachable: {}",
-				cfg.s3_endpoint_url
+				cfg.storage.endpoint_url
 			));
 		}
 
@@ -102,7 +148,7 @@ impl TestApp {
 		run_migrations(&pool).await?;
 
 		let storage = StorageClient::from_config(&cfg)?;
-		storage.ensure_bucket_ready().await?;
+		storage.ensure_bucket_exists().await?;
 
 		let enforcer = test_enforcer().await?;
 		let shared_state = build_shared_state(cfg, pool, storage, Arc::new(RwLock::new(enforcer)))?;
@@ -159,15 +205,10 @@ impl TestApp {
 	async fn upload_location(
 		&self,
 		cookie: Option<&str>,
-		object_name: &str,
-		latitude: &str,
-		longitude: &str,
-		content_type: &str,
-		body: &[u8],
+		upload: UploadLocationRequest<'_>,
 	) -> anyhow::Result<TestResponse> {
 		let boundary = format!("memory-map-boundary-{}", unique_suffix()?);
-		let multipart =
-			multipart_body(&boundary, object_name, latitude, longitude, content_type, body);
+		let multipart = multipart_body(&boundary, upload);
 
 		let mut request = Request::builder()
 			.method("POST")
@@ -190,6 +231,13 @@ impl TestApp {
 			.query_one("SELECT COUNT(*) FROM objects WHERE name = $1", &[&object_name])
 			.await?
 			.get(0);
+		Ok(count)
+	}
+
+	async fn storage_deletion_outbox_count(&self) -> anyhow::Result<i64> {
+		let client = self.state.pool.get().await?;
+		let count =
+			client.query_one("SELECT COUNT(*) FROM object_storage_deletions", &[]).await?.get(0);
 		Ok(count)
 	}
 }
@@ -251,11 +299,12 @@ async fn unauthenticated_upload_is_rejected() -> anyhow::Result<()> {
 	let response = app
 		.upload_location(
 			None,
-			&object_name,
-			"12.5",
-			"-45.25",
-			"image/svg+xml",
-			b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+			UploadLocationRequest::svg(
+				&object_name,
+				"12.5",
+				"-45.25",
+				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+			),
 		)
 		.await?;
 
@@ -301,7 +350,10 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	let body = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\" /></svg>";
 
 	let upload = app
-		.upload_location(Some(&user.cookie), &object_name, "12.5", "-45.25", "image/svg+xml", body)
+		.upload_location(
+			Some(&user.cookie),
+			UploadLocationRequest::svg(&object_name, "12.5", "-45.25", body),
+		)
 		.await?;
 	assert_eq!(upload.status, StatusCode::OK);
 	let upload = upload.json()?;
@@ -365,6 +417,7 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	assert_graphql_success(&delete.json()?)?;
 	assert_eq!(app.object_count(&object_name).await?, 0);
 	assert!(app.state.storage.object_content_type(&object_name).await.is_err());
+	assert_eq!(app.storage_deletion_outbox_count().await?, 0);
 
 	Ok(())
 }
@@ -386,11 +439,12 @@ async fn invalid_upload_coordinates_do_not_leave_side_effects() -> anyhow::Resul
 		let response = app
 			.upload_location(
 				Some(&user.cookie),
-				&object_name,
-				latitude,
-				longitude,
-				"image/svg+xml",
-				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+				UploadLocationRequest::svg(
+					&object_name,
+					latitude,
+					longitude,
+					b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+				),
 			)
 			.await?;
 
@@ -403,13 +457,83 @@ async fn invalid_upload_coordinates_do_not_leave_side_effects() -> anyhow::Resul
 	Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn invalid_upload_timestamp_does_not_leave_side_effects() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("invalid-timestamp-upload-{}.svg", unique_suffix()?);
+
+	let response = app
+		.upload_location(
+			Some(&user.cookie),
+			UploadLocationRequest::svg(
+				&object_name,
+				"12.5",
+				"-45.25",
+				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+			)
+			.with_made_on("not-a-timestamp"),
+		)
+		.await?;
+
+	assert_eq!(response.status, StatusCode::BAD_REQUEST);
+	assert!(response.text()?.contains("Invalid timestamp format"));
+	assert_eq!(app.object_count(&object_name).await?, 0);
+	assert!(app.state.storage.object_content_type(&object_name).await.is_err());
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn duplicate_upload_name_does_not_overwrite_existing_object() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("duplicate-upload-{}.svg", unique_suffix()?);
+
+	let first_upload = app
+		.upload_location(
+			Some(&user.cookie),
+			UploadLocationRequest::svg(
+				&object_name,
+				"12.5",
+				"-45.25",
+				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+			),
+		)
+		.await?;
+	assert_eq!(first_upload.status, StatusCode::OK);
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	assert_eq!(app.state.storage.object_content_type(&object_name).await?, "image/svg+xml");
+
+	let duplicate_upload = app
+		.upload_location(
+			Some(&user.cookie),
+			UploadLocationRequest::svg(&object_name, "12.5", "-45.25", b"not really a jpeg")
+				.with_content_type("image/jpeg"),
+		)
+		.await?;
+
+	assert_eq!(duplicate_upload.status, StatusCode::BAD_REQUEST);
+	assert!(duplicate_upload.text()?.contains("already exists"));
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	assert_eq!(app.state.storage.object_content_type(&object_name).await?, "image/svg+xml");
+
+	Ok(())
+}
+
 fn test_config() -> anyhow::Result<Config> {
 	let mut pg = deadpool_postgres::Config::new();
 	pg.dbname = Some(env_or_default("PG__DBNAME", "db"));
 	pg.host = Some(env_or_default("PG__HOST", "127.0.0.1"));
 	pg.port = Some(env_or_default("PG__PORT", "5432").parse()?);
 
-	Ok(Config {
+	let config = Config {
 		pg,
 		enable_registration: true,
 		smtp_host: "smtp.example.test".to_string(),
@@ -421,18 +545,28 @@ fn test_config() -> anyhow::Result<Config> {
 			"memory-map-local-test-cookie-secret-at-least-64-bytes-long-0001-extra",
 		),
 		frontend_url: env_or_default("FRONTEND_URL", "http://127.0.0.1:3000"),
-		s3_endpoint_url: env_or_default("S3_ENDPOINT_URL", "http://127.0.0.1:9000/"),
-		s3_access_key: env_or_default("S3_ACCESS_KEY", "memorymapdev"),
-		s3_secret_key: env_or_default("S3_SECRET_KEY", "memorymapdevsecret"),
-		s3_bucket_name: env_or_default("S3_BUCKET_NAME", "memory-map"),
-		s3_region: env_or_default("S3_REGION", "us-east-1"),
-		s3_force_path_style: parse_bool_env("S3_FORCE_PATH_STYLE", true)?,
-		s3_presigned_url_ttl_seconds: env_or_default("S3_PRESIGNED_URL_TTL_SECONDS", "604800")
+		storage: StorageConfig {
+			endpoint_url: env_or_default("S3_ENDPOINT_URL", "http://127.0.0.1:9000/"),
+			access_key: env_or_default("S3_ACCESS_KEY", "memorymapdev"),
+			secret_key: env_or_default("S3_SECRET_KEY", "memorymapdevsecret"),
+			bucket_name: env_or_default("S3_BUCKET_NAME", "memory-map"),
+			region: env_or_default("S3_REGION", StorageConfig::DEFAULT_REGION),
+			force_path_style: parse_bool_env(
+				"S3_FORCE_PATH_STYLE",
+				StorageConfig::DEFAULT_FORCE_PATH_STYLE,
+			)?,
+			presigned_url_ttl_seconds: env_or_default(
+				"S3_PRESIGNED_URL_TTL_SECONDS",
+				&StorageConfig::DEFAULT_PRESIGNED_URL_TTL_SECONDS.to_string(),
+			)
 			.parse()?,
+		},
 		server_host: "127.0.0.1".to_string(),
 		server_port: 8000,
 		cors_allowed_origins: env_or_default("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:3000"),
-	})
+	};
+	config.storage.validate()?;
+	Ok(config)
 }
 
 async fn run_migrations(pool: &Pool<Manager>) -> anyhow::Result<()> {
@@ -467,24 +601,21 @@ async fn storage_endpoint_is_reachable(endpoint_url: &str) -> anyhow::Result<boo
 
 fn multipart_body(
 	boundary: &str,
-	object_name: &str,
-	latitude: &str,
-	longitude: &str,
-	content_type: &str,
-	body: &[u8],
+	upload: UploadLocationRequest<'_>,
 ) -> Vec<u8> {
 	let mut multipart = Vec::new();
-	append_field(&mut multipart, boundary, "latitude", latitude.as_bytes());
-	append_field(&mut multipart, boundary, "longitude", longitude.as_bytes());
-	append_field(&mut multipart, boundary, "made_on", b"2026-05-31T12:00:00Z");
+	append_field(&mut multipart, boundary, "latitude", upload.latitude.as_bytes());
+	append_field(&mut multipart, boundary, "longitude", upload.longitude.as_bytes());
+	append_field(&mut multipart, boundary, "made_on", upload.made_on.as_bytes());
 	multipart.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
 	multipart.extend_from_slice(
 		format!(
-			"Content-Disposition: form-data; name=\"files\"; filename=\"{object_name}\"\r\nContent-Type: {content_type}\r\n\r\n"
+			"Content-Disposition: form-data; name=\"files\"; filename=\"{}\"\r\nContent-Type: {}\r\n\r\n",
+			upload.object_name, upload.content_type
 		)
 		.as_bytes(),
 	);
-	multipart.extend_from_slice(body);
+	multipart.extend_from_slice(upload.body);
 	multipart.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 	multipart
 }

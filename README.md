@@ -123,7 +123,8 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just storage-test`: Run ignored storage integration tests against the
   configured S3-compatible endpoint. Missing local storage skips by default; set
   `STORAGE_TEST_REQUIRE_SERVICE=true` to fail instead.
-- `just frontend-build`: Build the frontend with Trunk.
+- `just frontend-build`: Build the frontend with Trunk using the existing
+  `frontend/public/config.json` runtime config.
 - `just verify`: Run the full verification suite before submitting a PR.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
 - `just scan-hardcoded`: Scan the codebase for hardcoded secrets or values.
@@ -131,7 +132,8 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 ## Production Deployment
 
 Production uses real PostgreSQL, SMTP, S3-compatible storage, runtime secrets,
-and a generated frontend `/config.json`. See [Production Deployment](docs/deployment.md).
+and a deployment-supplied frontend `/config.json`. See
+[Production Deployment](docs/deployment.md).
 
 ## Tech Stack
 

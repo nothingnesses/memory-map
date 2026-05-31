@@ -1,5 +1,9 @@
 pub const DELETE_OBJECTS_QUERY: &str = "DELETE FROM objects WHERE id = ANY($1) RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
+pub const INSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, made_on, location, user_id, publicity)
+VALUES ($1, $2::timestamptz, ST_GeomFromEWKT($3), $4, $5)
+RETURNING id, name, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 pub const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
@@ -83,6 +87,23 @@ pub const SELECT_USER_BY_EMAIL_QUERY: &str =
 pub const SELECT_USER_EXISTS_QUERY: &str = "SELECT 1 FROM users WHERE id = $1";
 
 pub const SELECT_USERS_BY_EMAILS_QUERY: &str = "SELECT id, email FROM users WHERE email = ANY($1)";
+
+pub const INSERT_OBJECT_STORAGE_DELETIONS_QUERY: &str =
+	"INSERT INTO object_storage_deletions (object_name)
+SELECT UNNEST($1::TEXT[])
+ON CONFLICT (object_name) DO NOTHING";
+
+pub const SELECT_PENDING_OBJECT_STORAGE_DELETIONS_QUERY: &str = "SELECT object_name
+FROM object_storage_deletions
+ORDER BY created_at
+LIMIT $1";
+
+pub const DELETE_OBJECT_STORAGE_DELETIONS_QUERY: &str =
+	"DELETE FROM object_storage_deletions WHERE object_name = ANY($1)";
+
+pub const MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY: &str = "UPDATE object_storage_deletions
+SET attempts = attempts + 1, last_attempt_at = now(), last_error = $2
+WHERE object_name = ANY($1)";
 
 pub const SELECT_USER_COUNT_BY_EMAIL_QUERY: &str = "SELECT COUNT(*) FROM users WHERE email = $1";
 

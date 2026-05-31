@@ -23,8 +23,10 @@ To build the frontend:
 just frontend-build
 ```
 
-This runs `pnpm install --frozen-lockfile --prefer-offline` and then builds the
-application through Trunk.
+This requires an explicit `frontend/public/config.json`, runs
+`pnpm install --frozen-lockfile --prefer-offline`, and then builds the
+application through Trunk. Use `just frontend-config` for local builds, and
+provide a deployment-specific config for production builds.
 
 ## GraphQL
 

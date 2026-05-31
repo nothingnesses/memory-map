@@ -10,15 +10,17 @@ use {
 			ERR_UNSUPPORTED_FILE_TYPE,
 		},
 		errors::AppError,
-		graphql::{
-			objects::{
-				location::Location,
-				s3_object::PublicityOverride,
-			},
-			queries::mutation::Mutation,
+		graphql::objects::{
+			location::Location,
+			s3_object::PublicityOverride,
+		},
+		object_lifecycle::{
+			ObjectLifecycleService,
+			ObjectUpload,
 		},
 	},
 	anyhow::Context,
+	aws_sdk_s3::primitives::ByteStream,
 	axum::{
 		Json,
 		body::Bytes,
@@ -141,6 +143,11 @@ pub async fn post(
 	} else {
 		None
 	};
+	if files.is_empty() {
+		return Ok(Json(uploaded_objects).into_response());
+	}
+	let mut client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
+	let mut object_lifecycle = ObjectLifecycleService::new(&mut client, &state.inner.storage);
 
 	for file in files {
 		let FileData {
@@ -155,20 +162,18 @@ pub async fn post(
 			bytes.len()
 		);
 
-		state.inner.storage.upload_object(&filename, bytes, content_type).await?;
-
-		let client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
-
-		match Mutation::upsert_s3_object_worker(
-			&client,
-			filename,
-			made_on.clone(),
-			location.clone(),
-			user_id,
-			PublicityOverride::Default,
-			vec![],
-		)
-		.await
+		match object_lifecycle
+			.upload_and_create_object(ObjectUpload {
+				name: filename,
+				bytes: ByteStream::from(bytes),
+				content_type,
+				made_on: made_on.clone(),
+				location: location.clone(),
+				user_id,
+				publicity: PublicityOverride::Default,
+				allowed_users: vec![],
+			})
+			.await
 		{
 			Ok(s3_object) => uploaded_objects.push(s3_object),
 			Err(e) => {

@@ -43,11 +43,30 @@ pub mod db;
 pub mod email;
 pub mod errors;
 pub mod graphql;
+pub mod object_lifecycle;
 pub mod storage;
 
-use storage::StorageClient;
+use storage::{
+	StorageClient,
+	StorageConfig,
+};
 
 #[derive(Debug, serde::Deserialize, Clone)]
+struct AppConfig {
+	pub pg: deadpool_postgres::Config,
+	pub enable_registration: bool,
+	pub smtp_host: String,
+	pub smtp_user: String,
+	pub smtp_pass: String,
+	pub smtp_from: String,
+	pub cookie_secret: String,
+	pub frontend_url: String,
+	pub server_host: String,
+	pub server_port: u16,
+	pub cors_allowed_origins: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
 	pub enable_registration: bool,
@@ -57,13 +76,7 @@ pub struct Config {
 	pub smtp_from: String,
 	pub cookie_secret: String,
 	pub frontend_url: String,
-	pub s3_endpoint_url: String,
-	pub s3_access_key: String,
-	pub s3_secret_key: String,
-	pub s3_bucket_name: String,
-	pub s3_region: String,
-	pub s3_force_path_style: bool,
-	pub s3_presigned_url_ttl_seconds: u64,
+	pub storage: StorageConfig,
 	pub server_host: String,
 	pub server_port: u16,
 	pub cors_allowed_origins: String,
@@ -72,22 +85,25 @@ pub struct Config {
 impl Config {
 	pub fn from_env() -> Result<Self, errors::AppError> {
 		let cfg = config::Config::builder()
-			.set_default("s3_region", "us-east-1")
-			.map_err(errors::AppError::from)?
-			.set_default("s3_force_path_style", true)
-			.map_err(errors::AppError::from)?
-			.set_default("s3_presigned_url_ttl_seconds", 604_800)
-			.map_err(errors::AppError::from)?
 			.add_source(config::Environment::default().separator("__"))
 			.build()
 			.map_err(errors::AppError::from)?;
-		let config: Self = cfg.try_deserialize().map_err(errors::AppError::from)?;
-		if !(1 ..= 604_800).contains(&config.s3_presigned_url_ttl_seconds) {
-			return Err(errors::AppError::Internal(anyhow::anyhow!(
-				"s3_presigned_url_ttl_seconds must be between 1 and 604800"
-			)));
-		}
-		Ok(config)
+		let config: AppConfig = cfg.try_deserialize().map_err(errors::AppError::from)?;
+		let storage = StorageConfig::from_env().map_err(errors::AppError::from)?;
+		Ok(Self {
+			pg: config.pg,
+			enable_registration: config.enable_registration,
+			smtp_host: config.smtp_host,
+			smtp_user: config.smtp_user,
+			smtp_pass: config.smtp_pass,
+			smtp_from: config.smtp_from,
+			cookie_secret: config.cookie_secret,
+			frontend_url: config.frontend_url,
+			storage,
+			server_host: config.server_host,
+			server_port: config.server_port,
+			cors_allowed_origins: config.cors_allowed_origins,
+		})
 	}
 }
 

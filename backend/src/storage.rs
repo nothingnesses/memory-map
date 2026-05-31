@@ -42,6 +42,9 @@ pub struct StorageConfig {
 }
 
 impl StorageConfig {
+	pub const DEFAULT_FORCE_PATH_STYLE: bool = true;
+	pub const DEFAULT_PRESIGNED_URL_TTL_SECONDS: u64 = 604_800;
+	pub const DEFAULT_REGION: &'static str = "us-east-1";
 	pub const MAX_PRESIGNED_URL_TTL_SECONDS: u64 = 604_800;
 
 	pub fn from_env() -> anyhow::Result<Self> {
@@ -50,11 +53,17 @@ impl StorageConfig {
 			access_key: required_env("S3_ACCESS_KEY")?,
 			secret_key: required_env("S3_SECRET_KEY")?,
 			bucket_name: required_env("S3_BUCKET_NAME")?,
-			region: env_or_default("S3_REGION", "us-east-1"),
-			force_path_style: parse_bool_env("S3_FORCE_PATH_STYLE", true)?,
-			presigned_url_ttl_seconds: env_or_default("S3_PRESIGNED_URL_TTL_SECONDS", "604800")
-				.parse()
-				.context("S3_PRESIGNED_URL_TTL_SECONDS must be an unsigned integer")?,
+			region: env_or_default("S3_REGION", Self::DEFAULT_REGION),
+			force_path_style: parse_bool_env(
+				"S3_FORCE_PATH_STYLE",
+				Self::DEFAULT_FORCE_PATH_STYLE,
+			)?,
+			presigned_url_ttl_seconds: env_or_default(
+				"S3_PRESIGNED_URL_TTL_SECONDS",
+				&Self::DEFAULT_PRESIGNED_URL_TTL_SECONDS.to_string(),
+			)
+			.parse()
+			.context("S3_PRESIGNED_URL_TTL_SECONDS must be an unsigned integer")?,
 		};
 		config.validate()?;
 		Ok(config)
@@ -71,20 +80,6 @@ impl StorageConfig {
 	}
 }
 
-impl From<&Config> for StorageConfig {
-	fn from(config: &Config) -> Self {
-		Self {
-			endpoint_url: config.s3_endpoint_url.clone(),
-			access_key: config.s3_access_key.clone(),
-			secret_key: config.s3_secret_key.clone(),
-			bucket_name: config.s3_bucket_name.clone(),
-			region: config.s3_region.clone(),
-			force_path_style: config.s3_force_path_style,
-			presigned_url_ttl_seconds: config.s3_presigned_url_ttl_seconds,
-		}
-	}
-}
-
 #[derive(Clone)]
 pub struct StorageClient {
 	client: Client,
@@ -93,8 +88,10 @@ pub struct StorageClient {
 }
 
 impl StorageClient {
+	pub const MAX_DELETE_OBJECTS_PER_REQUEST: usize = 1000;
+
 	pub fn from_config(config: &Config) -> anyhow::Result<Self> {
-		Self::from_storage_config(&StorageConfig::from(config))
+		Self::from_storage_config(&config.storage)
 	}
 
 	pub fn from_storage_config(config: &StorageConfig) -> anyhow::Result<Self> {
@@ -179,10 +176,16 @@ impl StorageClient {
 		&self,
 		object_names: &[String],
 	) -> anyhow::Result<()> {
-		if object_names.is_empty() {
-			return Ok(());
+		for object_names in object_name_delete_batches(object_names) {
+			self.delete_object_batch(object_names).await?;
 		}
+		Ok(())
+	}
 
+	async fn delete_object_batch(
+		&self,
+		object_names: &[String],
+	) -> anyhow::Result<()> {
 		let mut objects = Vec::with_capacity(object_names.len());
 		for object_name in object_names {
 			objects.push(
@@ -227,9 +230,17 @@ impl StorageClient {
 		Ok(())
 	}
 
-	pub async fn ensure_bucket_ready(&self) -> anyhow::Result<()> {
-		self.client.list_buckets().send().await.context("Failed to list S3 buckets")?;
+	pub async fn verify_bucket_ready(&self) -> anyhow::Result<()> {
+		self.client
+			.head_bucket()
+			.bucket(&self.bucket_name)
+			.send()
+			.await
+			.context("Failed to verify S3 bucket readiness")?;
+		Ok(())
+	}
 
+	pub async fn ensure_bucket_exists(&self) -> anyhow::Result<()> {
 		if self.head_bucket().await? {
 			return Ok(());
 		}
@@ -242,12 +253,7 @@ impl StorageClient {
 			}
 		}
 
-		self.client
-			.head_bucket()
-			.bucket(&self.bucket_name)
-			.send()
-			.await
-			.context("Failed to verify S3 bucket after readiness check")?;
+		self.verify_bucket_ready().await.context("Failed to verify S3 bucket after creation")?;
 		Ok(())
 	}
 
@@ -282,6 +288,10 @@ fn create_bucket_error_means_existing_bucket(error: &SdkError<CreateBucketError>
 	})
 }
 
+fn object_name_delete_batches(object_names: &[String]) -> impl Iterator<Item = &[String]> {
+	object_names.chunks(StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST)
+}
+
 fn required_env(name: &str) -> anyhow::Result<String> {
 	env::var(name).with_context(|| format!("{name} must be set"))
 }
@@ -307,9 +317,10 @@ fn parse_bool_env(
 
 #[cfg(test)]
 mod tests {
-	use {
-		super::StorageConfig,
-		crate::Config,
+	use super::{
+		StorageClient,
+		StorageConfig,
+		object_name_delete_batches,
 	};
 
 	fn storage_config_with_ttl(presigned_url_ttl_seconds: u64) -> StorageConfig {
@@ -345,36 +356,13 @@ mod tests {
 	}
 
 	#[test]
-	fn storage_config_from_app_config_copies_s3_settings() {
-		let config = Config {
-			pg: deadpool_postgres::Config::new(),
-			enable_registration: true,
-			smtp_host: "smtp.example.test".to_string(),
-			smtp_user: "memory-map-test".to_string(),
-			smtp_pass: "memory-map-test-password".to_string(),
-			smtp_from: "noreply@example.test".to_string(),
-			cookie_secret: "memory-map-test-cookie-secret-at-least-64-bytes-long".to_string(),
-			frontend_url: "http://127.0.0.1:3000".to_string(),
-			s3_endpoint_url: "http://127.0.0.1:9000/".to_string(),
-			s3_access_key: "memorymapdev".to_string(),
-			s3_secret_key: "memorymapdevsecret".to_string(),
-			s3_bucket_name: "memory-map".to_string(),
-			s3_region: "us-east-1".to_string(),
-			s3_force_path_style: true,
-			s3_presigned_url_ttl_seconds: 3600,
-			server_host: "127.0.0.1".to_string(),
-			server_port: 8000,
-			cors_allowed_origins: "http://127.0.0.1:3000".to_string(),
-		};
+	fn delete_object_batches_respect_s3_multi_delete_limit() {
+		let object_names = (0 .. StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST + 1)
+			.map(|index| format!("object-{index}"))
+			.collect::<Vec<_>>();
+		let batch_lengths =
+			object_name_delete_batches(&object_names).map(<[String]>::len).collect::<Vec<_>>();
 
-		let storage_config = StorageConfig::from(&config);
-
-		assert_eq!(storage_config.endpoint_url, config.s3_endpoint_url);
-		assert_eq!(storage_config.access_key, config.s3_access_key);
-		assert_eq!(storage_config.secret_key, config.s3_secret_key);
-		assert_eq!(storage_config.bucket_name, config.s3_bucket_name);
-		assert_eq!(storage_config.region, config.s3_region);
-		assert_eq!(storage_config.force_path_style, config.s3_force_path_style);
-		assert_eq!(storage_config.presigned_url_ttl_seconds, config.s3_presigned_url_ttl_seconds);
+		assert_eq!(batch_lengths, vec![StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST, 1]);
 	}
 }

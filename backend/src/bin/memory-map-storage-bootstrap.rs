@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
 		.context("Failed to verify RustFS health endpoint")?;
 	let storage =
 		StorageClient::from_storage_config(&config).context("Failed to build storage client")?;
-	storage.ensure_bucket_ready().await.context("Failed to ensure S3 bucket readiness")?;
+	storage.ensure_bucket_exists().await.context("Failed to ensure S3 bucket exists")?;
 	Ok(())
 }
 

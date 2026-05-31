@@ -8,6 +8,7 @@ const fixtureBuffer = fs.readFileSync(
 );
 
 const password = "memory-map-e2e-password-123";
+const backendUrl = process.env.E2E_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 function runId() {
 	return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -50,7 +51,7 @@ function waitForGraphqlOperation(page, operationName) {
 		const request = response.request();
 		return (
 			request.method() === "POST" &&
-			response.url().startsWith("http://127.0.0.1:8000") &&
+			response.url().startsWith(backendUrl) &&
 			request.postData()?.includes(operationName)
 		);
 	});

@@ -101,6 +101,7 @@ jobs:
         with:
           use-flakehub: false
           use-gha-cache: true
+      - run: nix develop ./devenv/ --command just frontend-config
       - run: nix develop ./devenv/ --command just frontend-build
 
   storage-integration:

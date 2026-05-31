@@ -7,10 +7,7 @@ use {
 		UserId,
 		db::queries::{
 			ADMIN_UPDATE_USER_QUERY,
-			DELETE_OBJECT_ALLOWED_USERS_QUERY,
-			DELETE_OBJECTS_QUERY,
 			DELETE_PASSWORD_RESET_TOKEN_QUERY,
-			INSERT_OBJECT_ALLOWED_USER_QUERY,
 			INSERT_PASSWORD_RESET_TOKEN_QUERY,
 			INSERT_USER_QUERY,
 			SELECT_PASSWORD_RESET_TOKEN_QUERY,
@@ -18,12 +15,9 @@ use {
 			SELECT_USER_COUNT_BY_EMAIL_QUERY,
 			SELECT_USER_PASSWORD_HASH_BY_ID_QUERY,
 			SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY,
-			SELECT_USERS_BY_EMAILS_QUERY,
-			UPDATE_OBJECT_QUERY,
 			UPDATE_USER_EMAIL_QUERY,
 			UPDATE_USER_PASSWORD_QUERY,
 			UPDATE_USER_PUBLICITY_QUERY,
-			UPSERT_OBJECT_QUERY,
 		},
 		email::send_password_reset_email,
 		errors::AppError,
@@ -38,7 +32,11 @@ use {
 				User,
 			},
 		},
-		storage::StorageClient,
+		object_lifecycle::{
+			ObjectLifecycleService,
+			update_s3_object_metadata,
+			upsert_s3_object_metadata,
+		},
 	},
 	anyhow::Context as AnyhowContext,
 	argon2::{
@@ -68,8 +66,6 @@ use {
 		Manager,
 	},
 	email_address::EmailAddress,
-	futures::future::join_all,
-	jiff::Timestamp,
 	rand::{
 		RngExt,
 		distr::Alphanumeric,
@@ -112,186 +108,6 @@ fn validate_password(password: &str) -> Result<(), AppError> {
 
 pub struct Mutation;
 
-impl Mutation {
-	pub async fn delete_s3_objects_worker(
-		db_client: &Client,
-		storage: &StorageClient,
-		ids: &[i64],
-	) -> Result<Vec<S3Object>, AppError> {
-		tracing::debug!("IDs to delete: {:?}", ids);
-		let statement = db_client.prepare_cached(DELETE_OBJECTS_QUERY).await?;
-		tracing::debug!("Delete DB query: {:?}", statement);
-
-		let rows = db_client.query(&statement, &[&ids]).await?;
-
-		let objects = join_all(rows.into_iter().map(S3Object::try_from))
-			.await
-			.into_iter()
-			.collect::<Result<Vec<_>, _>>()
-			.map_err(|e| {
-				AppError::Internal(anyhow::anyhow!(
-					"Failed to convert database rows to S3 objects: {}",
-					e.message
-				))
-			})?;
-
-		let objects_to_delete: Vec<String> =
-			objects.iter().map(|object| object.name.clone()).collect();
-
-		tracing::debug!("Objects to delete: {:?}", objects_to_delete);
-
-		if !objects_to_delete.is_empty() {
-			storage.delete_objects(&objects_to_delete).await?;
-		}
-
-		Ok(objects)
-	}
-
-	/// Worker function to execute the update S3 object query.
-	/// It parses the timestamp, formats the location geometry, and executes the SQL query.
-	pub async fn update_s3_object_worker(
-		client: &Client,
-		id: i64,
-		name: String,
-		made_on: Option<String>,
-		location: Option<Location>,
-		publicity: PublicityOverride,
-		allowed_users: Vec<String>,
-	) -> Result<S3Object, AppError> {
-		let parsed_made_on: Option<Timestamp> = match made_on {
-			Some(timestamp_string) => Some(
-				timestamp_string
-					.parse()
-					.map_err(|e| AppError::Validation(format!("Invalid timestamp format: {e}")))?,
-			),
-			None => None,
-		};
-		let location_geometry = location.as_ref().map(Location::geometry).transpose()?;
-		if let Some(location_geometry) = &location_geometry {
-			tracing::debug!("Formatted location geometry: {}", location_geometry);
-		}
-		tracing::debug!(
-			"Executing update with: id={}, name={}, made_on={:?}, location={:?}, publicity={:?}",
-			id,
-			name,
-			parsed_made_on.as_ref().map(|ts| ts.to_string()),
-			location_geometry,
-			publicity
-		);
-		let mut s3_object = S3Object::try_from(
-			client
-				.query_one(
-					&client.prepare_cached(UPDATE_OBJECT_QUERY).await?,
-					&[&id, &name, &parsed_made_on, &location_geometry, &publicity],
-				)
-				.await?,
-		)
-		.await
-		.map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
-		})?;
-
-		// Update allowed users
-		client
-			.execute(DELETE_OBJECT_ALLOWED_USERS_QUERY, &[&id])
-			.await
-			.context("Failed to delete object allowed users from database")?;
-
-		let mut valid_allowed_users = Vec::new();
-
-		if !allowed_users.is_empty() {
-			let rows = client.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users]).await?;
-
-			for row in rows {
-				let user_id: i64 =
-					row.try_get("id").context("Failed to get user ID from database row")?;
-				let email: String =
-					row.try_get("email").context("Failed to get email from database row")?;
-				client
-					.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&id, &user_id])
-					.await
-					.context("Failed to insert object allowed user into database")?;
-				valid_allowed_users.push(email);
-			}
-		}
-		s3_object.allowed_users = valid_allowed_users;
-		Ok(s3_object)
-	}
-
-	pub async fn upsert_s3_object_worker(
-		client: &Client,
-		name: String,
-		made_on: Option<String>,
-		location: Option<Location>,
-		user_id: i64,
-		publicity: PublicityOverride,
-		allowed_users: Vec<String>,
-	) -> Result<S3Object, AppError> {
-		let parsed_made_on: Option<Timestamp> = match made_on {
-			Some(timestamp_string) => Some(
-				timestamp_string
-					.parse()
-					.map_err(|e| AppError::Validation(format!("Invalid timestamp format: {e}")))?,
-			),
-			None => None,
-		};
-		let location_geometry = location.as_ref().map(Location::geometry).transpose()?;
-		if let Some(location_geometry) = &location_geometry {
-			tracing::debug!("Formatted location geometry: {}", location_geometry);
-		}
-		tracing::debug!(
-			"Executing upsert with: name={}, made_on={:?}, location={:?}, user_id={}, publicity={:?}",
-			name,
-			parsed_made_on.as_ref().map(|ts| ts.to_string()),
-			location_geometry,
-			user_id,
-			publicity
-		);
-		let mut s3_object = S3Object::try_from(
-			client
-				.query_one(
-					&client.prepare_cached(UPSERT_OBJECT_QUERY).await?,
-					&[&name, &parsed_made_on, &location_geometry, &user_id, &publicity],
-				)
-				.await?,
-		)
-		.await
-		.map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
-		})?;
-
-		let id: i64 = s3_object.id.parse().map_err(|e| {
-			AppError::Internal(anyhow::anyhow!("Failed to parse S3 object ID: {e}"))
-		})?;
-
-		// Update allowed users
-		client
-			.execute(DELETE_OBJECT_ALLOWED_USERS_QUERY, &[&id])
-			.await
-			.context("Failed to delete object allowed users from database")?;
-
-		let mut valid_allowed_users = Vec::new();
-
-		if !allowed_users.is_empty() {
-			let rows = client.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users]).await?;
-
-			for row in rows {
-				let user_id: i64 =
-					row.try_get("id").context("Failed to get user ID from database row")?;
-				let email: String =
-					row.try_get("email").context("Failed to get email from database row")?;
-				client
-					.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&id, &user_id])
-					.await
-					.context("Failed to insert object allowed user into database")?;
-				valid_allowed_users.push(email);
-			}
-		}
-		s3_object.allowed_users = valid_allowed_users;
-		Ok(s3_object)
-	}
-}
-
 #[Object]
 impl Mutation {
 	async fn delete_s3_objects(
@@ -302,7 +118,7 @@ impl Mutation {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
 		let wrapper = ContextWrapper(ctx);
 		let storage = wrapper.get_storage_client()?;
-		let client = wrapper.get_db_client().await?;
+		let mut client = wrapper.get_db_client().await?;
 		let ids: Vec<i64> = ids
 			.into_iter()
 			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from))
@@ -333,7 +149,8 @@ impl Mutation {
 				.ok_or_else(|| GraphQLError::new("Forbidden"))?;
 		}
 
-		let result = Self::delete_s3_objects_worker(&client, storage, &ids)
+		let result = ObjectLifecycleService::new(&mut client, storage)
+			.delete_objects(&ids)
 			.await
 			.map_err(GraphQLError::from)?;
 
@@ -351,7 +168,7 @@ impl Mutation {
 		input: UpdateS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let mut client = ContextWrapper(ctx).get_db_client().await?;
 		let id_int =
 			input.id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from)?;
 
@@ -378,8 +195,8 @@ impl Mutation {
 
 		let allowed_users = input.allowed_users.unwrap_or_default();
 
-		let result = Self::update_s3_object_worker(
-			&client,
+		let result = update_s3_object_metadata(
+			&mut client,
 			id_int,
 			input.name,
 			input.made_on,
@@ -401,7 +218,7 @@ impl Mutation {
 		input: UpsertS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let mut client = ContextWrapper(ctx).get_db_client().await?;
 
 		// Check permissions
 		let state = ctx
@@ -437,8 +254,8 @@ impl Mutation {
 
 		let allowed_users = input.allowed_users.unwrap_or_default();
 
-		let result = Self::upsert_s3_object_worker(
-			&client,
+		let result = upsert_s3_object_metadata(
+			&mut client,
 			input.name,
 			input.made_on,
 			input.location,
