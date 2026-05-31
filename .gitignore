@@ -9,6 +9,7 @@ frontend/public/config.json
 /result
 /result-*
 process-compose.log
+backend-integration-logs/
 e2e-logs/
 frontend/playwright-report/
 frontend/test-results/

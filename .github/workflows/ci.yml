@@ -129,6 +129,32 @@ jobs:
           path: process-compose.log
           if-no-files-found: ignore
 
+  backend-integration:
+    name: Backend Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free runner disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force || true
+          df -h
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+        with:
+          use-flakehub: false
+          use-gha-cache: true
+      - run: nix develop ./devenv/ --command just backend-integration
+      - name: Upload backend integration logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-integration-logs
+          path: backend-integration-logs/
+          if-no-files-found: ignore
+
   e2e:
     name: E2E
     runs-on: ubuntu-latest

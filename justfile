@@ -170,6 +170,64 @@ storage-ci:
 	{{ direnv_prefix }} process-compose --port "$port" project is-ready --wait
 	STORAGE_TEST_REQUIRE_SERVICE=true just storage-test
 
+# Run backend API/auth integration tests against configured local services.
+[positional-arguments]
+backend-integration-test *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --ignored --nocapture --test-threads=1
+	fi
+	source scripts/e2e-env.sh
+	BACKEND_INTEGRATION_REQUIRE_SERVICE=true {{ direnv_prefix }} cargo test -p backend --test api_auth -- "$@"
+
+# Run backend API/auth integration tests against the headless local service graph.
+backend-integration:
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	source scripts/e2e-env.sh
+	log_dir="${BACKEND_INTEGRATION_LOG_DIR:-backend-integration-logs}"
+	log_file="${BACKEND_INTEGRATION_PROCESS_COMPOSE_LOG:-$log_dir/process-compose.log}"
+	port="${BACKEND_INTEGRATION_PROCESS_COMPOSE_PORT:-$PROCESS_COMPOSE_PORT}"
+	mkdir -p "$log_dir"
+	process_compose_started=false
+
+	start_process_compose() {
+		if [[ "$PROCESS_COMPOSE_BIN" == "default" ]]; then
+			{{ direnv_prefix }} nix run ./devenv -- "$@"
+		else
+			{{ direnv_prefix }} "$PROCESS_COMPOSE_BIN" "$@"
+		fi
+	}
+
+	require_port_free() {
+		local port="$1"
+		local name="$2"
+
+		if (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
+			echo "ERROR: $name port $port is already in use." >&2
+			exit 1
+		fi
+	}
+
+	cleanup() {
+		if [[ "$process_compose_started" == "true" ]]; then
+			{{ direnv_prefix }} process-compose --port "$port" down >> "$log_dir/process-compose-down.log" 2>&1 || true
+		fi
+	}
+	trap cleanup EXIT
+
+	require_port_free "$PG__PORT" "PostgreSQL"
+	require_port_free "9000" "RustFS API"
+	require_port_free "9001" "RustFS console"
+	require_port_free "$port" "process-compose"
+
+	start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
+	process_compose_started=true
+	{{ direnv_prefix }} process-compose --port "$port" project is-ready --wait
+	just backend-integration-test
+
 # Run Playwright E2E tests against the headless local service graph.
 e2e: frontend-config
 	#!/usr/bin/env bash
@@ -339,7 +397,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		build|check|clippy|deny|doc|e2e|fmt|frontend-build|storage-ci|storage-test|test|verify) ;;
+		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|storage-ci|storage-test|test|verify) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2
