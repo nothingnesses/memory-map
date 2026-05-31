@@ -2,7 +2,6 @@
 all-features = true
 
 [advisories]
-git-fetch-with-cli = false
 ignore = [
 	# `paste` is still used by the current Leptos ecosystem. There is no safe
 	# upgrade for the crate itself.

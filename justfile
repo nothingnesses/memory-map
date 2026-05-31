@@ -286,13 +286,12 @@ deny:
 	set -euo pipefail
 
 	if [[ "${CI:-}" == "true" && -z "${CARGO_HOME:-}" ]]; then
-		export CARGO_HOME="$PWD/.cargo-deny/cargo-home"
+		export CARGO_HOME="${RUNNER_TEMP:-$PWD/.cargo-deny}/cargo-home"
 	fi
 	cargo_home="${CARGO_HOME:-$HOME/.cargo}"
 
 	run_deny() {
-		{{ direnv_prefix }} cargo deny fetch db
-		{{ direnv_prefix }} cargo deny check --disable-fetch
+		{{ direnv_prefix }} cargo deny check
 	}
 
 	if ! run_deny; then
