@@ -434,6 +434,8 @@
                 pkgs.bacon
                 pkgs.rust-analyzer
                 pkgs.gh
+                # Keep CI git operations inside the Nix toolchain.
+                pkgs.git
                 # Stable didn't yet have cargo-generate, so we're using unstable here
                 pkgs.unstable.cargo-generate
                 pkgs.just
