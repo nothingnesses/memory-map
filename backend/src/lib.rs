@@ -36,6 +36,7 @@ use {
 	tokio::sync::RwLock,
 };
 
+pub mod app;
 pub mod constants;
 pub mod controllers;
 pub mod db;
