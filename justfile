@@ -156,14 +156,18 @@ storage-ci:
 
 	log_file="${PROCESS_COMPOSE_LOG:-process-compose.log}"
 	port="${PROCESS_COMPOSE_PORT:-8080}"
+	process_compose_started=false
 
 	cleanup() {
-		{{ direnv_prefix }} nix run ./devenv -- --port "$port" down || true
+		if [[ "$process_compose_started" == "true" ]]; then
+			{{ direnv_prefix }} process-compose --port "$port" down || true
+		fi
 	}
 	trap cleanup EXIT
 
 	{{ direnv_prefix }} nix run ./devenv -- --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
-	{{ direnv_prefix }} nix run ./devenv -- --port "$port" project is-ready --wait
+	process_compose_started=true
+	{{ direnv_prefix }} process-compose --port "$port" project is-ready --wait
 	STORAGE_TEST_REQUIRE_SERVICE=true just storage-test
 
 # Run Playwright E2E tests against the headless local service graph.
@@ -173,8 +177,9 @@ e2e: frontend-config
 
 	source scripts/e2e-env.sh
 	mkdir -p "$E2E_LOG_DIR"
+	process_compose_started=false
 
-	run_process_compose() {
+	start_process_compose() {
 		if [[ "$PROCESS_COMPOSE_BIN" == "default" ]]; then
 			{{ direnv_prefix }} nix run ./devenv -- "$@"
 		else
@@ -240,7 +245,9 @@ e2e: frontend-config
 		trap - EXIT INT TERM
 		stop_pid "${frontend_pid:-}"
 		stop_pid "${backend_pid:-}"
-		run_process_compose --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
+		if [[ "$process_compose_started" == "true" ]]; then
+			{{ direnv_prefix }} process-compose --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
+		fi
 		exit "$status"
 	}
 	trap cleanup EXIT INT TERM
@@ -252,8 +259,9 @@ e2e: frontend-config
 	require_port_free "3000" "frontend"
 	require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
 
-	run_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
-	run_process_compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
+	start_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
+	process_compose_started=true
+	{{ direnv_prefix }} process-compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
 
 	{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
 	backend_pid=$!
@@ -271,7 +279,27 @@ clean:
 
 # Check licenses and advisories with cargo-deny.
 deny:
-	{{ direnv_prefix }} cargo deny check
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	if [[ "${CI:-}" == "true" && -z "${CARGO_HOME:-}" ]]; then
+		export CARGO_HOME="$PWD/.cargo-deny/cargo-home"
+	fi
+	cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+
+	run_deny() {
+		{{ direnv_prefix }} cargo deny fetch db
+		{{ direnv_prefix }} cargo deny check --disable-fetch
+	}
+
+	if ! run_deny; then
+		if [[ "${CI:-}" != "true" ]]; then
+			exit 1
+		fi
+
+		rm -rf "$cargo_home/advisory-dbs"
+		run_deny
+	fi
 
 # Run an allowed just recipe and filter its output with a caller-provided rg regex.
 [positional-arguments]

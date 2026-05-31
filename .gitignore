@@ -17,4 +17,5 @@ frontend/blob-report/
 .codex/worktrees/
 .pre-commit-config.yaml
 .playwright-mcp/
+.cargo-deny/
 *.code-workspace

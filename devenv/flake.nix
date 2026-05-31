@@ -4,14 +4,6 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
-    rustfs-src = {
-      url = "github:rustfs/rustfs/1.0.0-beta.4";
-      flake = false;
-    };
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -102,18 +94,7 @@
                   && !(lib.hasPrefix "frontend/test-results/" rel)
                   && !(lib.hasPrefix "frontend/blob-report/" rel);
               };
-            rustfsPkgs = pkgs.extend (import inputs.rust-overlay);
-            rustfsToolchain = rustfsPkgs.rust-bin.stable.latest.default.override {
-              extensions = [ "rust-src" ];
-            };
-            rustfsRustPlatform = pkgs.makeRustPlatform {
-              cargo = rustfsToolchain;
-              rustc = rustfsToolchain;
-            };
-            rustfsPackage = pkgs.callPackage ./packages/rustfs.nix {
-              rustPlatform = rustfsRustPlatform;
-              rustfsSrc = inputs.rustfs-src;
-            };
+            rustfsPackage = pkgs.callPackage ./packages/rustfs.nix { };
             storageBootstrap = appRustPlatform.buildRustPackage {
               pname = "memory-map-storage-bootstrap";
               version = "0.1.0";
@@ -457,6 +438,7 @@
                 pkgs.unstable.cargo-generate
                 pkgs.just
                 pkgs.curl
+                pkgs.process-compose
                 pkgs.pnpm
                 pkgs.nodejs-slim
                 pkgs.playwright-driver

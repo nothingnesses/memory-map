@@ -189,8 +189,6 @@
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "process-compose-flake": "process-compose-flake",
-        "rust-overlay": "rust-overlay",
-        "rustfs-src": "rustfs-src",
         "systems": "systems",
         "treefmt-nix": "treefmt-nix"
       }
@@ -226,43 +224,6 @@
         "owner": "rust-lang",
         "ref": "nightly",
         "repo": "rust-analyzer",
-        "type": "github"
-      }
-    },
-    "rust-overlay": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1779765539,
-        "narHash": "sha256-2QxuD5gJcfCFsnqv54LGEHQKvd+K+DW/ecERwAvuA7w=",
-        "owner": "oxalica",
-        "repo": "rust-overlay",
-        "rev": "09889992e640378f7008c3302b9d4892579df610",
-        "type": "github"
-      },
-      "original": {
-        "owner": "oxalica",
-        "repo": "rust-overlay",
-        "type": "github"
-      }
-    },
-    "rustfs-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1779289387,
-        "narHash": "sha256-1GBOq6PUk/FmvgL8otFHBMS+gT5obiGDXnEVYhVbQuw=",
-        "owner": "rustfs",
-        "repo": "rustfs",
-        "rev": "dcbffb084f9a85b7362f2c146e16f749d2c81179",
-        "type": "github"
-      },
-      "original": {
-        "owner": "rustfs",
-        "ref": "1.0.0-beta.4",
-        "repo": "rustfs",
         "type": "github"
       }
     },
