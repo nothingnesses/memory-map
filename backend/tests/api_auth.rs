@@ -118,7 +118,12 @@ impl TestApp {
 		&self,
 		request: Request<Body>,
 	) -> anyhow::Result<TestResponse> {
-		let response = self.app.clone().oneshot(request).await.expect("router request failed");
+		let response = self
+			.app
+			.clone()
+			.oneshot(request)
+			.await
+			.map_err(|err| anyhow::anyhow!("router request failed: {err}"))?;
 		let (parts, body) = response.into_parts();
 		let body = to_bytes(body, BODY_MAX_SIZE_LIMIT_BYTES).await?;
 
@@ -274,13 +279,13 @@ async fn login_cookie_authenticates_graphql_requests() -> anyhow::Result<()> {
 	assert_eq!(me.status, StatusCode::OK);
 	let me = me.json()?;
 	assert_graphql_success(&me)?;
-	assert_eq!(me["data"]["me"]["email"], user.email);
+	assert_eq!(json_path(&me, &["data", "me", "email"])?.as_str(), Some(user.email.as_str()));
 
 	let anonymous_me = app.graphql("query Me { me { email } }", json!({}), None).await?;
 	assert_eq!(anonymous_me.status, StatusCode::OK);
 	let anonymous_me = anonymous_me.json()?;
 	assert_graphql_success(&anonymous_me)?;
-	assert!(anonymous_me["data"]["me"].is_null());
+	assert!(json_path(&anonymous_me, &["data", "me"])?.is_null());
 
 	Ok(())
 }
@@ -300,8 +305,12 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 		.await?;
 	assert_eq!(upload.status, StatusCode::OK);
 	let upload = upload.json()?;
-	let object_id = upload[0]["id"].as_str().context("upload response is missing object id")?;
-	assert_eq!(upload[0]["name"], object_name);
+	let upload_objects = upload.as_array().context("upload response is not an array")?;
+	let uploaded_object = upload_objects.first().context("upload response is empty")?;
+	let object_id = json_path(uploaded_object, &["id"])?
+		.as_str()
+		.context("upload response is missing object id")?;
+	assert_eq!(json_path(uploaded_object, &["name"])?.as_str(), Some(object_name.as_str()));
 	assert_eq!(app.object_count(&object_name).await?, 1);
 	assert_eq!(app.state.storage.object_content_type(&object_name).await?, "image/svg+xml");
 
@@ -329,13 +338,17 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	assert_eq!(visible_objects.status, StatusCode::OK);
 	let visible_objects = visible_objects.json()?;
 	assert_graphql_success(&visible_objects)?;
-	let object = visible_objects["data"]["s3Objects"]
+	let object = json_path(&visible_objects, &["data", "s3Objects"])?
 		.as_array()
 		.context("s3Objects response is not an array")?
 		.iter()
-		.find(|object| object["name"] == object_name)
+		.find(|object| {
+			json_path(object, &["name"])
+				.and_then(|name| name.as_str().context("object name is not a string"))
+				.is_ok_and(|name| name == object_name)
+		})
 		.context("uploaded object is missing from s3Objects")?;
-	assert_eq!(object["contentType"], "image/svg+xml");
+	assert_eq!(json_path(object, &["contentType"])?.as_str(), Some("image/svg+xml"));
 
 	let delete = app
 		.graphql(
@@ -508,6 +521,18 @@ fn assert_graphql_success(value: &Value) -> anyhow::Result<()> {
 		anyhow::bail!("GraphQL response contained errors: {errors}");
 	}
 	Ok(())
+}
+
+fn json_path<'a>(
+	value: &'a Value,
+	path: &[&str],
+) -> anyhow::Result<&'a Value> {
+	let mut current = value;
+	for key in path {
+		current =
+			current.get(*key).with_context(|| format!("JSON response is missing field {key}"))?;
+	}
+	Ok(current)
 }
 
 fn assert_graphql_error_contains(

@@ -54,15 +54,17 @@ mod tests {
 
 	#[test]
 	fn validated_accepts_boundary_coordinates() {
-		let location = Location {
+		let result = Location {
 			latitude: -90.0,
 			longitude: 180.0,
 		}
-		.validated()
-		.expect("valid coordinates should be accepted");
+		.validated();
 
-		assert_eq!(location.latitude, -90.0);
-		assert_eq!(location.longitude, 180.0);
+		assert!(result.is_ok(), "valid coordinates were rejected: {:?}", result.as_ref().err());
+		if let Ok(location) = result {
+			assert_eq!(location.latitude, -90.0);
+			assert_eq!(location.longitude, 180.0);
+		}
 	}
 
 	#[test]
@@ -91,7 +93,11 @@ mod tests {
 			latitude: 12.5,
 			longitude: -45.25,
 		};
+		let result = location.geometry();
 
-		assert_eq!(location.geometry().expect("valid geometry"), "SRID=4326;POINT(-45.25 12.5)");
+		assert!(result.is_ok(), "valid coordinates were rejected: {:?}", result.as_ref().err());
+		if let Ok(geometry) = result {
+			assert_eq!(geometry, "SRID=4326;POINT(-45.25 12.5)");
+		}
 	}
 }
