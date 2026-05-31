@@ -20,7 +20,6 @@ use {
 		Object,
 	},
 	deadpool_postgres::Manager,
-	futures::future::join_all,
 	jiff::Timestamp,
 	postgres_types::{
 		FromSql,
@@ -91,9 +90,24 @@ where
 	}
 }
 
+/// Emits a 64-bit id as a JSON string.
+///
+/// Matches the GraphQL `ID` wire format and protects JavaScript clients from the
+/// `Number` precision ceiling at 2^53; both endpoints (REST upload, GraphQL) now
+/// agree that ids are strings.
+fn serialize_i64_as_string<S>(
+	value: &i64,
+	serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+	S: Serializer, {
+	serializer.collect_str(value)
+}
+
 #[derive(Debug, Serialize)]
 pub struct S3Object {
-	pub id: ID,
+	#[serde(serialize_with = "serialize_i64_as_string")]
+	pub id: i64,
 	pub name: String,
 	pub storage_key: String,
 	pub content_type: String,
@@ -105,8 +119,10 @@ pub struct S3Object {
 	pub allowed_users: Vec<String>,
 }
 
-impl S3Object {
-	pub async fn try_from(row: Row) -> Result<Self, GraphQLError> {
+impl TryFrom<Row> for S3Object {
+	type Error = GraphQLError;
+
+	fn try_from(row: Row) -> Result<Self, Self::Error> {
 		let name: String = row.try_get("name")?;
 		let storage_key: String = row.try_get("storage_key")?;
 		let content_type: String = row.try_get("content_type")?;
@@ -138,7 +154,7 @@ impl S3Object {
 		};
 
 		Ok(S3Object {
-			id: id.into(),
+			id,
 			name,
 			storage_key,
 			content_type,
@@ -149,22 +165,19 @@ impl S3Object {
 			allowed_users,
 		})
 	}
+}
 
+impl S3Object {
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached(SELECT_ALL_OBJECTS_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client
+			.query(&statement, &[])
+			.await
+			.map_err(GraphQLError::from)?
+			.into_iter()
+			.map(Self::try_from)
+			.collect()
 	}
 
 	pub async fn where_id(
@@ -173,7 +186,7 @@ impl S3Object {
 	) -> Result<Self, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_ID_QUERY).await?;
-		Self::try_from(client.query_one(&statement, &[&id]).await?).await
+		Self::try_from(client.query_one(&statement, &[&id]).await?)
 	}
 
 	pub async fn where_name(
@@ -182,7 +195,7 @@ impl S3Object {
 	) -> Result<Self, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY).await?;
-		Self::try_from(client.query_one(&statement, &[&name]).await?).await
+		Self::try_from(client.query_one(&statement, &[&name]).await?)
 	}
 
 	pub async fn where_ids(
@@ -191,18 +204,13 @@ impl S3Object {
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[&ids])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client
+			.query(&statement, &[&ids])
+			.await
+			.map_err(GraphQLError::from)?
+			.into_iter()
+			.map(Self::try_from)
+			.collect()
 	}
 
 	pub async fn where_user_id(
@@ -211,18 +219,13 @@ impl S3Object {
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[&user_id])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client
+			.query(&statement, &[&user_id])
+			.await
+			.map_err(GraphQLError::from)?
+			.into_iter()
+			.map(Self::try_from)
+			.collect()
 	}
 
 	pub async fn visible_to_user(
@@ -231,25 +234,20 @@ impl S3Object {
 	) -> Result<Vec<Self>, GraphQLError> {
 		let client = ContextWrapper(ctx).get_db_client().await?;
 		let statement = client.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[&user_id])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client
+			.query(&statement, &[&user_id])
+			.await
+			.map_err(GraphQLError::from)?
+			.into_iter()
+			.map(Self::try_from)
+			.collect()
 	}
 }
 
 #[Object]
 impl S3Object {
 	async fn id(&self) -> ID {
-		self.id.clone()
+		self.id.into()
 	}
 
 	async fn name(&self) -> String {

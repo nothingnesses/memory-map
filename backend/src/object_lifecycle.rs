@@ -33,7 +33,6 @@ use {
 		Client,
 		Manager,
 	},
-	futures::future::join_all,
 	jiff::Timestamp,
 	rand::{
 		RngExt,
@@ -93,8 +92,11 @@ impl PositiveSeconds {
 
 impl ObjectLifecycleConfig {
 	pub const DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS: i64 = 3600;
-	pub const DEFAULT_STORAGE_DELETION_BATCH_SIZE: i64 =
-		StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64;
+	/// A reasonable default claim size for the deletion worker. The storage layer
+	/// owns S3's per-request multi-delete limit and chunks internally, so this can
+	/// be any positive value; 1000 happens to match S3's cap so a typical claim
+	/// fires exactly one storage request.
+	pub const DEFAULT_STORAGE_DELETION_BATCH_SIZE: i64 = 1000;
 	pub const DEFAULT_STORAGE_DELETION_LEASE_SECONDS: i64 = 300;
 	pub const DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS: i32 = 10;
 	pub const DEFAULT_STORAGE_DELETION_RETRY_SECONDS: i64 = 60;
@@ -162,13 +164,8 @@ impl ObjectLifecycleConfig {
 	}
 
 	pub fn validate(&self) -> anyhow::Result<()> {
-		if !(1 ..= StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64)
-			.contains(&self.storage_deletion_batch_size)
-		{
-			anyhow::bail!(
-				"object_storage_deletion_batch_size must be between 1 and {}",
-				StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST
-			);
+		if self.storage_deletion_batch_size <= 0 {
+			anyhow::bail!("object_storage_deletion_batch_size must be greater than 0");
 		}
 		if self.storage_deletion_max_attempts <= 0 {
 			anyhow::bail!("object_storage_deletion_max_attempts must be greater than 0");
@@ -276,11 +273,10 @@ impl<'a> ObjectLifecycleService<'a> {
 				.await
 				.map_err(|error| insert_object_error(error, &upload.name))?,
 		)
-		.await
 		.map_err(|e| {
 			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
 		})?;
-		let id = object_id(&s3_object)?;
+		let id = s3_object.id;
 		s3_object.allowed_users =
 			replace_allowed_users(&transaction, id, upload.allowed_users).await?;
 		transaction.commit().await?;
@@ -325,7 +321,7 @@ impl<'a> ObjectLifecycleService<'a> {
 				return Err(AppError::from(error));
 			}
 		};
-		let mut finalized = S3Object::try_from(finalized_row).await.map_err(|e| {
+		let mut finalized = S3Object::try_from(finalized_row).map_err(|e| {
 			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
 		})?;
 		finalized.allowed_users = allowed_users;
@@ -339,7 +335,7 @@ impl<'a> ObjectLifecycleService<'a> {
 		tracing::debug!("IDs to delete: {:?}", ids);
 		let transaction = self.db_client.transaction().await?;
 		let rows = transaction.query(MARK_OBJECTS_DELETE_PENDING_QUERY, &[&ids]).await?;
-		let objects = collect_s3_objects(rows).await?;
+		let objects = collect_s3_objects(rows)?;
 		enqueue_storage_deletions(&transaction, &objects).await?;
 
 		transaction.commit().await?;
@@ -347,41 +343,32 @@ impl<'a> ObjectLifecycleService<'a> {
 		Ok(objects)
 	}
 
+	/// Runs both maintenance stages in sequence, surfacing the first failure if any.
+	///
+	/// Each stage logs its own outcome (success count or error) so operators can tell
+	/// from logs which stage struggled even when the composite returns Ok. `.and()`
+	/// gives the desired "first-failure" semantics without the bookkeeping the
+	/// previous shape required.
 	pub async fn run_storage_maintenance(&mut self) -> Result<(), AppError> {
-		let mut first_error = None;
-		match self.reap_stale_pending_uploads().await {
-			Ok(stale_uploads) =>
-				if !stale_uploads.is_empty() {
-					tracing::warn!(
-						count = stale_uploads.len(),
-						"Marked stale pending uploads for storage cleanup"
-					);
-				},
-			Err(error) => {
-				tracing::warn!(
-					error = ?error,
-					"Failed to mark stale pending uploads for storage cleanup"
-				);
-				first_error = Some(error);
-			}
+		let reap = self.reap_stale_pending_uploads().await;
+		let drain = self.drain_storage_deletions().await;
+
+		match &reap {
+			Ok(stale_uploads) if !stale_uploads.is_empty() => tracing::warn!(
+				count = stale_uploads.len(),
+				"Marked stale pending uploads for storage cleanup"
+			),
+			Ok(_) => {}
+			Err(error) => tracing::warn!(
+				error = ?error,
+				"Failed to mark stale pending uploads for storage cleanup"
+			),
+		}
+		if let Err(error) = &drain {
+			tracing::warn!(error = ?error, "Failed to drain object storage deletions");
 		}
 
-		if let Err(error) = self.drain_storage_deletions().await {
-			if first_error.is_some() {
-				tracing::warn!(
-					error = ?error,
-					"Failed to drain object storage deletions"
-				);
-			} else {
-				return Err(error);
-			}
-		}
-
-		if let Some(error) = first_error {
-			return Err(error);
-		}
-
-		Ok(())
+		reap.map(|_| ()).and(drain)
 	}
 
 	pub async fn reap_stale_pending_uploads(&mut self) -> Result<Vec<S3Object>, AppError> {
@@ -393,7 +380,7 @@ impl<'a> ObjectLifecycleService<'a> {
 			)
 			.await
 			.context("Failed to mark stale pending uploads for cleanup")?;
-		let objects = collect_s3_objects(rows).await?;
+		let objects = collect_s3_objects(rows)?;
 		enqueue_storage_deletions(&transaction, &objects).await?;
 		transaction.commit().await?;
 		Ok(objects)
@@ -401,6 +388,47 @@ impl<'a> ObjectLifecycleService<'a> {
 
 	pub async fn drain_storage_deletions(&mut self) -> Result<(), AppError> {
 		drain_storage_deletion_outbox(self.db_client, self.storage, &self.config).await
+	}
+
+	pub async fn update_object_metadata(
+		&mut self,
+		id: i64,
+		name: String,
+		made_on: Option<String>,
+		location: Option<Location>,
+		publicity: PublicityOverride,
+		allowed_users: Vec<String>,
+	) -> Result<S3Object, AppError> {
+		let parsed_made_on = parse_made_on(made_on)?;
+		let location_geometry = location_geometry(location.as_ref())?;
+		if let Some(location_geometry) = &location_geometry {
+			tracing::debug!("Formatted location geometry: {}", location_geometry);
+		}
+		tracing::debug!(
+			"Executing update with: id={}, name={}, made_on={:?}, location={:?}, publicity={:?}",
+			id,
+			name,
+			parsed_made_on.as_ref().map(|ts| ts.to_string()),
+			location_geometry,
+			publicity
+		);
+
+		let transaction = self.db_client.transaction().await?;
+		let mut s3_object = S3Object::try_from(
+			transaction
+				.query_one(
+					UPDATE_OBJECT_QUERY,
+					&[&id, &name, &parsed_made_on, &location_geometry, &publicity],
+				)
+				.await?,
+		)
+		.map_err(|e| {
+			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
+		})?;
+
+		s3_object.allowed_users = replace_allowed_users(&transaction, id, allowed_users).await?;
+		transaction.commit().await?;
+		Ok(s3_object)
 	}
 
 	async fn enqueue_pending_upload_cleanup(
@@ -415,7 +443,6 @@ impl<'a> ObjectLifecycleService<'a> {
 				.await
 				.context("Failed to mark failed upload for storage cleanup")?,
 		)
-		.await
 		.map_err(|e| {
 			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
 		})?;
@@ -563,11 +590,20 @@ impl StorageDeletionOutbox for Client {
 	}
 }
 
+/// Drains the deletion outbox to completion.
+///
+/// On a batch storage failure, the batch is marked failed (so it will retry on
+/// a future tick or, past max_attempts, stay parked for triage) and the loop
+/// continues claiming the next batch. The first error is surfaced after the
+/// claim loop exhausts so the worker still sees that something went wrong.
+/// Bounded by `storage_deletion_max_attempts`: a permanently broken row stops
+/// being claimable once it hits the cap, so the loop cannot spin forever.
 async fn drain_storage_deletion_outbox(
 	outbox: &mut impl StorageDeletionOutbox,
 	storage: &impl StorageDeletionSink,
 	config: &ObjectLifecycleConfig,
 ) -> Result<(), AppError> {
+	let mut first_error: Option<AppError> = None;
 	loop {
 		let storage_keys = outbox
 			.claim_storage_deletions(
@@ -579,57 +615,25 @@ async fn drain_storage_deletion_outbox(
 			.await?;
 
 		if storage_keys.is_empty() {
-			return Ok(());
+			break;
 		}
 
 		if let Err(error) = storage.delete_objects(&storage_keys).await {
 			let error_message = error.to_string();
 			outbox.mark_storage_deletions_failed(&storage_keys, &error_message).await?;
-			return Err(AppError::Internal(error));
+			if first_error.is_none() {
+				first_error = Some(AppError::Internal(error));
+			}
+			continue;
 		}
 
 		outbox.clear_storage_deletions(&storage_keys).await?;
 	}
-}
 
-pub async fn update_s3_object_metadata(
-	client: &mut Client,
-	id: i64,
-	name: String,
-	made_on: Option<String>,
-	location: Option<Location>,
-	publicity: PublicityOverride,
-	allowed_users: Vec<String>,
-) -> Result<S3Object, AppError> {
-	let parsed_made_on = parse_made_on(made_on)?;
-	let location_geometry = location_geometry(location.as_ref())?;
-	if let Some(location_geometry) = &location_geometry {
-		tracing::debug!("Formatted location geometry: {}", location_geometry);
+	match first_error {
+		Some(error) => Err(error),
+		None => Ok(()),
 	}
-	tracing::debug!(
-		"Executing update with: id={}, name={}, made_on={:?}, location={:?}, publicity={:?}",
-		id,
-		name,
-		parsed_made_on.as_ref().map(|ts| ts.to_string()),
-		location_geometry,
-		publicity
-	);
-
-	let transaction = client.transaction().await?;
-	let mut s3_object = S3Object::try_from(
-		transaction
-			.query_one(
-				UPDATE_OBJECT_QUERY,
-				&[&id, &name, &parsed_made_on, &location_geometry, &publicity],
-			)
-			.await?,
-	)
-	.await
-	.map_err(|e| anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message))?;
-
-	s3_object.allowed_users = replace_allowed_users(&transaction, id, allowed_users).await?;
-	transaction.commit().await?;
-	Ok(s3_object)
 }
 
 fn parse_made_on(made_on: Option<String>) -> Result<Option<Timestamp>, AppError> {
@@ -656,7 +660,7 @@ async fn enqueue_storage_deletions(
 	}
 
 	let storage_keys = objects.iter().map(|object| object.storage_key.clone()).collect::<Vec<_>>();
-	let object_ids = objects.iter().map(object_id).collect::<Result<Vec<_>, _>>()?;
+	let object_ids = objects.iter().map(|object| object.id).collect::<Vec<_>>();
 	transaction
 		.execute(INSERT_OBJECT_STORAGE_DELETIONS_QUERY, &[&storage_keys, &object_ids])
 		.await
@@ -664,17 +668,13 @@ async fn enqueue_storage_deletions(
 	Ok(())
 }
 
-async fn collect_s3_objects(rows: Vec<Row>) -> Result<Vec<S3Object>, AppError> {
-	join_all(rows.into_iter().map(S3Object::try_from))
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
-		.map_err(|e| {
-			AppError::Internal(anyhow::anyhow!(
-				"Failed to convert database rows to S3 objects: {}",
-				e.message
-			))
-		})
+fn collect_s3_objects(rows: Vec<Row>) -> Result<Vec<S3Object>, AppError> {
+	rows.into_iter().map(S3Object::try_from).collect::<Result<Vec<_>, _>>().map_err(|e| {
+		AppError::Internal(anyhow::anyhow!(
+			"Failed to convert database rows to S3 objects: {}",
+			e.message
+		))
+	})
 }
 
 async fn replace_allowed_users(
@@ -711,13 +711,6 @@ async fn replace_allowed_users(
 fn generate_storage_key() -> String {
 	let key: String = rand::rng().sample_iter(Alphanumeric).take(40).map(char::from).collect();
 	format!("objects/{key}")
-}
-
-fn object_id(object: &S3Object) -> Result<i64, AppError> {
-	object
-		.id
-		.parse()
-		.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to parse S3 object ID: {e}")))
 }
 
 fn insert_object_error(
@@ -928,7 +921,7 @@ mod tests {
 		let storage = FakeStorageDeletionSink::failing("storage delete failed");
 
 		let Err(error) = drain_storage_deletion_outbox(&mut outbox, &storage, &config).await else {
-			anyhow::bail!("storage delete failure should stop the drain");
+			anyhow::bail!("storage delete failure should surface as an error");
 		};
 
 		assert!(matches!(error, AppError::Internal(_)));
@@ -938,9 +931,15 @@ mod tests {
 			outbox.failed_batches,
 			vec![(pending_batch, "storage delete failed".to_string())]
 		);
+		// Two claims: one returning the failing batch, then one returning empty after
+		// the batch is marked failed. Drain continues past failures rather than aborting
+		// on the first; the second claim drains the queue to completion.
 		assert_eq!(
 			outbox.requested_limits,
-			vec![ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE]
+			vec![
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			]
 		);
 
 		Ok(())

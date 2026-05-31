@@ -34,10 +34,7 @@ use {
 				User,
 			},
 		},
-		object_lifecycle::{
-			ObjectLifecycleService,
-			update_s3_object_metadata,
-		},
+		object_lifecycle::ObjectLifecycleService,
 	},
 	anyhow::Context as AnyhowContext,
 	argon2::{
@@ -185,7 +182,9 @@ impl Mutation {
 		input: UpdateS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
 		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let mut client = ContextWrapper(ctx).get_db_client().await?;
+		let wrapper = ContextWrapper(ctx);
+		let storage = wrapper.get_storage_client()?;
+		let mut client = wrapper.get_db_client().await?;
 		let id_int =
 			input.id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from)?;
 
@@ -212,8 +211,12 @@ impl Mutation {
 
 		let allowed_users = input.allowed_users.unwrap_or_default();
 
-		let result = update_s3_object_metadata(
+		let result = ObjectLifecycleService::new(
 			&mut client,
+			storage,
+			state.config.object_lifecycle.clone(),
+		)
+		.update_object_metadata(
 			id_int,
 			input.name,
 			input.made_on,

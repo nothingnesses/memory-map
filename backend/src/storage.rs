@@ -105,7 +105,10 @@ pub struct StorageClient {
 }
 
 impl StorageClient {
-	pub const MAX_DELETE_OBJECTS_PER_REQUEST: usize = 1000;
+	/// S3 caps multi-object delete requests at 1000 keys per call. This is an internal
+	/// concern of the storage layer; higher levels pass arbitrary key counts and the
+	/// chunking happens inside `delete_objects`.
+	const MAX_DELETE_OBJECTS_PER_REQUEST: usize = 1000;
 
 	pub fn from_config(config: &Config) -> anyhow::Result<Self> {
 		Self::from_storage_config(&config.storage)
