@@ -147,7 +147,11 @@ pub async fn post(
 		return Ok(Json(uploaded_objects).into_response());
 	}
 	let mut client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
-	let mut object_lifecycle = ObjectLifecycleService::new(&mut client, &state.inner.storage);
+	let mut object_lifecycle = ObjectLifecycleService::new(
+		&mut client,
+		&state.inner.storage,
+		state.inner.config.object_lifecycle.clone(),
+	);
 
 	for file in files {
 		let FileData {

@@ -1,4 +1,3 @@
-// Force recompile
 use {
 	async_graphql::{
 		Context,
@@ -46,12 +45,15 @@ pub mod graphql;
 pub mod object_lifecycle;
 pub mod storage;
 
-use storage::{
-	StorageClient,
-	StorageConfig,
+use {
+	object_lifecycle::ObjectLifecycleConfig,
+	storage::{
+		StorageClient,
+		StorageConfig,
+	},
 };
 
-#[derive(Debug, serde::Deserialize, Clone)]
+#[derive(serde::Deserialize, Clone)]
 struct AppConfig {
 	pub pg: deadpool_postgres::Config,
 	pub enable_registration: bool,
@@ -66,7 +68,7 @@ struct AppConfig {
 	pub cors_allowed_origins: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
 	pub enable_registration: bool,
@@ -77,6 +79,7 @@ pub struct Config {
 	pub cookie_secret: String,
 	pub frontend_url: String,
 	pub storage: StorageConfig,
+	pub object_lifecycle: ObjectLifecycleConfig,
 	pub server_host: String,
 	pub server_port: u16,
 	pub cors_allowed_origins: String,
@@ -90,6 +93,7 @@ impl Config {
 			.map_err(errors::AppError::from)?;
 		let config: AppConfig = cfg.try_deserialize().map_err(errors::AppError::from)?;
 		let storage = StorageConfig::from_env().map_err(errors::AppError::from)?;
+		let object_lifecycle = ObjectLifecycleConfig::from_env().map_err(errors::AppError::from)?;
 		Ok(Self {
 			pg: config.pg,
 			enable_registration: config.enable_registration,
@@ -100,10 +104,34 @@ impl Config {
 			cookie_secret: config.cookie_secret,
 			frontend_url: config.frontend_url,
 			storage,
+			object_lifecycle,
 			server_host: config.server_host,
 			server_port: config.server_port,
 			cors_allowed_origins: config.cors_allowed_origins,
 		})
+	}
+}
+
+impl fmt::Debug for Config {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		f.debug_struct("Config")
+			.field("pg", &"<redacted>")
+			.field("enable_registration", &self.enable_registration)
+			.field("smtp_host", &self.smtp_host)
+			.field("smtp_user", &self.smtp_user)
+			.field("smtp_pass", &"<redacted>")
+			.field("smtp_from", &self.smtp_from)
+			.field("cookie_secret", &"<redacted>")
+			.field("frontend_url", &self.frontend_url)
+			.field("storage", &self.storage)
+			.field("object_lifecycle", &self.object_lifecycle)
+			.field("server_host", &self.server_host)
+			.field("server_port", &self.server_port)
+			.field("cors_allowed_origins", &self.cors_allowed_origins)
+			.finish()
 	}
 }
 
@@ -228,10 +256,16 @@ pub struct CasbinObject {
 
 #[cfg(test)]
 mod tests {
-	use super::{
-		errors::AppError,
-		parse_latitude,
-		parse_longitude,
+	use {
+		super::{
+			Config,
+			errors::AppError,
+			object_lifecycle::ObjectLifecycleConfig,
+			parse_latitude,
+			parse_longitude,
+			storage::StorageConfig,
+		},
+		deadpool_postgres::Config as PostgresConfig,
 	};
 
 	#[test]
@@ -258,5 +292,43 @@ mod tests {
 	fn parse_longitude_rejects_out_of_range_values() {
 		assert!(matches!(parse_longitude(-180.1), Err(AppError::Validation(_))));
 		assert!(matches!(parse_longitude(180.1), Err(AppError::Validation(_))));
+	}
+
+	#[test]
+	fn app_config_debug_redacts_secrets() {
+		let config = Config {
+			pg: PostgresConfig::new(),
+			enable_registration: true,
+			smtp_host: "smtp.example.test".to_string(),
+			smtp_user: "debug-smtp-user".to_string(),
+			smtp_pass: "debug-smtp-pass-secret".to_string(),
+			smtp_from: "noreply@example.test".to_string(),
+			cookie_secret: "debug-cookie-secret".to_string(),
+			frontend_url: "https://memory-map.example.test".to_string(),
+			storage: StorageConfig {
+				endpoint_url: "https://s3.example.test".to_string(),
+				access_key: "debug-storage-access-secret".to_string(),
+				secret_key: "debug-storage-secret-secret".to_string(),
+				bucket_name: "memory-map".to_string(),
+				region: "us-east-1".to_string(),
+				force_path_style: false,
+				presigned_url_ttl_seconds: 60,
+			},
+			object_lifecycle: ObjectLifecycleConfig::default(),
+			server_host: "127.0.0.1".to_string(),
+			server_port: 8000,
+			cors_allowed_origins: "https://memory-map.example.test".to_string(),
+		};
+
+		let debug = format!("{config:?}");
+
+		assert!(debug.contains("Config"));
+		assert!(debug.contains("smtp.example.test"));
+		assert!(debug.contains("https://s3.example.test"));
+		assert!(debug.contains("<redacted>"));
+		assert!(!debug.contains("debug-smtp-pass-secret"));
+		assert!(!debug.contains("debug-cookie-secret"));
+		assert!(!debug.contains("debug-storage-access-secret"));
+		assert!(!debug.contains("debug-storage-secret-secret"));
 	}
 }

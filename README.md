@@ -73,6 +73,11 @@ You can optionally configure the build mode and other settings by editing `.env`
 - The default local S3 API endpoint is `http://127.0.0.1:9000/`, with region
   `us-east-1`, bucket `memory-map`, and path-style addressing enabled for
   RustFS. Presigned media URLs default to a seven-day lifetime.
+- Object storage cleanup uses `OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS`,
+  `OBJECT_STORAGE_DELETION_RETRY_SECONDS`,
+  `OBJECT_STORAGE_DELETION_LEASE_SECONDS`,
+  `OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS`, and
+  `OBJECT_STORAGE_DELETION_BATCH_SIZE`.
 
 ### 4. Start database & storage
 

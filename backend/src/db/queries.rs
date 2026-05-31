@@ -17,6 +17,12 @@ SET storage_state = 'delete_pending', storage_state_updated_at = now()
 WHERE id = $1 AND storage_key = $2 AND storage_state IN ('pending_upload', 'available')
 RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
+pub const MARK_STALE_UPLOADS_DELETE_PENDING_QUERY: &str = "UPDATE objects
+SET storage_state = 'delete_pending', storage_state_updated_at = now()
+WHERE storage_state = 'pending_upload'
+	AND storage_state_updated_at < now() - ($1::BIGINT * interval '1 second')
+RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
 pub const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
@@ -103,10 +109,21 @@ pub const INSERT_OBJECT_STORAGE_DELETIONS_QUERY: &str =
 SELECT UNNEST($1::TEXT[]), UNNEST($2::BIGINT[])
 ON CONFLICT (storage_key) DO NOTHING";
 
-pub const SELECT_PENDING_OBJECT_STORAGE_DELETIONS_QUERY: &str = "SELECT storage_key
-FROM object_storage_deletions
-ORDER BY created_at
-LIMIT $1";
+pub const CLAIM_OBJECT_STORAGE_DELETIONS_QUERY: &str = "UPDATE object_storage_deletions
+SET attempts = attempts + 1,
+	last_attempt_at = now(),
+	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
+	last_error = NULL
+WHERE storage_key IN (
+	SELECT storage_key
+	FROM object_storage_deletions
+	WHERE (processing_expires_at IS NULL OR processing_expires_at <= now())
+		AND (last_attempt_at IS NULL OR last_attempt_at <= now() - ($3::BIGINT * interval '1 second'))
+	ORDER BY created_at
+	LIMIT $1
+	FOR UPDATE SKIP LOCKED
+)
+RETURNING storage_key";
 
 pub const DELETE_OBJECT_STORAGE_DELETIONS_QUERY: &str =
 	"DELETE FROM object_storage_deletions WHERE storage_key = ANY($1)";
@@ -115,7 +132,7 @@ pub const DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY: &str =
 	"DELETE FROM objects WHERE storage_key = ANY($1) AND storage_state = 'delete_pending'";
 
 pub const MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY: &str = "UPDATE object_storage_deletions
-SET attempts = attempts + 1, last_attempt_at = now(), last_error = $2
+SET processing_expires_at = NULL, last_error = $2
 WHERE storage_key = ANY($1)";
 
 pub const SELECT_USER_COUNT_BY_EMAIL_QUERY: &str = "SELECT COUNT(*) FROM users WHERE email = $1";

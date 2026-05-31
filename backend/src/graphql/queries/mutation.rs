@@ -139,10 +139,14 @@ impl Mutation {
 				.ok_or_else(|| GraphQLError::new("Forbidden"))?;
 		}
 
-		let result = ObjectLifecycleService::new(&mut client, storage)
-			.delete_objects(&ids)
-			.await
-			.map_err(GraphQLError::from)?;
+		let result = ObjectLifecycleService::new(
+			&mut client,
+			storage,
+			state.config.object_lifecycle.clone(),
+		)
+		.delete_objects(&ids)
+		.await
+		.map_err(GraphQLError::from)?;
 
 		state.update_last_modified();
 

@@ -1,5 +1,6 @@
 use {
 	anyhow::Context,
+	aws_sdk_s3::primitives::ByteStream,
 	axum::{
 		Router,
 		body::{
@@ -22,7 +23,15 @@ use {
 			build_shared_state,
 		},
 		constants::BODY_MAX_SIZE_LIMIT_BYTES,
+		db::queries::{
+			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
+			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
+		},
 		migrations,
+		object_lifecycle::{
+			ObjectLifecycleConfig,
+			ObjectLifecycleWorker,
+		},
 		storage::{
 			StorageClient,
 			StorageConfig,
@@ -264,6 +273,16 @@ impl TestApp {
 			client.query_one("SELECT COUNT(*) FROM object_storage_deletions", &[]).await?.get(0);
 		Ok(count)
 	}
+
+	async fn run_object_lifecycle_maintenance(
+		&self,
+		config: ObjectLifecycleConfig,
+	) -> anyhow::Result<()> {
+		ObjectLifecycleWorker::new(self.state.pool.clone(), self.state.storage.clone(), config)
+			.run_once()
+			.await
+			.map_err(Into::into)
+	}
 }
 
 struct TestUser {
@@ -440,6 +459,31 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 		.await?;
 	assert_eq!(delete.status, StatusCode::OK);
 	assert_graphql_success(&delete.json()?)?;
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	assert_eq!(app.storage_deletion_outbox_count().await?, 1);
+
+	let visible_objects = app
+		.graphql(
+			"query Objects { s3Objects { id name contentType } }",
+			json!({}),
+			Some(&user.cookie),
+		)
+		.await?;
+	assert_eq!(visible_objects.status, StatusCode::OK);
+	let visible_objects = visible_objects.json()?;
+	assert_graphql_success(&visible_objects)?;
+	let still_visible = json_path(&visible_objects, &["data", "s3Objects"])?
+		.as_array()
+		.context("s3Objects response is not an array")?
+		.iter()
+		.any(|object| {
+			json_path(object, &["name"])
+				.and_then(|name| name.as_str().context("object name is not a string"))
+				.is_ok_and(|name| name == object_name)
+		});
+	assert!(!still_visible);
+
+	app.run_object_lifecycle_maintenance(ObjectLifecycleConfig::default()).await?;
 	assert_eq!(app.object_count(&object_name).await?, 0);
 	assert!(app.state.storage.object_content_type(&storage_key).await.is_err());
 	assert_eq!(app.storage_deletion_outbox_count().await?, 0);
@@ -554,6 +598,148 @@ async fn duplicate_upload_name_does_not_overwrite_existing_object() -> anyhow::R
 	Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn stale_pending_upload_cleanup_removes_blob_metadata_and_releases_name() -> anyhow::Result<()>
+{
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("stale-pending-upload-{}.svg", unique_suffix()?);
+	let storage_key = format!("objects/stale-pending-upload-{}", unique_suffix()?);
+	let body = b"<svg xmlns=\"http://www.w3.org/2000/svg\" />";
+
+	app.state
+		.storage
+		.upload_object(&storage_key, ByteStream::from_static(body), "image/svg+xml")
+		.await?;
+
+	let client = app.state.pool.get().await?;
+	let user_id: i64 =
+		client.query_one("SELECT id FROM users WHERE email = $1", &[&user.email]).await?.get(0);
+	client
+		.execute(
+			"INSERT INTO objects (
+				name,
+				storage_key,
+				content_type,
+				storage_state,
+				storage_state_updated_at,
+				user_id,
+				publicity
+			)
+			VALUES ($1, $2, 'image/svg+xml', 'pending_upload', now() - interval '2 hours', $3, 'default')",
+			&[&object_name, &storage_key, &user_id],
+		)
+		.await?;
+	drop(client);
+
+	let lifecycle_config = ObjectLifecycleConfig {
+		pending_upload_timeout_seconds: 1,
+		storage_deletion_retry_seconds: 1,
+		storage_deletion_lease_seconds: 30,
+		storage_deletion_worker_interval_seconds: 1,
+		storage_deletion_batch_size: 1000,
+	};
+	app.run_object_lifecycle_maintenance(lifecycle_config).await?;
+
+	assert_eq!(app.object_count(&object_name).await?, 0);
+	assert!(app.state.storage.object_content_type(&storage_key).await.is_err());
+
+	let upload = app
+		.upload_location(
+			Some(&user.cookie),
+			UploadLocationRequest::svg(&object_name, "12.5", "-45.25", body),
+		)
+		.await?;
+	assert_eq!(upload.status, StatusCode::OK);
+	assert_eq!(app.object_count(&object_name).await?, 1);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let first_key = format!("objects/claim-lease-first-{}", unique_suffix()?);
+	let second_key = format!("objects/claim-lease-second-{}", unique_suffix()?);
+
+	let client = app.state.pool.get().await?;
+	client
+		.execute(
+			"INSERT INTO object_storage_deletions (storage_key) VALUES ($1), ($2)",
+			&[&first_key, &second_key],
+		)
+		.await?;
+
+	let first_claim = claim_keys(&client, 1, 600, 60).await?;
+	assert_eq!(first_claim.len(), 1);
+	let first_claimed_key =
+		first_claim.into_iter().next().context("first object storage deletion claim was empty")?;
+	let remaining_key =
+		if first_claimed_key == first_key { second_key.clone() } else { first_key.clone() };
+
+	assert_eq!(claim_keys(&client, 10, 600, 60).await?, vec![remaining_key.clone()]);
+	assert!(claim_keys(&client, 10, 600, 60).await?.is_empty());
+
+	client
+		.execute(
+			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
+			&[&vec![first_claimed_key.clone()], &"simulated storage failure"],
+		)
+		.await?;
+	assert!(claim_keys(&client, 10, 600, 60).await?.is_empty());
+
+	client
+		.execute(
+			"UPDATE object_storage_deletions
+			SET last_attempt_at = now() - interval '2 minutes'
+			WHERE storage_key = $1",
+			&[&first_claimed_key],
+		)
+		.await?;
+	assert_eq!(claim_keys(&client, 10, 600, 60).await?, vec![first_claimed_key.clone()]);
+
+	let first_attempts: i32 = client
+		.query_one(
+			"SELECT attempts FROM object_storage_deletions WHERE storage_key = $1",
+			&[&first_claimed_key],
+		)
+		.await?
+		.get(0);
+	assert_eq!(first_attempts, 2);
+
+	client
+		.execute(
+			"DELETE FROM object_storage_deletions WHERE storage_key = ANY($1)",
+			&[&vec![first_key, second_key]],
+		)
+		.await?;
+
+	Ok(())
+}
+
+async fn claim_keys(
+	client: &deadpool_postgres::Client,
+	limit: i64,
+	lease_seconds: i64,
+	retry_after_seconds: i64,
+) -> Result<Vec<String>, tokio_postgres::Error> {
+	client
+		.query(
+			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
+			&[&limit, &lease_seconds, &retry_after_seconds],
+		)
+		.await
+		.map(|rows| {
+			rows.into_iter().map(|row| row.get::<_, String>("storage_key")).collect::<Vec<_>>()
+		})
+}
+
 fn test_config() -> anyhow::Result<Config> {
 	let mut pg = deadpool_postgres::Config::new();
 	pg.dbname = Some(env_or_default("PG__DBNAME", "db"));
@@ -588,6 +774,7 @@ fn test_config() -> anyhow::Result<Config> {
 			)
 			.parse()?,
 		},
+		object_lifecycle: ObjectLifecycleConfig::default(),
 		server_host: "127.0.0.1".to_string(),
 		server_port: 8000,
 		cors_allowed_origins: env_or_default("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:3000"),

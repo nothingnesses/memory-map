@@ -30,7 +30,7 @@ use {
 	},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct StorageConfig {
 	pub endpoint_url: String,
 	pub access_key: String,
@@ -39,6 +39,23 @@ pub struct StorageConfig {
 	pub region: String,
 	pub force_path_style: bool,
 	pub presigned_url_ttl_seconds: u64,
+}
+
+impl fmt::Debug for StorageConfig {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		f.debug_struct("StorageConfig")
+			.field("endpoint_url", &self.endpoint_url)
+			.field("access_key", &"<redacted>")
+			.field("secret_key", &"<redacted>")
+			.field("bucket_name", &self.bucket_name)
+			.field("region", &self.region)
+			.field("force_path_style", &self.force_path_style)
+			.field("presigned_url_ttl_seconds", &self.presigned_url_ttl_seconds)
+			.finish()
+	}
 }
 
 impl StorageConfig {
@@ -353,6 +370,21 @@ mod tests {
 				.validate()
 				.is_err()
 		);
+	}
+
+	#[test]
+	fn storage_config_debug_redacts_credentials() {
+		let mut config = storage_config_with_ttl(60);
+		config.access_key = "debug-access-key-secret".to_string();
+		config.secret_key = "debug-secret-key-secret".to_string();
+
+		let debug = format!("{config:?}");
+
+		assert!(debug.contains("StorageConfig"));
+		assert!(debug.contains("http://127.0.0.1:9000/"));
+		assert!(debug.contains("<redacted>"));
+		assert!(!debug.contains("debug-access-key-secret"));
+		assert!(!debug.contains("debug-secret-key-secret"));
 	}
 
 	#[test]

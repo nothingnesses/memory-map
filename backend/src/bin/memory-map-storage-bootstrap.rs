@@ -4,23 +4,14 @@ use {
 		StorageClient,
 		StorageConfig,
 	},
-	std::{
-		io::{
-			Read,
-			Write,
-		},
-		net::{
-			TcpStream,
-			ToSocketAddrs,
-		},
-		time::Duration,
-	},
+	std::time::Duration,
 };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
 	let config = StorageConfig::from_env().context("Failed to read storage bootstrap config")?;
 	ensure_rustfs_health(&config.endpoint_url)
+		.await
 		.context("Failed to verify RustFS health endpoint")?;
 	let storage =
 		StorageClient::from_storage_config(&config).context("Failed to build storage client")?;
@@ -28,108 +19,62 @@ async fn main() -> anyhow::Result<()> {
 	Ok(())
 }
 
-fn ensure_rustfs_health(endpoint_url: &str) -> anyhow::Result<()> {
-	let endpoint = parse_http_endpoint(endpoint_url)?;
-	let timeout = Duration::from_secs(5);
-	let mut stream = connect_with_timeout(&endpoint.host, endpoint.port, timeout)?;
-	stream.set_read_timeout(Some(timeout))?;
-	stream.set_write_timeout(Some(timeout))?;
-	write!(
-		stream,
-		"GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-		endpoint.health_path, endpoint.authority
-	)?;
-
-	let mut response = String::new();
-	stream.read_to_string(&mut response)?;
-	let (headers, body) = response
-		.split_once("\r\n\r\n")
-		.context("RustFS health response did not contain HTTP headers")?;
-	let status_code = headers
-		.lines()
-		.next()
-		.and_then(|status| status.split_whitespace().nth(1))
-		.context("RustFS health response did not contain an HTTP status")?;
-	if status_code != "200" {
-		anyhow::bail!("RustFS health endpoint returned HTTP {status_code}");
+async fn ensure_rustfs_health(endpoint_url: &str) -> anyhow::Result<()> {
+	let health_url = rustfs_health_url(endpoint_url)?;
+	let client = reqwest::Client::builder()
+		.timeout(Duration::from_secs(5))
+		.build()
+		.context("Failed to build RustFS health HTTP client")?;
+	let response = client
+		.get(health_url.clone())
+		.send()
+		.await
+		.with_context(|| format!("Failed to request RustFS health endpoint: {health_url}"))?;
+	let status = response.status();
+	if !status.is_success() {
+		anyhow::bail!("RustFS health endpoint returned HTTP {status}");
 	}
+	let body = response.text().await.context("Failed to read RustFS health response")?;
 	if !(body.contains("\"service\"") && body.contains("\"rustfs-endpoint\"")) {
 		anyhow::bail!("RustFS health endpoint did not identify a RustFS service");
 	}
 	Ok(())
 }
 
-#[derive(Debug)]
-struct HttpEndpoint {
-	authority: String,
-	host: String,
-	port: u16,
-	health_path: String,
-}
-
-fn parse_http_endpoint(endpoint_url: &str) -> anyhow::Result<HttpEndpoint> {
-	let endpoint_url = endpoint_url.trim().trim_end_matches('/');
-	let rest = endpoint_url
-		.strip_prefix("http://")
-		.context("RustFS bootstrap currently supports only http:// S3 endpoints")?;
-	let (authority, base_path) = rest.split_once('/').unwrap_or((rest, ""));
-	if authority.is_empty() {
-		anyhow::bail!("S3 endpoint URL is missing a host");
-	}
-	let (host, port) = parse_authority(authority)?;
-	let base_path = base_path.trim_matches('/');
+fn rustfs_health_url(endpoint_url: &str) -> anyhow::Result<reqwest::Url> {
+	let mut url = reqwest::Url::parse(endpoint_url).context("S3 endpoint URL must be valid")?;
+	let base_path = url.path().trim_matches('/');
 	let health_path = if base_path.is_empty() {
 		"/health/ready".to_string()
 	} else {
 		format!("/{base_path}/health/ready")
 	};
-
-	Ok(HttpEndpoint {
-		authority: authority.to_string(),
-		host,
-		port,
-		health_path,
-	})
-}
-
-fn parse_authority(authority: &str) -> anyhow::Result<(String, u16)> {
-	if let Some(rest) = authority.strip_prefix('[') {
-		let (host, rest) =
-			rest.split_once(']').context("Bracketed IPv6 endpoint is missing a closing bracket")?;
-		let port = rest.strip_prefix(':').map(parse_port).transpose()?.unwrap_or(80);
-		return Ok((host.to_string(), port));
-	}
-
-	let (host, port) = if let Some((host, port)) = authority.split_once(':') {
-		(host.to_string(), parse_port(port)?)
-	} else {
-		(authority.to_string(), 80)
-	};
-	if host.is_empty() {
+	url.set_path(&health_path);
+	url.set_query(None);
+	url.set_fragment(None);
+	if url.host_str().is_none() {
 		anyhow::bail!("S3 endpoint URL is missing a host");
 	}
-	Ok((host, port))
+	Ok(url)
 }
 
-fn parse_port(port: &str) -> anyhow::Result<u16> {
-	port.parse().context("S3 endpoint URL port must be a valid TCP port")
-}
+#[cfg(test)]
+mod tests {
+	use super::rustfs_health_url;
 
-fn connect_with_timeout(
-	host: &str,
-	port: u16,
-	timeout: Duration,
-) -> anyhow::Result<TcpStream> {
-	let mut last_error = None;
-	for address in (host, port).to_socket_addrs()? {
-		match TcpStream::connect_timeout(&address, timeout) {
-			Ok(stream) => return Ok(stream),
-			Err(error) => last_error = Some(error),
-		}
+	#[test]
+	fn rustfs_health_url_uses_root_health_path() -> anyhow::Result<()> {
+		let url = rustfs_health_url("http://127.0.0.1:9000/")?;
+
+		assert_eq!(url.as_str(), "http://127.0.0.1:9000/health/ready");
+		Ok(())
 	}
 
-	if let Some(error) = last_error {
-		return Err(error).with_context(|| format!("Failed to connect to {host}:{port}"));
+	#[test]
+	fn rustfs_health_url_preserves_endpoint_base_path() -> anyhow::Result<()> {
+		let url = rustfs_health_url("http://127.0.0.1:9000/s3/")?;
+
+		assert_eq!(url.as_str(), "http://127.0.0.1:9000/s3/health/ready");
+		Ok(())
 	}
-	anyhow::bail!("S3 endpoint URL resolved no addresses for {host}:{port}");
 }

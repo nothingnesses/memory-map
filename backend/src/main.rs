@@ -7,7 +7,7 @@ use {
 			build_shared_state,
 		},
 		migrations,
-		object_lifecycle::ObjectLifecycleService,
+		object_lifecycle::ObjectLifecycleWorker,
 		storage::StorageClient,
 	},
 	casbin::{
@@ -65,15 +65,9 @@ async fn main() -> anyhow::Result<()> {
 	let storage = StorageClient::from_config(&cfg).context("Failed to build S3 storage client")?;
 	storage.verify_bucket_ready().await.context("Failed to verify S3 bucket readiness")?;
 
-	if let Ok(mut cleanup_connection) = pool.get().await {
-		let mut object_lifecycle = ObjectLifecycleService::new(&mut cleanup_connection, &storage);
-		if let Err(error) = object_lifecycle.drain_storage_deletions().await {
-			tracing::warn!(
-				error = ?error,
-				"Failed to drain pending object storage deletions during startup"
-			);
-		}
-	}
+	let _object_lifecycle_worker =
+		ObjectLifecycleWorker::new(pool.clone(), storage.clone(), cfg.object_lifecycle.clone())
+			.spawn();
 
 	// Initialise Casbin Enforcer
 	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await?;

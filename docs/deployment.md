@@ -52,11 +52,23 @@ Required S3-compatible storage settings:
 - `S3_FORCE_PATH_STYLE`
 - `S3_PRESIGNED_URL_TTL_SECONDS`
 
+Optional object lifecycle settings:
+
+- `OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS`
+- `OBJECT_STORAGE_DELETION_RETRY_SECONDS`
+- `OBJECT_STORAGE_DELETION_LEASE_SECONDS`
+- `OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS`
+- `OBJECT_STORAGE_DELETION_BATCH_SIZE`
+
 `COOKIE_SECRET`, `SMTP_PASS`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` must come
 from production secret management. Do not copy values from `.env.example` or
 `devenv/flake.nix` into production.
 
 `S3_PRESIGNED_URL_TTL_SECONDS` must be between `1` and `604800`.
+
+`OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS` controls when an unfinalized upload is
+treated as failed and moved into cleanup. It should be comfortably longer than
+the longest expected object upload. The default is `3600`.
 
 ## Frontend Runtime Config
 
@@ -114,10 +126,12 @@ local and CI bootstrap helper can create or verify a bucket for RustFS, but
 production bucket lifecycle should be managed intentionally by the deployment.
 
 Database object deletes first mark metadata rows as delete-pending and enqueue
-cleanup by the immutable storage key, not the user-visible object name. The
-backend drains that cleanup queue after deletes and once at startup. If storage
-deletion fails, the queue row remains for a later retry instead of losing track
-of the blob cleanup work.
+cleanup by the immutable storage key, not the user-visible object name. A
+backend worker claims cleanup rows in bounded batches, deletes the blobs, and
+then removes the delete-pending metadata rows. If storage deletion fails, the
+queue row remains for a later retry instead of losing track of the blob cleanup
+work. Stale pending uploads are also moved into the same cleanup path after the
+configured timeout.
 
 ## Reverse Proxy And TLS
 

@@ -43,5 +43,6 @@ CREATE TABLE object_storage_deletions (
 	created_at timestamptz NOT NULL DEFAULT now(),
 	attempts INTEGER NOT NULL DEFAULT 0,
 	last_attempt_at timestamptz,
+	processing_expires_at timestamptz,
 	last_error TEXT
 );

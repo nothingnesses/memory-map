@@ -1,6 +1,7 @@
 use {
 	crate::{
 		db::queries::{
+			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
 			DELETE_OBJECT_ALLOWED_USERS_QUERY,
 			DELETE_OBJECT_STORAGE_DELETIONS_QUERY,
 			DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY,
@@ -10,8 +11,8 @@ use {
 			INSERT_OBJECT_STORAGE_DELETIONS_QUERY,
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
 			MARK_OBJECTS_DELETE_PENDING_QUERY,
+			MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
 			MARK_UPLOAD_DELETE_PENDING_QUERY,
-			SELECT_PENDING_OBJECT_STORAGE_DELETIONS_QUERY,
 			SELECT_USERS_BY_EMAILS_QUERY,
 			UPDATE_OBJECT_QUERY,
 		},
@@ -27,12 +28,28 @@ use {
 	},
 	anyhow::Context,
 	aws_sdk_s3::primitives::ByteStream,
-	deadpool_postgres::Client,
+	deadpool::managed::Pool,
+	deadpool_postgres::{
+		Client,
+		Manager,
+	},
 	futures::future::join_all,
 	jiff::Timestamp,
 	rand::{
 		RngExt,
 		distr::Alphanumeric,
+	},
+	std::{
+		env,
+		fmt,
+		time::Duration,
+	},
+	tokio::{
+		task::JoinHandle,
+		time::{
+			MissedTickBehavior,
+			interval,
+		},
 	},
 	tokio_postgres::{
 		Row,
@@ -41,11 +58,114 @@ use {
 	},
 };
 
-const STORAGE_DELETION_OUTBOX_BATCH_SIZE: i64 = 1000;
+#[derive(Clone)]
+pub struct ObjectLifecycleConfig {
+	pub pending_upload_timeout_seconds: u64,
+	pub storage_deletion_retry_seconds: u64,
+	pub storage_deletion_lease_seconds: u64,
+	pub storage_deletion_worker_interval_seconds: u64,
+	pub storage_deletion_batch_size: i64,
+}
+
+impl ObjectLifecycleConfig {
+	pub const DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS: u64 = 3600;
+	pub const DEFAULT_STORAGE_DELETION_BATCH_SIZE: i64 =
+		StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64;
+	pub const DEFAULT_STORAGE_DELETION_LEASE_SECONDS: u64 = 300;
+	pub const DEFAULT_STORAGE_DELETION_RETRY_SECONDS: u64 = 60;
+	pub const DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS: u64 = 30;
+
+	pub fn from_env() -> anyhow::Result<Self> {
+		let config = Self {
+			pending_upload_timeout_seconds: parse_u64_env(
+				"OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS",
+				Self::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
+			)?,
+			storage_deletion_retry_seconds: parse_u64_env(
+				"OBJECT_STORAGE_DELETION_RETRY_SECONDS",
+				Self::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+			)?,
+			storage_deletion_lease_seconds: parse_u64_env(
+				"OBJECT_STORAGE_DELETION_LEASE_SECONDS",
+				Self::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+			)?,
+			storage_deletion_worker_interval_seconds: parse_u64_env(
+				"OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS",
+				Self::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+			)?,
+			storage_deletion_batch_size: parse_i64_env(
+				"OBJECT_STORAGE_DELETION_BATCH_SIZE",
+				Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			)?,
+		};
+		config.validate()?;
+		Ok(config)
+	}
+
+	pub fn validate(&self) -> anyhow::Result<()> {
+		if self.pending_upload_timeout_seconds == 0 {
+			anyhow::bail!("object_upload_pending_timeout_seconds must be greater than 0");
+		}
+		if self.storage_deletion_retry_seconds == 0 {
+			anyhow::bail!("object_storage_deletion_retry_seconds must be greater than 0");
+		}
+		if self.storage_deletion_lease_seconds == 0 {
+			anyhow::bail!("object_storage_deletion_lease_seconds must be greater than 0");
+		}
+		if self.storage_deletion_worker_interval_seconds == 0 {
+			anyhow::bail!("object_storage_deletion_worker_interval_seconds must be greater than 0");
+		}
+		if !(1 ..= StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64)
+			.contains(&self.storage_deletion_batch_size)
+		{
+			anyhow::bail!(
+				"object_storage_deletion_batch_size must be between 1 and {}",
+				StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST
+			);
+		}
+		Ok(())
+	}
+
+	fn worker_interval(&self) -> Duration {
+		Duration::from_secs(self.storage_deletion_worker_interval_seconds)
+	}
+}
+
+impl Default for ObjectLifecycleConfig {
+	fn default() -> Self {
+		Self {
+			pending_upload_timeout_seconds: Self::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
+			storage_deletion_retry_seconds: Self::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+			storage_deletion_lease_seconds: Self::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+			storage_deletion_worker_interval_seconds:
+				Self::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+			storage_deletion_batch_size: Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+		}
+	}
+}
+
+impl fmt::Debug for ObjectLifecycleConfig {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		f.debug_struct("ObjectLifecycleConfig")
+			.field("pending_upload_timeout_seconds", &self.pending_upload_timeout_seconds)
+			.field("storage_deletion_retry_seconds", &self.storage_deletion_retry_seconds)
+			.field("storage_deletion_lease_seconds", &self.storage_deletion_lease_seconds)
+			.field(
+				"storage_deletion_worker_interval_seconds",
+				&self.storage_deletion_worker_interval_seconds,
+			)
+			.field("storage_deletion_batch_size", &self.storage_deletion_batch_size)
+			.finish()
+	}
+}
 
 pub struct ObjectLifecycleService<'a> {
 	db_client: &'a mut Client,
 	storage: &'a StorageClient,
+	config: ObjectLifecycleConfig,
 }
 
 pub struct ObjectUpload {
@@ -63,10 +183,12 @@ impl<'a> ObjectLifecycleService<'a> {
 	pub fn new(
 		db_client: &'a mut Client,
 		storage: &'a StorageClient,
+		config: ObjectLifecycleConfig,
 	) -> Self {
 		Self {
 			db_client,
 			storage,
+			config,
 		}
 	}
 
@@ -163,18 +285,63 @@ impl<'a> ObjectLifecycleService<'a> {
 
 		transaction.commit().await?;
 
-		if let Err(error) = self.drain_storage_deletions().await {
-			tracing::error!(
-				error = ?error,
-				"Failed to drain object storage deletions after database delete"
-			);
+		Ok(objects)
+	}
+
+	pub async fn run_storage_maintenance(&mut self) -> Result<(), AppError> {
+		let mut first_error = None;
+		match self.reap_stale_pending_uploads().await {
+			Ok(stale_uploads) =>
+				if !stale_uploads.is_empty() {
+					tracing::warn!(
+						count = stale_uploads.len(),
+						"Marked stale pending uploads for storage cleanup"
+					);
+				},
+			Err(error) => {
+				tracing::warn!(
+					error = ?error,
+					"Failed to mark stale pending uploads for storage cleanup"
+				);
+				first_error = Some(error);
+			}
 		}
 
+		if let Err(error) = self.drain_storage_deletions().await {
+			if first_error.is_some() {
+				tracing::warn!(
+					error = ?error,
+					"Failed to drain object storage deletions"
+				);
+			} else {
+				return Err(error);
+			}
+		}
+
+		if let Some(error) = first_error {
+			return Err(error);
+		}
+
+		Ok(())
+	}
+
+	pub async fn reap_stale_pending_uploads(&mut self) -> Result<Vec<S3Object>, AppError> {
+		let transaction = self.db_client.transaction().await?;
+		let rows = transaction
+			.query(
+				MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
+				&[&(self.config.pending_upload_timeout_seconds as i64)],
+			)
+			.await
+			.context("Failed to mark stale pending uploads for cleanup")?;
+		let objects = collect_s3_objects(rows).await?;
+		enqueue_storage_deletions(&transaction, &objects).await?;
+		transaction.commit().await?;
 		Ok(objects)
 	}
 
 	pub async fn drain_storage_deletions(&mut self) -> Result<(), AppError> {
-		drain_storage_deletion_outbox(self.db_client, self.storage).await
+		drain_storage_deletion_outbox(self.db_client, self.storage, &self.config).await
 	}
 
 	async fn enqueue_pending_upload_cleanup(
@@ -196,13 +363,56 @@ impl<'a> ObjectLifecycleService<'a> {
 		enqueue_storage_deletions(&transaction, &[object]).await?;
 		transaction.commit().await?;
 
-		if let Err(error) = self.drain_storage_deletions().await {
-			tracing::error!(
-				error = ?error,
-				"Failed to drain object storage deletions after failed upload"
-			);
-		}
 		Ok(())
+	}
+}
+
+#[derive(Clone)]
+pub struct ObjectLifecycleWorker {
+	pool: Pool<Manager>,
+	storage: StorageClient,
+	config: ObjectLifecycleConfig,
+}
+
+impl ObjectLifecycleWorker {
+	pub fn new(
+		pool: Pool<Manager>,
+		storage: StorageClient,
+		config: ObjectLifecycleConfig,
+	) -> Self {
+		Self {
+			pool,
+			storage,
+			config,
+		}
+	}
+
+	pub fn spawn(self) -> JoinHandle<()> {
+		tokio::spawn(async move {
+			self.run_forever().await;
+		})
+	}
+
+	pub async fn run_once(&self) -> Result<(), AppError> {
+		let mut client = self.pool.get().await?;
+		let mut object_lifecycle =
+			ObjectLifecycleService::new(&mut client, &self.storage, self.config.clone());
+		object_lifecycle.run_storage_maintenance().await
+	}
+
+	async fn run_forever(self) {
+		let mut interval = interval(self.config.worker_interval());
+		interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+		loop {
+			interval.tick().await;
+			if let Err(error) = self.run_once().await {
+				tracing::warn!(
+					error = ?error,
+					"Object storage lifecycle maintenance failed"
+				);
+			}
+		}
 	}
 }
 
@@ -223,9 +433,11 @@ impl StorageDeletionSink for StorageClient {
 }
 
 trait StorageDeletionOutbox {
-	async fn pending_storage_deletions(
+	async fn claim_storage_deletions(
 		&mut self,
 		limit: i64,
+		lease_seconds: i64,
+		retry_after_seconds: i64,
 	) -> Result<Vec<String>, AppError>;
 
 	async fn clear_storage_deletions(
@@ -241,18 +453,23 @@ trait StorageDeletionOutbox {
 }
 
 impl StorageDeletionOutbox for Client {
-	async fn pending_storage_deletions(
+	async fn claim_storage_deletions(
 		&mut self,
 		limit: i64,
+		lease_seconds: i64,
+		retry_after_seconds: i64,
 	) -> Result<Vec<String>, AppError> {
 		let rows = self
-			.query(SELECT_PENDING_OBJECT_STORAGE_DELETIONS_QUERY, &[&limit])
+			.query(
+				CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
+				&[&limit, &lease_seconds, &retry_after_seconds],
+			)
 			.await
-			.context("Failed to load pending object storage deletions")?;
+			.context("Failed to claim pending object storage deletions")?;
 		rows.into_iter()
 			.map(|row| row.try_get("storage_key"))
-			.collect::<Result<Vec<String>, _>>()
-			.context("Failed to read pending object storage deletion row")
+			.collect::<Result<Vec<_>, _>>()
+			.context("Failed to read claimed object storage deletion row")
 			.map_err(AppError::from)
 	}
 
@@ -288,10 +505,16 @@ impl StorageDeletionOutbox for Client {
 async fn drain_storage_deletion_outbox(
 	outbox: &mut impl StorageDeletionOutbox,
 	storage: &impl StorageDeletionSink,
+	config: &ObjectLifecycleConfig,
 ) -> Result<(), AppError> {
 	loop {
-		let storage_keys =
-			outbox.pending_storage_deletions(STORAGE_DELETION_OUTBOX_BATCH_SIZE).await?;
+		let storage_keys = outbox
+			.claim_storage_deletions(
+				config.storage_deletion_batch_size,
+				config.storage_deletion_lease_seconds as i64,
+				config.storage_deletion_retry_seconds as i64,
+			)
+			.await?;
 
 		if storage_keys.is_empty() {
 			return Ok(());
@@ -449,12 +672,32 @@ fn insert_object_error(
 	AppError::from(error)
 }
 
+fn parse_u64_env(
+	name: &str,
+	default: u64,
+) -> anyhow::Result<u64> {
+	env::var(name)
+		.unwrap_or_else(|_| default.to_string())
+		.parse()
+		.with_context(|| format!("{name} must be an unsigned integer"))
+}
+
+fn parse_i64_env(
+	name: &str,
+	default: i64,
+) -> anyhow::Result<i64> {
+	env::var(name)
+		.unwrap_or_else(|_| default.to_string())
+		.parse()
+		.with_context(|| format!("{name} must be an integer"))
+}
+
 #[cfg(test)]
 mod tests {
 	use {
 		super::{
 			AppError,
-			STORAGE_DELETION_OUTBOX_BATCH_SIZE,
+			ObjectLifecycleConfig,
 			StorageDeletionOutbox,
 			StorageDeletionSink,
 			drain_storage_deletion_outbox,
@@ -469,6 +712,8 @@ mod tests {
 	struct FakeStorageDeletionOutbox {
 		pending_batches: VecDeque<Vec<String>>,
 		requested_limits: Vec<i64>,
+		requested_leases: Vec<i64>,
+		requested_retries: Vec<i64>,
 		cleared_batches: Vec<Vec<String>>,
 		failed_batches: Vec<(Vec<String>, String)>,
 	}
@@ -483,11 +728,15 @@ mod tests {
 	}
 
 	impl StorageDeletionOutbox for FakeStorageDeletionOutbox {
-		async fn pending_storage_deletions(
+		async fn claim_storage_deletions(
 			&mut self,
 			limit: i64,
+			lease_seconds: i64,
+			retry_after_seconds: i64,
 		) -> Result<Vec<String>, AppError> {
 			self.requested_limits.push(limit);
+			self.requested_leases.push(lease_seconds);
+			self.requested_retries.push(retry_after_seconds);
 			Ok(self.pending_batches.pop_front().unwrap_or_default())
 		}
 
@@ -552,7 +801,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn drain_storage_deletion_outbox_clears_all_pending_batches() -> anyhow::Result<()> {
-		let first_batch = storage_keys("first", STORAGE_DELETION_OUTBOX_BATCH_SIZE as usize);
+		let config = ObjectLifecycleConfig::default();
+		let first_batch = storage_keys(
+			"first",
+			ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE as usize,
+		);
 		let second_batch = storage_keys("second", 2);
 		let mut outbox = FakeStorageDeletionOutbox::with_pending_batches(vec![
 			first_batch.clone(),
@@ -560,14 +813,30 @@ mod tests {
 		]);
 		let storage = FakeStorageDeletionSink::default();
 
-		drain_storage_deletion_outbox(&mut outbox, &storage).await?;
+		drain_storage_deletion_outbox(&mut outbox, &storage, &config).await?;
 
 		assert_eq!(
 			outbox.requested_limits,
 			vec![
-				STORAGE_DELETION_OUTBOX_BATCH_SIZE,
-				STORAGE_DELETION_OUTBOX_BATCH_SIZE,
-				STORAGE_DELETION_OUTBOX_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			]
+		);
+		assert_eq!(
+			outbox.requested_leases,
+			vec![
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS as i64,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS as i64,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS as i64,
+			]
+		);
+		assert_eq!(
+			outbox.requested_retries,
+			vec![
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS as i64,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS as i64,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS as i64,
 			]
 		);
 		assert_eq!(storage.deleted_batches()?, vec![first_batch.clone(), second_batch.clone()]);
@@ -579,12 +848,13 @@ mod tests {
 
 	#[tokio::test]
 	async fn drain_storage_deletion_outbox_records_storage_delete_failure() -> anyhow::Result<()> {
+		let config = ObjectLifecycleConfig::default();
 		let pending_batch = storage_keys("failed", 2);
 		let mut outbox =
 			FakeStorageDeletionOutbox::with_pending_batches(vec![pending_batch.clone()]);
 		let storage = FakeStorageDeletionSink::failing("storage delete failed");
 
-		let Err(error) = drain_storage_deletion_outbox(&mut outbox, &storage).await else {
+		let Err(error) = drain_storage_deletion_outbox(&mut outbox, &storage, &config).await else {
 			anyhow::bail!("storage delete failure should stop the drain");
 		};
 
@@ -595,9 +865,30 @@ mod tests {
 			outbox.failed_batches,
 			vec![(pending_batch, "storage delete failed".to_string())]
 		);
-		assert_eq!(outbox.requested_limits, vec![STORAGE_DELETION_OUTBOX_BATCH_SIZE]);
+		assert_eq!(
+			outbox.requested_limits,
+			vec![ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE]
+		);
 
 		Ok(())
+	}
+
+	#[test]
+	fn object_lifecycle_config_rejects_invalid_values() {
+		let valid = ObjectLifecycleConfig::default();
+		assert!(valid.validate().is_ok());
+
+		let invalid_timeout = ObjectLifecycleConfig {
+			pending_upload_timeout_seconds: 0,
+			..valid.clone()
+		};
+		assert!(invalid_timeout.validate().is_err());
+
+		let invalid_batch = ObjectLifecycleConfig {
+			storage_deletion_batch_size: 0,
+			..valid
+		};
+		assert!(invalid_batch.validate().is_err());
 	}
 
 	fn storage_keys(
