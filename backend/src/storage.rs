@@ -304,3 +304,77 @@ fn parse_bool_env(
 		_ => anyhow::bail!("{name} must be a boolean"),
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use {
+		super::StorageConfig,
+		crate::Config,
+	};
+
+	fn storage_config_with_ttl(presigned_url_ttl_seconds: u64) -> StorageConfig {
+		StorageConfig {
+			endpoint_url: "http://127.0.0.1:9000/".to_string(),
+			access_key: "memorymapdev".to_string(),
+			secret_key: "memorymapdevsecret".to_string(),
+			bucket_name: "memory-map".to_string(),
+			region: "us-east-1".to_string(),
+			force_path_style: true,
+			presigned_url_ttl_seconds,
+		}
+	}
+
+	#[test]
+	fn storage_config_accepts_presigned_url_ttl_boundaries() {
+		assert!(storage_config_with_ttl(1).validate().is_ok());
+		assert!(
+			storage_config_with_ttl(StorageConfig::MAX_PRESIGNED_URL_TTL_SECONDS)
+				.validate()
+				.is_ok()
+		);
+	}
+
+	#[test]
+	fn storage_config_rejects_presigned_url_ttl_outside_allowed_range() {
+		assert!(storage_config_with_ttl(0).validate().is_err());
+		assert!(
+			storage_config_with_ttl(StorageConfig::MAX_PRESIGNED_URL_TTL_SECONDS + 1)
+				.validate()
+				.is_err()
+		);
+	}
+
+	#[test]
+	fn storage_config_from_app_config_copies_s3_settings() {
+		let config = Config {
+			pg: deadpool_postgres::Config::new(),
+			enable_registration: true,
+			smtp_host: "smtp.example.test".to_string(),
+			smtp_user: "memory-map-test".to_string(),
+			smtp_pass: "memory-map-test-password".to_string(),
+			smtp_from: "noreply@example.test".to_string(),
+			cookie_secret: "memory-map-test-cookie-secret-at-least-64-bytes-long".to_string(),
+			frontend_url: "http://127.0.0.1:3000".to_string(),
+			s3_endpoint_url: "http://127.0.0.1:9000/".to_string(),
+			s3_access_key: "memorymapdev".to_string(),
+			s3_secret_key: "memorymapdevsecret".to_string(),
+			s3_bucket_name: "memory-map".to_string(),
+			s3_region: "us-east-1".to_string(),
+			s3_force_path_style: true,
+			s3_presigned_url_ttl_seconds: 3600,
+			server_host: "127.0.0.1".to_string(),
+			server_port: 8000,
+			cors_allowed_origins: "http://127.0.0.1:3000".to_string(),
+		};
+
+		let storage_config = StorageConfig::from(&config);
+
+		assert_eq!(storage_config.endpoint_url, config.s3_endpoint_url);
+		assert_eq!(storage_config.access_key, config.s3_access_key);
+		assert_eq!(storage_config.secret_key, config.s3_secret_key);
+		assert_eq!(storage_config.bucket_name, config.s3_bucket_name);
+		assert_eq!(storage_config.region, config.s3_region);
+		assert_eq!(storage_config.force_path_style, config.s3_force_path_style);
+		assert_eq!(storage_config.presigned_url_ttl_seconds, config.s3_presigned_url_ttl_seconds);
+	}
+}
