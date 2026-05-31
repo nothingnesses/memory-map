@@ -527,6 +527,70 @@ async fn invalid_upload_coordinates_do_not_leave_side_effects() -> anyhow::Resul
 
 #[tokio::test]
 #[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn upload_without_coordinates_stores_no_location() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("no-location-upload-{}.svg", unique_suffix()?);
+
+	let response = app
+		.upload_location(
+			Some(&user.cookie),
+			UploadLocationRequest::svg(
+				&object_name,
+				"",
+				"",
+				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+			),
+		)
+		.await?;
+
+	assert_eq!(response.status, StatusCode::OK);
+	let response = response.json()?;
+	let upload_objects = response.as_array().context("upload response is not an array")?;
+	let uploaded_object = upload_objects.first().context("upload response is empty")?;
+	assert!(json_path(uploaded_object, &["location"])?.is_null());
+	assert_eq!(app.object_count(&object_name).await?, 1);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn partial_upload_coordinates_do_not_leave_side_effects() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+
+	for (label, latitude, longitude) in
+		[("latitude-only", "12.5", ""), ("longitude-only", "", "-45.25")]
+	{
+		let object_name = format!("partial-{label}-upload-{}.svg", unique_suffix()?);
+
+		let response = app
+			.upload_location(
+				Some(&user.cookie),
+				UploadLocationRequest::svg(
+					&object_name,
+					latitude,
+					longitude,
+					b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+				),
+			)
+			.await?;
+
+		assert_eq!(response.status, StatusCode::BAD_REQUEST);
+		assert!(response.text()?.contains("must both be provided or both omitted"));
+		assert_eq!(app.object_count(&object_name).await?, 0);
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
 async fn invalid_upload_timestamp_does_not_leave_side_effects() -> anyhow::Result<()> {
 	let Some(app) = TestApp::new().await? else {
 		return Ok(());
@@ -635,13 +699,7 @@ async fn stale_pending_upload_cleanup_removes_blob_metadata_and_releases_name() 
 		.await?;
 	drop(client);
 
-	let lifecycle_config = ObjectLifecycleConfig {
-		pending_upload_timeout_seconds: 1,
-		storage_deletion_retry_seconds: 1,
-		storage_deletion_lease_seconds: 30,
-		storage_deletion_worker_interval_seconds: 1,
-		storage_deletion_batch_size: 1000,
-	};
+	let lifecycle_config = ObjectLifecycleConfig::new(1, 1, 30, 1, 1000)?;
 	app.run_object_lifecycle_maintenance(lifecycle_config).await?;
 
 	assert_eq!(app.object_count(&object_name).await?, 0);

@@ -48,7 +48,39 @@ fn parse_coordinate(
 	name: &str,
 	value: String,
 ) -> Result<f64, AppError> {
-	value.parse::<f64>().map_err(|e| AppError::Validation(format!("{name} must be a number: {e}")))
+	value
+		.trim()
+		.parse::<f64>()
+		.map_err(|e| AppError::Validation(format!("{name} must be a number: {e}")))
+}
+
+fn parse_optional_coordinate(
+	name: &str,
+	value: String,
+) -> Result<Option<f64>, AppError> {
+	if value.trim().is_empty() {
+		return Ok(None);
+	}
+	Ok(Some(parse_coordinate(name, value)?))
+}
+
+fn optional_location(
+	latitude: Option<f64>,
+	longitude: Option<f64>,
+) -> Result<Option<Location>, AppError> {
+	match (latitude, longitude) {
+		(Some(latitude), Some(longitude)) => Ok(Some(
+			Location {
+				latitude,
+				longitude,
+			}
+			.validated()?,
+		)),
+		(None, None) => Ok(None),
+		_ => Err(AppError::Validation(
+			"latitude and longitude must both be provided or both omitted".to_string(),
+		)),
+	}
 }
 
 #[debug_handler]
@@ -78,10 +110,10 @@ pub async fn post(
 
 		match name.as_str() {
 			"latitude" => {
-				latitude = Some(parse_coordinate("latitude", field.text().await?)?);
+				latitude = parse_optional_coordinate("latitude", field.text().await?)?;
 			}
 			"longitude" => {
-				longitude = Some(parse_coordinate("longitude", field.text().await?)?);
+				longitude = parse_optional_coordinate("longitude", field.text().await?)?;
 			}
 			"made_on" => {
 				if let Ok(txt) = field.text().await &&
@@ -132,17 +164,7 @@ pub async fn post(
 	tracing::debug!("Files: {} uploaded", files.len());
 
 	let mut uploaded_objects = Vec::new();
-	let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
-		Some(
-			Location {
-				latitude,
-				longitude,
-			}
-			.validated()?,
-		)
-	} else {
-		None
-	};
+	let location = optional_location(latitude, longitude)?;
 	if files.is_empty() {
 		return Ok(Json(uploaded_objects).into_response());
 	}
@@ -190,4 +212,29 @@ pub async fn post(
 	}
 
 	Ok(Json(uploaded_objects).into_response())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{
+		optional_location,
+		parse_optional_coordinate,
+	};
+
+	#[test]
+	fn parse_optional_coordinate_treats_blank_as_absent() -> anyhow::Result<()> {
+		assert_eq!(parse_optional_coordinate("latitude", "".to_string())?, None);
+		assert_eq!(parse_optional_coordinate("latitude", "  ".to_string())?, None);
+		assert_eq!(parse_optional_coordinate("latitude", "12.5".to_string())?, Some(12.5));
+		Ok(())
+	}
+
+	#[test]
+	fn optional_location_accepts_both_or_neither_coordinate() -> anyhow::Result<()> {
+		assert!(optional_location(None, None)?.is_none());
+		assert!(optional_location(Some(12.5), Some(-45.25))?.is_some());
+		assert!(optional_location(Some(12.5), None).is_err());
+		assert!(optional_location(None, Some(-45.25)).is_err());
+		Ok(())
+	}
 }

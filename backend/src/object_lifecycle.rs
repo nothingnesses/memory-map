@@ -60,61 +60,100 @@ use {
 
 #[derive(Clone)]
 pub struct ObjectLifecycleConfig {
-	pub pending_upload_timeout_seconds: u64,
-	pub storage_deletion_retry_seconds: u64,
-	pub storage_deletion_lease_seconds: u64,
-	pub storage_deletion_worker_interval_seconds: u64,
-	pub storage_deletion_batch_size: i64,
+	pending_upload_timeout_seconds: PositiveSeconds,
+	storage_deletion_retry_seconds: PositiveSeconds,
+	storage_deletion_lease_seconds: PositiveSeconds,
+	storage_deletion_worker_interval_seconds: PositiveSeconds,
+	storage_deletion_batch_size: i64,
+}
+
+#[derive(Clone, Copy)]
+struct PositiveSeconds(i64);
+
+impl PositiveSeconds {
+	fn new(
+		name: &str,
+		seconds: i64,
+	) -> anyhow::Result<Self> {
+		if seconds <= 0 {
+			anyhow::bail!("{name} must be greater than 0");
+		}
+		Ok(Self(seconds))
+	}
+
+	fn as_i64(self) -> i64 {
+		self.0
+	}
+
+	fn as_duration(self) -> Duration {
+		Duration::from_secs(self.0.unsigned_abs())
+	}
 }
 
 impl ObjectLifecycleConfig {
-	pub const DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS: u64 = 3600;
+	pub const DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS: i64 = 3600;
 	pub const DEFAULT_STORAGE_DELETION_BATCH_SIZE: i64 =
 		StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64;
-	pub const DEFAULT_STORAGE_DELETION_LEASE_SECONDS: u64 = 300;
-	pub const DEFAULT_STORAGE_DELETION_RETRY_SECONDS: u64 = 60;
-	pub const DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS: u64 = 30;
+	pub const DEFAULT_STORAGE_DELETION_LEASE_SECONDS: i64 = 300;
+	pub const DEFAULT_STORAGE_DELETION_RETRY_SECONDS: i64 = 60;
+	pub const DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS: i64 = 30;
 
-	pub fn from_env() -> anyhow::Result<Self> {
+	pub fn new(
+		pending_upload_timeout_seconds: i64,
+		storage_deletion_retry_seconds: i64,
+		storage_deletion_lease_seconds: i64,
+		storage_deletion_worker_interval_seconds: i64,
+		storage_deletion_batch_size: i64,
+	) -> anyhow::Result<Self> {
 		let config = Self {
-			pending_upload_timeout_seconds: parse_u64_env(
-				"OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS",
-				Self::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
+			pending_upload_timeout_seconds: PositiveSeconds::new(
+				"object_upload_pending_timeout_seconds",
+				pending_upload_timeout_seconds,
 			)?,
-			storage_deletion_retry_seconds: parse_u64_env(
-				"OBJECT_STORAGE_DELETION_RETRY_SECONDS",
-				Self::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+			storage_deletion_retry_seconds: PositiveSeconds::new(
+				"object_storage_deletion_retry_seconds",
+				storage_deletion_retry_seconds,
 			)?,
-			storage_deletion_lease_seconds: parse_u64_env(
-				"OBJECT_STORAGE_DELETION_LEASE_SECONDS",
-				Self::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+			storage_deletion_lease_seconds: PositiveSeconds::new(
+				"object_storage_deletion_lease_seconds",
+				storage_deletion_lease_seconds,
 			)?,
-			storage_deletion_worker_interval_seconds: parse_u64_env(
-				"OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS",
-				Self::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+			storage_deletion_worker_interval_seconds: PositiveSeconds::new(
+				"object_storage_deletion_worker_interval_seconds",
+				storage_deletion_worker_interval_seconds,
 			)?,
-			storage_deletion_batch_size: parse_i64_env(
-				"OBJECT_STORAGE_DELETION_BATCH_SIZE",
-				Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
-			)?,
+			storage_deletion_batch_size,
 		};
 		config.validate()?;
 		Ok(config)
 	}
 
+	pub fn from_env() -> anyhow::Result<Self> {
+		Self::new(
+			parse_i64_env(
+				"OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS",
+				Self::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
+			)?,
+			parse_i64_env(
+				"OBJECT_STORAGE_DELETION_RETRY_SECONDS",
+				Self::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+			)?,
+			parse_i64_env(
+				"OBJECT_STORAGE_DELETION_LEASE_SECONDS",
+				Self::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+			)?,
+			parse_i64_env(
+				"OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS",
+				Self::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+			)?,
+			parse_i64_env(
+				"OBJECT_STORAGE_DELETION_BATCH_SIZE",
+				Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			)?,
+		)
+	}
+
 	pub fn validate(&self) -> anyhow::Result<()> {
-		if self.pending_upload_timeout_seconds == 0 {
-			anyhow::bail!("object_upload_pending_timeout_seconds must be greater than 0");
-		}
-		if self.storage_deletion_retry_seconds == 0 {
-			anyhow::bail!("object_storage_deletion_retry_seconds must be greater than 0");
-		}
-		if self.storage_deletion_lease_seconds == 0 {
-			anyhow::bail!("object_storage_deletion_lease_seconds must be greater than 0");
-		}
-		if self.storage_deletion_worker_interval_seconds == 0 {
-			anyhow::bail!("object_storage_deletion_worker_interval_seconds must be greater than 0");
-		}
 		if !(1 ..= StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64)
 			.contains(&self.storage_deletion_batch_size)
 		{
@@ -127,18 +166,25 @@ impl ObjectLifecycleConfig {
 	}
 
 	fn worker_interval(&self) -> Duration {
-		Duration::from_secs(self.storage_deletion_worker_interval_seconds)
+		self.storage_deletion_worker_interval_seconds.as_duration()
 	}
 }
 
 impl Default for ObjectLifecycleConfig {
 	fn default() -> Self {
 		Self {
-			pending_upload_timeout_seconds: Self::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
-			storage_deletion_retry_seconds: Self::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
-			storage_deletion_lease_seconds: Self::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
-			storage_deletion_worker_interval_seconds:
+			pending_upload_timeout_seconds: PositiveSeconds(
+				Self::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
+			),
+			storage_deletion_retry_seconds: PositiveSeconds(
+				Self::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+			),
+			storage_deletion_lease_seconds: PositiveSeconds(
+				Self::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+			),
+			storage_deletion_worker_interval_seconds: PositiveSeconds(
 				Self::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+			),
 			storage_deletion_batch_size: Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
 		}
 	}
@@ -150,12 +196,12 @@ impl fmt::Debug for ObjectLifecycleConfig {
 		f: &mut fmt::Formatter<'_>,
 	) -> fmt::Result {
 		f.debug_struct("ObjectLifecycleConfig")
-			.field("pending_upload_timeout_seconds", &self.pending_upload_timeout_seconds)
-			.field("storage_deletion_retry_seconds", &self.storage_deletion_retry_seconds)
-			.field("storage_deletion_lease_seconds", &self.storage_deletion_lease_seconds)
+			.field("pending_upload_timeout_seconds", &self.pending_upload_timeout_seconds.as_i64())
+			.field("storage_deletion_retry_seconds", &self.storage_deletion_retry_seconds.as_i64())
+			.field("storage_deletion_lease_seconds", &self.storage_deletion_lease_seconds.as_i64())
 			.field(
 				"storage_deletion_worker_interval_seconds",
-				&self.storage_deletion_worker_interval_seconds,
+				&self.storage_deletion_worker_interval_seconds.as_i64(),
 			)
 			.field("storage_deletion_batch_size", &self.storage_deletion_batch_size)
 			.finish()
@@ -330,7 +376,7 @@ impl<'a> ObjectLifecycleService<'a> {
 		let rows = transaction
 			.query(
 				MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
-				&[&(self.config.pending_upload_timeout_seconds as i64)],
+				&[&self.config.pending_upload_timeout_seconds.as_i64()],
 			)
 			.await
 			.context("Failed to mark stale pending uploads for cleanup")?;
@@ -511,8 +557,8 @@ async fn drain_storage_deletion_outbox(
 		let storage_keys = outbox
 			.claim_storage_deletions(
 				config.storage_deletion_batch_size,
-				config.storage_deletion_lease_seconds as i64,
-				config.storage_deletion_retry_seconds as i64,
+				config.storage_deletion_lease_seconds.as_i64(),
+				config.storage_deletion_retry_seconds.as_i64(),
 			)
 			.await?;
 
@@ -672,16 +718,6 @@ fn insert_object_error(
 	AppError::from(error)
 }
 
-fn parse_u64_env(
-	name: &str,
-	default: u64,
-) -> anyhow::Result<u64> {
-	env::var(name)
-		.unwrap_or_else(|_| default.to_string())
-		.parse()
-		.with_context(|| format!("{name} must be an unsigned integer"))
-}
-
 fn parse_i64_env(
 	name: &str,
 	default: i64,
@@ -826,17 +862,17 @@ mod tests {
 		assert_eq!(
 			outbox.requested_leases,
 			vec![
-				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS as i64,
-				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS as i64,
-				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS as i64,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
 			]
 		);
 		assert_eq!(
 			outbox.requested_retries,
 			vec![
-				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS as i64,
-				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS as i64,
-				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS as i64,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
 			]
 		);
 		assert_eq!(storage.deleted_batches()?, vec![first_batch.clone(), second_batch.clone()]);
@@ -877,12 +913,37 @@ mod tests {
 	fn object_lifecycle_config_rejects_invalid_values() {
 		let valid = ObjectLifecycleConfig::default();
 		assert!(valid.validate().is_ok());
+		assert!(
+			ObjectLifecycleConfig::new(
+				i64::MAX,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			)
+			.is_ok()
+		);
 
-		let invalid_timeout = ObjectLifecycleConfig {
-			pending_upload_timeout_seconds: 0,
-			..valid.clone()
-		};
-		assert!(invalid_timeout.validate().is_err());
+		assert!(
+			ObjectLifecycleConfig::new(
+				0,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_RETRY_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			)
+			.is_err()
+		);
+		assert!(
+			ObjectLifecycleConfig::new(
+				ObjectLifecycleConfig::DEFAULT_PENDING_UPLOAD_TIMEOUT_SECONDS,
+				-1,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			)
+			.is_err()
+		);
 
 		let invalid_batch = ObjectLifecycleConfig {
 			storage_deletion_batch_size: 0,

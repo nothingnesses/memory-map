@@ -412,4 +412,5 @@ verify:
 	just deny
 	just doc
 	just test
+	just frontend-config
 	just frontend-build
