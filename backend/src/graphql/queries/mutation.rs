@@ -166,12 +166,10 @@ impl Mutation {
 			),
 			None => None,
 		};
-		let location_geometry = location.map(|location| {
-			let location_geometry =
-				format!("SRID=4326;POINT({} {})", location.longitude, location.latitude);
+		let location_geometry = location.as_ref().map(Location::geometry).transpose()?;
+		if let Some(location_geometry) = &location_geometry {
 			tracing::debug!("Formatted location geometry: {}", location_geometry);
-			location_geometry
-		});
+		}
 		tracing::debug!(
 			"Executing update with: id={}, name={}, made_on={:?}, location={:?}, publicity={:?}",
 			id,
@@ -237,12 +235,10 @@ impl Mutation {
 			),
 			None => None,
 		};
-		let location_geometry = location.map(|location| {
-			let location_geometry =
-				format!("SRID=4326;POINT({} {})", location.longitude, location.latitude);
+		let location_geometry = location.as_ref().map(Location::geometry).transpose()?;
+		if let Some(location_geometry) = &location_geometry {
 			tracing::debug!("Formatted location geometry: {}", location_geometry);
-			location_geometry
-		});
+		}
 		tracing::debug!(
 			"Executing upsert with: name={}, made_on={:?}, location={:?}, user_id={}, publicity={:?}",
 			name,

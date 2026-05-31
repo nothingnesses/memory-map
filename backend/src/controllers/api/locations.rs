@@ -42,6 +42,13 @@ struct FileData {
 	bytes: Bytes,
 }
 
+fn parse_coordinate(
+	name: &str,
+	value: String,
+) -> Result<f64, AppError> {
+	value.parse::<f64>().map_err(|e| AppError::Validation(format!("{name} must be a number: {e}")))
+}
+
 #[debug_handler]
 pub async fn post(
 	State(state): State<AppState<Manager, Object<Manager>>>,
@@ -69,18 +76,10 @@ pub async fn post(
 
 		match name.as_str() {
 			"latitude" => {
-				if let Ok(txt) = field.text().await &&
-					let Ok(val) = txt.parse::<f64>()
-				{
-					latitude = Some(val);
-				}
+				latitude = Some(parse_coordinate("latitude", field.text().await?)?);
 			}
 			"longitude" => {
-				if let Ok(txt) = field.text().await &&
-					let Ok(val) = txt.parse::<f64>()
-				{
-					longitude = Some(val);
-				}
+				longitude = Some(parse_coordinate("longitude", field.text().await?)?);
 			}
 			"made_on" => {
 				if let Ok(txt) = field.text().await &&
@@ -131,6 +130,17 @@ pub async fn post(
 	tracing::debug!("Files: {} uploaded", files.len());
 
 	let mut uploaded_objects = Vec::new();
+	let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
+		Some(
+			Location {
+				latitude,
+				longitude,
+			}
+			.validated()?,
+		)
+	} else {
+		None
+	};
 
 	for file in files {
 		let FileData {
@@ -148,20 +158,12 @@ pub async fn post(
 		state.inner.storage.upload_object(&filename, bytes, content_type).await?;
 
 		let client = state.inner.pool.get().await.context(ERR_DB_CLIENT)?;
-		let location = if let (Some(latitude), Some(longitude)) = (latitude, longitude) {
-			Some(Location {
-				latitude,
-				longitude,
-			})
-		} else {
-			None
-		};
 
 		match Mutation::upsert_s3_object_worker(
 			&client,
 			filename,
 			made_on.clone(),
-			location,
+			location.clone(),
 			user_id,
 			PublicityOverride::Default,
 			vec![],
