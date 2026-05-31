@@ -65,6 +65,7 @@ pub struct ObjectLifecycleConfig {
 	storage_deletion_lease_seconds: PositiveSeconds,
 	storage_deletion_worker_interval_seconds: PositiveSeconds,
 	storage_deletion_batch_size: i64,
+	storage_deletion_max_attempts: i32,
 }
 
 #[derive(Clone, Copy)]
@@ -95,6 +96,7 @@ impl ObjectLifecycleConfig {
 	pub const DEFAULT_STORAGE_DELETION_BATCH_SIZE: i64 =
 		StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST as i64;
 	pub const DEFAULT_STORAGE_DELETION_LEASE_SECONDS: i64 = 300;
+	pub const DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS: i32 = 10;
 	pub const DEFAULT_STORAGE_DELETION_RETRY_SECONDS: i64 = 60;
 	pub const DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS: i64 = 30;
 
@@ -104,6 +106,7 @@ impl ObjectLifecycleConfig {
 		storage_deletion_lease_seconds: i64,
 		storage_deletion_worker_interval_seconds: i64,
 		storage_deletion_batch_size: i64,
+		storage_deletion_max_attempts: i32,
 	) -> anyhow::Result<Self> {
 		let config = Self {
 			pending_upload_timeout_seconds: PositiveSeconds::new(
@@ -123,6 +126,7 @@ impl ObjectLifecycleConfig {
 				storage_deletion_worker_interval_seconds,
 			)?,
 			storage_deletion_batch_size,
+			storage_deletion_max_attempts,
 		};
 		config.validate()?;
 		Ok(config)
@@ -150,6 +154,10 @@ impl ObjectLifecycleConfig {
 				"OBJECT_STORAGE_DELETION_BATCH_SIZE",
 				Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
 			)?,
+			parse_i32_env(
+				"OBJECT_STORAGE_DELETION_MAX_ATTEMPTS",
+				Self::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
+			)?,
 		)
 	}
 
@@ -161,6 +169,9 @@ impl ObjectLifecycleConfig {
 				"object_storage_deletion_batch_size must be between 1 and {}",
 				StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST
 			);
+		}
+		if self.storage_deletion_max_attempts <= 0 {
+			anyhow::bail!("object_storage_deletion_max_attempts must be greater than 0");
 		}
 		Ok(())
 	}
@@ -186,6 +197,7 @@ impl Default for ObjectLifecycleConfig {
 				Self::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
 			),
 			storage_deletion_batch_size: Self::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+			storage_deletion_max_attempts: Self::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
 		}
 	}
 }
@@ -204,6 +216,7 @@ impl fmt::Debug for ObjectLifecycleConfig {
 				&self.storage_deletion_worker_interval_seconds.as_i64(),
 			)
 			.field("storage_deletion_batch_size", &self.storage_deletion_batch_size)
+			.field("storage_deletion_max_attempts", &self.storage_deletion_max_attempts)
 			.finish()
 	}
 }
@@ -484,6 +497,7 @@ trait StorageDeletionOutbox {
 		limit: i64,
 		lease_seconds: i64,
 		retry_after_seconds: i64,
+		max_attempts: i32,
 	) -> Result<Vec<String>, AppError>;
 
 	async fn clear_storage_deletions(
@@ -504,11 +518,12 @@ impl StorageDeletionOutbox for Client {
 		limit: i64,
 		lease_seconds: i64,
 		retry_after_seconds: i64,
+		max_attempts: i32,
 	) -> Result<Vec<String>, AppError> {
 		let rows = self
 			.query(
 				CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
-				&[&limit, &lease_seconds, &retry_after_seconds],
+				&[&limit, &lease_seconds, &retry_after_seconds, &max_attempts],
 			)
 			.await
 			.context("Failed to claim pending object storage deletions")?;
@@ -559,6 +574,7 @@ async fn drain_storage_deletion_outbox(
 				config.storage_deletion_batch_size,
 				config.storage_deletion_lease_seconds.as_i64(),
 				config.storage_deletion_retry_seconds.as_i64(),
+				config.storage_deletion_max_attempts,
 			)
 			.await?;
 
@@ -728,6 +744,16 @@ fn parse_i64_env(
 		.with_context(|| format!("{name} must be an integer"))
 }
 
+fn parse_i32_env(
+	name: &str,
+	default: i32,
+) -> anyhow::Result<i32> {
+	env::var(name)
+		.unwrap_or_else(|_| default.to_string())
+		.parse()
+		.with_context(|| format!("{name} must be a 32-bit integer"))
+}
+
 #[cfg(test)]
 mod tests {
 	use {
@@ -750,6 +776,7 @@ mod tests {
 		requested_limits: Vec<i64>,
 		requested_leases: Vec<i64>,
 		requested_retries: Vec<i64>,
+		requested_max_attempts: Vec<i32>,
 		cleared_batches: Vec<Vec<String>>,
 		failed_batches: Vec<(Vec<String>, String)>,
 	}
@@ -769,10 +796,12 @@ mod tests {
 			limit: i64,
 			lease_seconds: i64,
 			retry_after_seconds: i64,
+			max_attempts: i32,
 		) -> Result<Vec<String>, AppError> {
 			self.requested_limits.push(limit);
 			self.requested_leases.push(lease_seconds);
 			self.requested_retries.push(retry_after_seconds);
+			self.requested_max_attempts.push(max_attempts);
 			Ok(self.pending_batches.pop_front().unwrap_or_default())
 		}
 
@@ -878,6 +907,14 @@ mod tests {
 		assert_eq!(storage.deleted_batches()?, vec![first_batch.clone(), second_batch.clone()]);
 		assert_eq!(outbox.cleared_batches, vec![first_batch, second_batch]);
 		assert!(outbox.failed_batches.is_empty());
+		assert_eq!(
+			outbox.requested_max_attempts,
+			vec![
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
+			]
+		);
 
 		Ok(())
 	}
@@ -920,6 +957,7 @@ mod tests {
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
 			)
 			.is_ok()
 		);
@@ -931,6 +969,7 @@ mod tests {
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
 			)
 			.is_err()
 		);
@@ -941,15 +980,22 @@ mod tests {
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_LEASE_SECONDS,
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS,
 				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_BATCH_SIZE,
+				ObjectLifecycleConfig::DEFAULT_STORAGE_DELETION_MAX_ATTEMPTS,
 			)
 			.is_err()
 		);
 
 		let invalid_batch = ObjectLifecycleConfig {
 			storage_deletion_batch_size: 0,
-			..valid
+			..valid.clone()
 		};
 		assert!(invalid_batch.validate().is_err());
+
+		let invalid_max_attempts = ObjectLifecycleConfig {
+			storage_deletion_max_attempts: 0,
+			..valid
+		};
+		assert!(invalid_max_attempts.validate().is_err());
 	}
 
 	fn storage_keys(

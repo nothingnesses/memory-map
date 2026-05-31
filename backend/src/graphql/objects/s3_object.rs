@@ -117,13 +117,33 @@ impl S3Object {
 		// allowed_users might be null if no join, but we will ensure join
 		let allowed_users: Vec<String> = row.try_get("allowed_users").unwrap_or_default();
 
+		// Distinguish "no location set" (both NULL) from a decode failure.
+		// ST_Y/ST_X return NULL only when `location` is NULL, so a single-NULL pair
+		// signals a query shape regression and must propagate rather than be hidden.
+		let latitude: Option<f64> = row.try_get("latitude")?;
+		let longitude: Option<f64> = row.try_get("longitude")?;
+		let location = match (latitude, longitude) {
+			(Some(latitude), Some(longitude)) => Some(
+				Location {
+					latitude,
+					longitude,
+				}
+				.validated()?,
+			),
+			(None, None) => None,
+			_ =>
+				return Err(GraphQLError::new(
+					"Object row has only one of (latitude, longitude) set",
+				)),
+		};
+
 		Ok(S3Object {
 			id: id.into(),
 			name,
 			storage_key,
 			content_type,
 			made_on,
-			location: Location::try_from(row).ok(),
+			location,
 			user_id,
 			publicity,
 			allowed_users,

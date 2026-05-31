@@ -9,7 +9,6 @@ use {
 		SimpleObject,
 	},
 	serde::Serialize,
-	tokio_postgres::Row,
 };
 
 #[derive(SimpleObject, InputObject, Clone, Debug, Serialize)]
@@ -31,17 +30,6 @@ impl Location {
 		let latitude = parse_latitude(self.latitude)?;
 		let longitude = parse_longitude(self.longitude)?;
 		Ok(format!("SRID=4326;POINT({longitude} {latitude})"))
-	}
-}
-
-impl TryFrom<Row> for Location {
-	type Error = Box<dyn std::error::Error>;
-
-	fn try_from(value: Row) -> Result<Self, Self::Error> {
-		Ok(Location {
-			latitude: parse_latitude(value.try_get("latitude")?)?,
-			longitude: parse_longitude(value.try_get("longitude")?)?,
-		})
 	}
 }
 

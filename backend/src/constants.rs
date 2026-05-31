@@ -8,6 +8,11 @@ pub const GRAPHQL_BODY_LIMIT_BYTES: usize = 1024 * 1024;
 // 1GB.
 pub const BODY_MAX_SIZE_LIMIT_BYTES: usize = 1_073_741_824;
 
+// Minimum seconds between password reset token issuances per user.
+// Prevents bursts of password-reset emails to a single account, without
+// causing user enumeration: throttled requests still return success.
+pub const PASSWORD_RESET_RATE_LIMIT_SECONDS: i64 = 60;
+
 // Errors
 pub const ERR_INTERNAL_SERVER: &str = "Internal server error";
 pub const ERR_UNAUTHORIZED: &str = "Unauthorized";

@@ -5,11 +5,13 @@ use {
 		ContextWrapper,
 		SharedState,
 		UserId,
+		constants::PASSWORD_RESET_RATE_LIMIT_SECONDS,
 		db::queries::{
 			ADMIN_UPDATE_USER_QUERY,
-			DELETE_PASSWORD_RESET_TOKEN_QUERY,
+			DELETE_PASSWORD_RESET_TOKENS_BY_USER_QUERY,
 			INSERT_PASSWORD_RESET_TOKEN_QUERY,
 			INSERT_USER_QUERY,
+			RECENT_PASSWORD_RESET_TOKEN_EXISTS_QUERY,
 			SELECT_PASSWORD_RESET_TOKEN_QUERY,
 			SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
 			SELECT_USER_COUNT_BY_EMAIL_QUERY,
@@ -94,6 +96,27 @@ fn validate_password(password: &str) -> Result<(), AppError> {
 		));
 	}
 	Ok(())
+}
+
+/// Builds an auth cookie with attributes that must match between login and logout.
+///
+/// Browsers refuse to overwrite a cookie when the replacement uses different attributes,
+/// so both the login (set token) and logout (expire token) paths must agree on
+/// `Secure`, `HttpOnly`, `SameSite`, and `Path`.
+fn auth_cookie(
+	value: String,
+	max_age: Option<Duration>,
+	secure: bool,
+) -> Cookie<'static> {
+	let mut builder = Cookie::build(("auth_token", value))
+		.http_only(true)
+		.secure(secure)
+		.same_site(SameSite::Lax)
+		.path("/");
+	if let Some(max_age) = max_age {
+		builder = builder.max_age(max_age);
+	}
+	builder.build()
 }
 
 pub struct Mutation;
@@ -329,15 +352,8 @@ impl Mutation {
 			.map_err(|_| GraphQLError::new("Invalid email or password"))?;
 
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
-		let secure_cookie = state.config.frontend_url.starts_with("https");
 
-		// Set cookie
-		let cookie = Cookie::build(("auth_token", user.id.to_string()))
-			.http_only(true)
-			.secure(secure_cookie)
-			.same_site(SameSite::Lax)
-			.path("/")
-			.build();
+		let cookie = auth_cookie(user.id.to_string(), None, state.config.cookie_secure());
 
 		let cookies = ctx
 			.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()
@@ -358,13 +374,9 @@ impl Mutation {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<bool, GraphQLError> {
-		let cookie = Cookie::build(("auth_token", ""))
-			.http_only(true)
-			.secure(true)
-			.same_site(SameSite::Lax)
-			.path("/")
-			.max_age(Duration::seconds(0))
-			.build();
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let cookie =
+			auth_cookie(String::new(), Some(Duration::seconds(0)), state.config.cookie_secure());
 
 		let cookies = ctx
 			.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()
@@ -504,38 +516,59 @@ impl Mutation {
 		email: String,
 	) -> Result<bool, GraphQLError> {
 		let wrapper = ContextWrapper(ctx);
-		let client = wrapper.get_db_client().await?;
+		let mut client = wrapper.get_db_client().await?;
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 
-		let user_opt = User::by_email(ctx, &email).await?;
-		if let Some(user) = user_opt {
-			let token: String =
-				rand::rng().sample_iter(Alphanumeric).take(32).map(char::from).collect();
+		let Some(user) = User::by_email(ctx, &email).await? else {
+			// Always succeed to avoid user enumeration.
+			return Ok(true);
+		};
 
-			let token_hash = blake3::hash(token.as_bytes()).to_string();
+		let user_id_int = user
+			.id
+			.parse::<i64>()
+			.context("Failed to parse user ID")
+			.map_err(GraphQLError::from)?;
 
-			let user_id_int = user
-				.id
-				.parse::<i64>()
-				.context("Failed to parse user ID")
-				.map_err(GraphQLError::from)?;
-
-			// Expires in 10 minutes
-			client
-				.execute(INSERT_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash, &user_id_int])
-				.await
-				.context("Failed to insert password reset token into database")?;
-
-			// Send email
-			// We spawn this to not block the request, but we need to handle errors.
-			// For now, let's await it.
-			send_password_reset_email(&state.config, &email, &token)
-				.await
-				.context("Failed to send password reset email")
-				.map_err(|e| AppError::from(e).extend_graphql())?;
+		// Rate limit: skip silently if a recent token already exists.
+		// The throttle is per user, so an attacker cannot use timing to enumerate accounts.
+		let recent: bool = client
+			.query_one(
+				RECENT_PASSWORD_RESET_TOKEN_EXISTS_QUERY,
+				&[&user_id_int, &PASSWORD_RESET_RATE_LIMIT_SECONDS],
+			)
+			.await
+			.context("Failed to check recent password reset tokens")?
+			.try_get(0)
+			.context("Failed to read recent-token existence")?;
+		if recent {
+			return Ok(true);
 		}
 
-		// Always return true to prevent user enumeration
+		let token: String =
+			rand::rng().sample_iter(Alphanumeric).take(32).map(char::from).collect();
+		let token_hash = blake3::hash(token.as_bytes()).to_string();
+
+		// Invalidate sibling tokens, then insert the new one, then send the email.
+		// The transaction commits only after the email succeeds, so an SMTP failure
+		// rolls back the new token and leaves the old sibling state intact.
+		let transaction = client.transaction().await?;
+		transaction
+			.execute(DELETE_PASSWORD_RESET_TOKENS_BY_USER_QUERY, &[&user_id_int])
+			.await
+			.context("Failed to invalidate existing password reset tokens")?;
+		transaction
+			.execute(INSERT_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash, &user_id_int])
+			.await
+			.context("Failed to insert password reset token into database")?;
+
+		send_password_reset_email(&state.config, &email, &token)
+			.await
+			.context("Failed to send password reset email")
+			.map_err(|e| AppError::from(e).extend_graphql())?;
+
+		transaction.commit().await?;
+
 		Ok(true)
 	}
 
@@ -573,11 +606,13 @@ impl Mutation {
 				.await
 				.context("Failed to update user password in database")?;
 
-			// Delete token
+			// Invalidate all outstanding reset tokens for this user, not just the consumed one.
+			// Prevents an attacker who triggered a second reset request from holding a working
+			// bypass after the legitimate user changes their password.
 			client
-				.execute(DELETE_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash])
+				.execute(DELETE_PASSWORD_RESET_TOKENS_BY_USER_QUERY, &[&user_id])
 				.await
-				.context("Failed to delete password reset token from database")?;
+				.context("Failed to delete password reset tokens from database")?;
 
 			Ok(true)
 		} else {

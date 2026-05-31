@@ -1,6 +1,7 @@
 use {
 	crate::{
 		AppState,
+		CachedResponse,
 		Config,
 		SharedState,
 		UserId,
@@ -220,10 +221,13 @@ async fn caching_middleware(
 	let hash = hasher.finish();
 
 	// 3. Check cache
-	if let Some(cached_response) = state.inner.response_cache.get(&hash).await {
+	if let Some(cached) = state.inner.response_cache.get(&hash).await {
 		tracing::info!("Cache hit for hash: {}", hash);
-		let mut response = axum::response::Response::new(Body::from(cached_response));
-		response.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+		let mut response = axum::response::Response::new(Body::from(cached.bytes));
+		*response.status_mut() = cached.status;
+		if let Some(content_type) = cached.content_type {
+			response.headers_mut().insert(header::CONTENT_TYPE, content_type);
+		}
 
 		let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
 		let etag = format!("\"{last_modified}\"");
@@ -239,14 +243,21 @@ async fn caching_middleware(
 	let req = Request::from_parts(parts, Body::from(bytes));
 	let response = next.run(req).await;
 
-	// 5. Cache response
+	// 5. Cache response (only successful GraphQL responses with no errors)
 	let (parts, body) = response.into_parts();
 	let bytes = match to_bytes(body, BODY_MAX_SIZE_LIMIT_BYTES).await {
 		Ok(b) => b,
 		Err(_) => return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
 	};
 
-	state.inner.response_cache.insert(hash, bytes.clone()).await;
+	if should_cache_response(parts.status, &bytes) {
+		let cached = CachedResponse {
+			status: parts.status,
+			content_type: parts.headers.get(header::CONTENT_TYPE).cloned(),
+			bytes: bytes.clone(),
+		};
+		state.inner.response_cache.insert(hash, cached).await;
+	}
 
 	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));
 
@@ -258,6 +269,23 @@ async fn caching_middleware(
 	);
 
 	Ok(response)
+}
+
+/// Whether a GraphQL response is safe to cache.
+///
+/// Skips non-2xx and any response whose JSON body contains a top-level `errors` field,
+/// since partial-failure responses are intentionally heterogeneous over time.
+fn should_cache_response(
+	status: StatusCode,
+	body: &[u8],
+) -> bool {
+	if !status.is_success() {
+		return false;
+	}
+	let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) else {
+		return false;
+	};
+	json.get("errors").is_none()
 }
 
 async fn graphql_handler(

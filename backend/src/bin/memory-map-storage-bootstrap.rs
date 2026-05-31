@@ -19,6 +19,11 @@ async fn main() -> anyhow::Result<()> {
 	Ok(())
 }
 
+#[derive(serde::Deserialize)]
+struct RustFsHealth {
+	service: String,
+}
+
 async fn ensure_rustfs_health(endpoint_url: &str) -> anyhow::Result<()> {
 	let health_url = rustfs_health_url(endpoint_url)?;
 	let client = reqwest::Client::builder()
@@ -35,8 +40,13 @@ async fn ensure_rustfs_health(endpoint_url: &str) -> anyhow::Result<()> {
 		anyhow::bail!("RustFS health endpoint returned HTTP {status}");
 	}
 	let body = response.text().await.context("Failed to read RustFS health response")?;
-	if !(body.contains("\"service\"") && body.contains("\"rustfs-endpoint\"")) {
-		anyhow::bail!("RustFS health endpoint did not identify a RustFS service");
+	let health: RustFsHealth = serde_json::from_str(&body)
+		.context("Failed to parse RustFS health endpoint response as JSON")?;
+	if !health.service.to_ascii_lowercase().contains("rustfs") {
+		anyhow::bail!(
+			"RustFS health endpoint did not identify a RustFS service (got service={:?})",
+			health.service
+		);
 	}
 	Ok(())
 }

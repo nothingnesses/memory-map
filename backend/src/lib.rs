@@ -7,6 +7,10 @@ use {
 	axum::{
 		body::Bytes,
 		extract::FromRef,
+		http::{
+			HeaderValue,
+			StatusCode,
+		},
 		response::{
 			self,
 			IntoResponse,
@@ -86,6 +90,14 @@ pub struct Config {
 }
 
 impl Config {
+	/// Whether auth cookies should carry the `Secure` attribute.
+	///
+	/// Derived from `frontend_url` so login and logout agree on the cookie shape;
+	/// without that the browser may refuse the logout overwrite.
+	pub fn cookie_secure(&self) -> bool {
+		self.frontend_url.starts_with("https")
+	}
+
 	pub fn from_env() -> Result<Self, errors::AppError> {
 		let cfg = config::Config::builder()
 			.add_source(config::Environment::default().separator("__"))
@@ -139,11 +151,32 @@ refinery::embed_migrations!("migrations");
 
 pub struct UserId(pub i64);
 
+/// A previously-computed GraphQL response cached for replay.
+///
+/// Stores the original status and `Content-Type` so the cache hit path can
+/// rebuild the response exactly, instead of forcing every cached response
+/// to a hard-coded 200 OK.
+#[derive(Clone, Debug)]
+pub struct CachedResponse {
+	pub status: StatusCode,
+	pub content_type: Option<HeaderValue>,
+	pub bytes: Bytes,
+}
+
+impl CachedResponse {
+	/// Byte cost of an entry, used by the response cache weigher.
+	pub fn weight(&self) -> u32 {
+		let content_type = self.content_type.as_ref().map(|v| v.len()).unwrap_or(0);
+		// `status` and the struct overhead are constant; weigh by what scales with payload.
+		u32::try_from(self.bytes.len().saturating_add(content_type)).unwrap_or(u32::MAX)
+	}
+}
+
 pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
 	pub storage: StorageClient,
 	pub last_modified: AtomicU64,
-	pub response_cache: Cache<u64, Bytes>,
+	pub response_cache: Cache<u64, CachedResponse>,
 	pub key: Key,
 	pub config: Config,
 	pub enforcer: Arc<RwLock<Enforcer>>,

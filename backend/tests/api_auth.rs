@@ -699,7 +699,7 @@ async fn stale_pending_upload_cleanup_removes_blob_metadata_and_releases_name() 
 		.await?;
 	drop(client);
 
-	let lifecycle_config = ObjectLifecycleConfig::new(1, 1, 30, 1, 1000)?;
+	let lifecycle_config = ObjectLifecycleConfig::new(1, 1, 30, 1, 1000, 10)?;
 	app.run_object_lifecycle_maintenance(lifecycle_config).await?;
 
 	assert_eq!(app.object_count(&object_name).await?, 0);
