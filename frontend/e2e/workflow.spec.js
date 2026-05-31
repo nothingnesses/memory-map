@@ -45,6 +45,17 @@ async function openMarkerPopup(page, text) {
 	throw new Error(`Could not find marker popup for ${text}`);
 }
 
+function waitForGraphqlOperation(page, operationName) {
+	return page.waitForResponse((response) => {
+		const request = response.request();
+		return (
+			request.method() === "POST" &&
+			response.url().startsWith("http://127.0.0.1:8000") &&
+			request.postData()?.includes(operationName)
+		);
+	});
+}
+
 test("authenticated object workflow covers upload preview gallery delete and logout", async ({
 	page,
 }) => {
@@ -147,8 +158,10 @@ test("authenticated object workflow covers upload preview gallery delete and log
 		await expect(page.getByRole("row").filter({ hasText: objectName })).toHaveCount(0);
 
 		await openMenu(page);
+		const markersReloaded = waitForGraphqlOperation(page, "S3ObjectsQuery");
 		await page.getByRole("button", { name: "Log Out" }).click();
 		await expect(page).toHaveURL(/\/$/);
+		expect((await markersReloaded).ok()).toBe(true);
 
 		await page.goto("/objects");
 		await expect(page).toHaveURL(/\/sign-in$/);
