@@ -259,6 +259,9 @@ e2e: frontend-config
 	require_port_free "3000" "frontend"
 	require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
 
+	{{ direnv_prefix }} cargo build --bin backend
+	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build --skip-version-check --offline'
+
 	start_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
 	process_compose_started=true
 	{{ direnv_prefix }} process-compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
@@ -267,7 +270,7 @@ e2e: frontend-config
 	backend_pid=$!
 	wait_for_backend
 
-	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && exec env -u NO_COLOR trunk serve --address 127.0.0.1 --port 3000 --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
+	{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address 127.0.0.1 --port 3000 --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
 	frontend_pid=$!
 	wait_for_frontend
 
