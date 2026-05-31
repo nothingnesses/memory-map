@@ -290,8 +290,28 @@ deny:
 	fi
 	cargo_home="${CARGO_HOME:-$HOME/.cargo}"
 
+	prepare_ci_advisory_db() {
+		local advisory_root="$cargo_home/advisory-dbs"
+		# cargo-deny 0.18+ documents this stable directory for the default RustSec DB URL.
+		local advisory_db="$advisory_root/advisory-db-3157b0e258782691"
+
+		mkdir -p "$advisory_root"
+		if [[ ! -d "$advisory_db/.git" ]]; then
+			rm -rf "$advisory_db"
+			git clone --depth 1 https://github.com/rustsec/advisory-db "$advisory_db"
+		fi
+
+		git -C "$advisory_db" fetch --depth 1 origin HEAD
+		git -C "$advisory_db" reset --hard FETCH_HEAD
+	}
+
 	run_deny() {
-		{{ direnv_prefix }} cargo deny check
+		if [[ "${CI:-}" == "true" ]]; then
+			prepare_ci_advisory_db
+			{{ direnv_prefix }} cargo deny check --disable-fetch
+		else
+			{{ direnv_prefix }} cargo deny check
+		fi
 	}
 
 	if ! run_deny; then
