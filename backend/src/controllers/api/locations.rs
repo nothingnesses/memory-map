@@ -164,6 +164,7 @@ pub async fn post(
 	tracing::debug!("Files: {} uploaded", files.len());
 
 	let mut uploaded_objects = Vec::new();
+	let mut cache_dirty = false;
 	let location = optional_location(latitude, longitude)?;
 	if files.is_empty() {
 		return Ok(Json(uploaded_objects).into_response());
@@ -201,14 +202,22 @@ pub async fn post(
 			})
 			.await
 		{
-			Ok(s3_object) => uploaded_objects.push(s3_object),
+			Ok(s3_object) => {
+				cache_dirty = true;
+				uploaded_objects.push(s3_object);
+			}
 			Err(e) => {
 				tracing::error!("Failed to upload object: {:?}", e);
+				if cache_dirty {
+					state.inner.invalidate_graphql_response_cache();
+				}
 				return Err(e);
 			}
 		}
+	}
 
-		state.inner.update_last_modified()?;
+	if cache_dirty {
+		state.inner.invalidate_graphql_response_cache();
 	}
 
 	Ok(Json(uploaded_objects).into_response())

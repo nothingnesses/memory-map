@@ -8,7 +8,7 @@ use {
 		body::Bytes,
 		extract::FromRef,
 		http::{
-			HeaderValue,
+			HeaderMap,
 			StatusCode,
 		},
 		response::{
@@ -29,11 +29,10 @@ use {
 		fmt,
 		sync::{
 			Arc,
-			atomic::AtomicU64,
-		},
-		time::{
-			SystemTime,
-			UNIX_EPOCH,
+			atomic::{
+				AtomicU64,
+				Ordering,
+			},
 		},
 	},
 	tokio::sync::RwLock,
@@ -184,32 +183,43 @@ refinery::embed_migrations!("migrations");
 
 pub struct UserId(pub i64);
 
-/// A previously-computed GraphQL response cached for replay.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct GraphqlResponseCacheKey([u8; 32]);
+
+impl GraphqlResponseCacheKey {
+	pub fn new(bytes: [u8; 32]) -> Self {
+		Self(bytes)
+	}
+}
+
+/// A previously-computed GraphQL query response cached for replay.
 ///
-/// Stores the original status and `Content-Type` so the cache hit path can
-/// rebuild the response exactly, instead of forcing every cached response
-/// to a hard-coded 200 OK.
+/// The cache stores only successful query responses. Mutations never read from
+/// it, and successful writes invalidate it centrally.
 #[derive(Clone, Debug)]
-pub struct CachedResponse {
+pub struct CachedGraphqlResponse {
 	pub status: StatusCode,
-	pub content_type: Option<HeaderValue>,
+	pub headers: HeaderMap,
 	pub bytes: Bytes,
 }
 
-impl CachedResponse {
+impl CachedGraphqlResponse {
 	/// Byte cost of an entry, used by the response cache weigher.
 	pub fn weight(&self) -> u32 {
-		let content_type = self.content_type.as_ref().map(|v| v.len()).unwrap_or(0);
-		// `status` and the struct overhead are constant; weigh by what scales with payload.
-		u32::try_from(self.bytes.len().saturating_add(content_type)).unwrap_or(u32::MAX)
+		let header_bytes = self
+			.headers
+			.iter()
+			.map(|(name, value)| name.as_str().len().saturating_add(value.len()))
+			.sum::<usize>();
+		u32::try_from(self.bytes.len().saturating_add(header_bytes)).unwrap_or(u32::MAX)
 	}
 }
 
 pub struct SharedState<M: ManagedManager, W: From<Object<M>>> {
 	pub pool: Pool<M, W>,
 	pub storage: StorageClient,
-	pub last_modified: AtomicU64,
-	pub response_cache: Cache<u64, CachedResponse>,
+	pub graphql_response_cache_epoch: AtomicU64,
+	pub graphql_response_cache: Cache<GraphqlResponseCacheKey, CachedGraphqlResponse>,
 	pub key: Key,
 	pub config: Config,
 	pub enforcer: Arc<RwLock<Enforcer>>,
@@ -222,18 +232,13 @@ impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
-	/// Bumps the cache-busting timestamp and invalidates the response cache.
-	///
-	/// Returns Err if the system clock is somehow before UNIX_EPOCH; callers
-	/// propagate via `?` so the failure is observable rather than silently
-	/// producing a zero timestamp that would break ETag semantics.
-	pub fn update_last_modified(&self) -> Result<(), errors::AppError> {
-		let now = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.map_err(|e| anyhow::anyhow!("System time is before UNIX EPOCH: {e}"))?;
-		self.last_modified.store(now.as_millis() as u64, std::sync::atomic::Ordering::Relaxed);
-		self.response_cache.invalidate_all();
-		Ok(())
+	pub fn graphql_response_cache_epoch(&self) -> u64 {
+		self.graphql_response_cache_epoch.load(Ordering::Acquire)
+	}
+
+	pub fn invalidate_graphql_response_cache(&self) {
+		self.graphql_response_cache_epoch.fetch_add(1, Ordering::AcqRel);
+		self.graphql_response_cache.invalidate_all();
 	}
 }
 
@@ -269,8 +274,6 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 		f.debug_struct("SharedState")
 			.field("pool", &"Pool")
 			.field("storage", &self.storage)
-			.field("last_modified", &self.last_modified)
-			.field("response_cache", &"Cache<u64, Bytes>")
 			.field("enforcer", &"Enforcer")
 			.finish()
 	}
@@ -280,16 +283,19 @@ pub struct ContextWrapper<'a>(&'a Context<'a>);
 
 impl<'a> ContextWrapper<'a> {
 	pub async fn get_db_client(&self) -> Result<Object<Manager>, GraphQLError> {
-		let pool: &Pool<Manager> =
-			&self.0.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?.pool;
-		Ok(pool.get().await?)
+		let state = self
+			.0
+			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
+			.map_err(errors::AppError::graphql)?;
+		state.pool.get().await.map_err(errors::AppError::graphql)
 	}
 
 	pub fn get_storage_client(&self) -> Result<&StorageClient, GraphQLError> {
-		Ok(&self
+		let state = self
 			.0
-			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
-			.storage)
+			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
+			.map_err(errors::AppError::graphql)?;
+		Ok(&state.storage)
 	}
 
 	/// Resolves the caller's `UserId`, loads their `User`, looks up the enforcer,
@@ -313,8 +319,8 @@ impl<'a> ContextWrapper<'a> {
 		let state = self
 			.0
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
-		let enforcer = state.enforcer.read().await;
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
+			.map_err(AppError::graphql)?;
 		let user = User::by_id(self.0, user_id)
 			.await?
 			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
@@ -322,7 +328,8 @@ impl<'a> ContextWrapper<'a> {
 			id: user_id,
 			role: user.role.to_string(),
 		};
-		if !enforcer.enforce((casbin_user.clone(), target, action)).map_err(AppError::from)? {
+		let enforcer = state.enforcer.read().await;
+		if !enforcer.enforce((casbin_user.clone(), target, action)).map_err(AppError::graphql)? {
 			return Err(AppError::Forbidden.extend_graphql());
 		}
 		Ok(casbin_user)

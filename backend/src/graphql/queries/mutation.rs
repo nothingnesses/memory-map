@@ -128,14 +128,14 @@ impl Mutation {
 		let mut client = wrapper.get_db_client().await?;
 		let ids: Vec<i64> = ids
 			.into_iter()
-			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from))
+			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql))
 			.collect::<Result<Vec<i64>, _>>()?;
 
 		// Check permissions
 		let state = ctx
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 		let enforcer = state.enforcer.read().await;
 		let user = User::by_id(ctx, user_id)
 			.await?
@@ -152,7 +152,7 @@ impl Mutation {
 			};
 			enforcer
 				.enforce((casbin_user.clone(), casbin_obj, "delete"))
-				.map_err(AppError::from)?
+				.map_err(AppError::graphql)?
 				.then_some(())
 				.ok_or_else(|| AppError::Forbidden.extend_graphql())?;
 		}
@@ -164,9 +164,7 @@ impl Mutation {
 		)
 		.delete_objects(&ids)
 		.await
-		.map_err(GraphQLError::from)?;
-
-		state.update_last_modified().map_err(GraphQLError::from)?;
+		.map_err(AppError::graphql)?;
 
 		Ok(result)
 	}
@@ -185,13 +183,13 @@ impl Mutation {
 		let storage = wrapper.get_storage_client()?;
 		let mut client = wrapper.get_db_client().await?;
 		let id_int =
-			input.id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from)?;
+			input.id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
 
 		// Check permissions
 		let state = ctx
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 		let enforcer = state.enforcer.read().await;
 		let user = User::by_id(ctx, user_id)
 			.await?
@@ -205,7 +203,7 @@ impl Mutation {
 		let casbin_obj = CasbinObject {
 			user_id: obj.user_id.unwrap_or(0),
 		};
-		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(AppError::graphql)? {
 			return Err(AppError::Forbidden.extend_graphql());
 		}
 
@@ -225,9 +223,7 @@ impl Mutation {
 			allowed_users,
 		)
 		.await
-		.map_err(GraphQLError::from)?;
-
-		state.update_last_modified().map_err(GraphQLError::from)?;
+		.map_err(AppError::graphql)?;
 
 		Ok(result)
 	}
@@ -259,7 +255,7 @@ impl Mutation {
 
 		User::try_from(row)
 			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(GraphQLError::from)
+			.map_err(AppError::graphql)
 	}
 
 	async fn register(
@@ -276,7 +272,7 @@ impl Mutation {
 			return Err(AppError::Forbidden.extend_graphql());
 		}
 
-		validate_password(&password).map_err(GraphQLError::from)?;
+		validate_password(&password).map_err(AppError::graphql)?;
 
 		if !EmailAddress::is_valid(&email) {
 			return Err(AppError::Validation("Invalid email format".to_string()).extend_graphql());
@@ -298,7 +294,7 @@ impl Mutation {
 		let password_hash = argon2
 			.hash_password(password.as_bytes(), &salt)
 			.map_err(|e| anyhow::anyhow!(e).context("Failed to hash password"))
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 			.to_string();
 
 		let statement = client.prepare_cached(INSERT_USER_QUERY).await?;
@@ -310,7 +306,7 @@ impl Mutation {
 
 		User::try_from(row)
 			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(GraphQLError::from)
+			.map_err(AppError::graphql)
 	}
 
 	async fn login(
@@ -339,7 +335,7 @@ impl Mutation {
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
 			.map_err(|e| anyhow::anyhow!(e).context("Failed to parse password hash from database"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 
 		Argon2::default()
 			.verify_password(password.as_bytes(), &parsed_hash)
@@ -352,7 +348,7 @@ impl Mutation {
 		let cookies = ctx
 			.data::<Arc<parking_lot::Mutex<Vec<Cookie<'static>>>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Cookies not found in context"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 		cookies.lock().push(cookie);
 
 		Ok(user)
@@ -369,7 +365,7 @@ impl Mutation {
 		let cookies = ctx
 			.data::<Arc<parking_lot::Mutex<Vec<Cookie<'static>>>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Cookies not found in context"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 		cookies.lock().push(cookie);
 
 		Ok(true)
@@ -396,7 +392,7 @@ impl Mutation {
 			.await?;
 		let client = wrapper.get_db_client().await?;
 
-		validate_password(&new_password).map_err(GraphQLError::from)?;
+		validate_password(&new_password).map_err(AppError::graphql)?;
 
 		let password_hash_str: String = client
 			.query_one(SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, &[&user_id])
@@ -406,7 +402,7 @@ impl Mutation {
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
 			.map_err(|e| anyhow::anyhow!(e).context("Failed to parse password hash from database"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 
 		Argon2::default()
 			.verify_password(old_password.as_bytes(), &parsed_hash)
@@ -416,7 +412,7 @@ impl Mutation {
 		let new_hash = Argon2::default()
 			.hash_password(new_password.as_bytes(), &salt)
 			.map_err(|e| anyhow::anyhow!(e).context("Failed to hash new password"))
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 			.to_string();
 
 		client
@@ -469,7 +465,7 @@ impl Mutation {
 
 		User::try_from(row)
 			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(GraphQLError::from)
+			.map_err(AppError::graphql)
 	}
 
 	async fn request_password_reset(
@@ -486,11 +482,8 @@ impl Mutation {
 			return Ok(true);
 		};
 
-		let user_id_int = user
-			.id
-			.parse::<i64>()
-			.context("Failed to parse user ID")
-			.map_err(GraphQLError::from)?;
+		let user_id_int =
+			user.id.parse::<i64>().context("Failed to parse user ID").map_err(AppError::graphql)?;
 
 		// Rate limit: skip silently if a recent token already exists.
 		// The throttle is per user, so an attacker cannot use timing to enumerate accounts.
@@ -543,7 +536,7 @@ impl Mutation {
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
-		validate_password(&new_password).map_err(GraphQLError::from)?;
+		validate_password(&new_password).map_err(AppError::graphql)?;
 
 		let token_hash = blake3::hash(token.as_bytes()).to_string();
 
@@ -560,7 +553,7 @@ impl Mutation {
 			let new_hash = Argon2::default()
 				.hash_password(new_password.as_bytes(), &salt)
 				.map_err(|e| anyhow::anyhow!(e).context("Failed to hash new password"))
-				.map_err(GraphQLError::from)?
+				.map_err(AppError::graphql)?
 				.to_string();
 
 			client
@@ -595,13 +588,13 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 
 		let target_id =
-			id.parse::<i64>().context("Invalid ID format").map_err(GraphQLError::from)?;
+			id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
 
 		// Check permissions
 		let state = ctx
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
+			.map_err(AppError::graphql)?;
 		let enforcer = state.enforcer.read().await;
 		let current_user = User::by_id(ctx, user_id.0)
 			.await?
@@ -614,10 +607,7 @@ impl Mutation {
 			user_id: target_id,
 		};
 
-		if !enforcer
-			.enforce((casbin_user, casbin_obj, "manage_user"))
-			.map_err(GraphQLError::from)?
-		{
+		if !enforcer.enforce((casbin_user, casbin_obj, "manage_user")).map_err(AppError::graphql)? {
 			return Err(AppError::Forbidden.extend_graphql());
 		}
 
@@ -664,6 +654,6 @@ impl Mutation {
 
 		User::try_from(row)
 			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(GraphQLError::from)
+			.map_err(AppError::graphql)
 	}
 }

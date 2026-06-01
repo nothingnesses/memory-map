@@ -1,15 +1,16 @@
 use {
 	crate::{
 		AppState,
-		CachedResponse,
+		CachedGraphqlResponse,
 		Config,
+		GraphqlResponseCacheKey,
 		SharedState,
 		UserId,
 		constants::{
 			BODY_MAX_SIZE_LIMIT_BYTES,
-			CACHE_MAX_CAPACITY_BYTES,
-			CACHE_TTL_SECONDS,
 			GRAPHQL_BODY_LIMIT_BYTES,
+			GRAPHQL_RESPONSE_CACHE_MAX_CAPACITY_BYTES,
+			GRAPHQL_RESPONSE_CACHE_TTL_SECONDS,
 		},
 		controllers::api::locations::post as post_locations,
 		db::queries::SELECT_USER_EXISTS_QUERY,
@@ -20,20 +21,23 @@ use {
 		},
 		storage::StorageClient,
 	},
-	anyhow::Context,
 	async_graphql::{
+		BatchResponse,
 		EmptySubscription,
+		Request as GraphqlRequestInner,
+		Response as GraphqlResponseBody,
 		Schema,
+		parser::types::{
+			DocumentOperations,
+			OperationType,
+		},
 	},
-	async_graphql_axum::{
-		GraphQLRequest,
-		GraphQLResponse,
-	},
+	async_graphql_axum::GraphQLRequest,
 	axum::{
 		Router,
 		body::{
 			Body,
-			to_bytes,
+			Bytes,
 		},
 		extract::{
 			DefaultBodyLimit,
@@ -44,16 +48,14 @@ use {
 			HeaderMap,
 			HeaderValue,
 			Method,
-			Request,
 			StatusCode,
 			header,
 			request::Parts,
 		},
-		middleware::{
-			self,
-			Next,
+		response::{
+			IntoResponse,
+			Response,
 		},
-		response::IntoResponse,
 		routing::{
 			get,
 			post,
@@ -72,28 +74,19 @@ use {
 	deadpool_postgres::Manager,
 	moka::future::Cache,
 	std::{
-		collections::hash_map::DefaultHasher,
-		hash::{
-			Hash,
-			Hasher,
-		},
 		sync::{
 			Arc,
-			atomic::{
-				AtomicU64,
-				Ordering,
-			},
+			atomic::AtomicU64,
 		},
-		time::{
-			Duration,
-			SystemTime,
-			UNIX_EPOCH,
-		},
+		time::Duration,
 	},
 	tokio::sync::RwLock,
-	tower_http::cors::{
-		AllowOrigin,
-		CorsLayer,
+	tower_http::{
+		cors::{
+			AllowOrigin,
+			CorsLayer,
+		},
+		limit::RequestBodyLimitLayer,
 	},
 };
 
@@ -106,31 +99,23 @@ pub fn build_shared_state(
 	pool: Pool<Manager>,
 	storage: StorageClient,
 	enforcer: Arc<RwLock<Enforcer>>,
-) -> anyhow::Result<Arc<BackendSharedState>> {
-	let last_modified = AtomicU64::new(
-		SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.context("System time is before UNIX EPOCH")?
-			.as_millis() as u64,
-	);
-
-	let response_cache = Cache::builder()
-		.max_capacity(CACHE_MAX_CAPACITY_BYTES)
-		.weigher(|_key, value: &CachedResponse| value.weight())
-		.time_to_live(Duration::from_secs(CACHE_TTL_SECONDS))
+) -> Arc<BackendSharedState> {
+	let graphql_response_cache = Cache::builder()
+		.max_capacity(GRAPHQL_RESPONSE_CACHE_MAX_CAPACITY_BYTES)
+		.weigher(|_key, value: &CachedGraphqlResponse| value.weight())
+		.time_to_live(Duration::from_secs(GRAPHQL_RESPONSE_CACHE_TTL_SECONDS))
 		.build();
-
 	let key = Key::from(cfg.auth.cookie_secret.as_bytes());
 
-	Ok(Arc::new(SharedState {
+	Arc::new(SharedState {
 		pool,
 		storage,
-		last_modified,
-		response_cache,
+		graphql_response_cache_epoch: AtomicU64::new(0),
+		graphql_response_cache,
 		key,
 		config: cfg,
 		enforcer,
-	}))
+	})
 }
 
 pub fn build_app(shared_state: Arc<BackendSharedState>) -> Router {
@@ -146,8 +131,8 @@ pub fn build_app(shared_state: Arc<BackendSharedState>) -> Router {
 		.route(
 			"/",
 			post(graphql_handler)
-				.with_state(app_state.clone())
-				.layer(middleware::from_fn_with_state(app_state.clone(), caching_middleware)),
+				.route_layer(RequestBodyLimitLayer::new(GRAPHQL_BODY_LIMIT_BYTES))
+				.with_state(app_state.clone()),
 		)
 		.route(
 			"/api/locations/",
@@ -184,136 +169,140 @@ fn cors_layer(config: &Config) -> CorsLayer {
 		.allow_credentials(true)
 }
 
-async fn caching_middleware(
-	State(state): State<BackendState>,
-	_headers: HeaderMap,
-	request: Request<Body>,
-	next: Next,
-) -> axum::response::Result<impl IntoResponse> {
-	// 1. Read body
-	let (parts, body) = request.into_parts();
-	// Limit body size to avoid DoS.
-	let bytes = match to_bytes(body, GRAPHQL_BODY_LIMIT_BYTES).await {
-		Ok(b) => b,
-		Err(_) => return Ok(StatusCode::PAYLOAD_TOO_LARGE.into_response()),
-	};
-
-	// Return early if it's a mutation.
-	// Mutations change state and should not be cached. Caching them would prevent
-	// the server from executing the mutation on subsequent requests. GraphQL keywords
-	// are case-sensitive per spec, so a literal lowercase prefix match is enough; no
-	// need to lowercase the entire query string on every request.
-	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) &&
-		let Some(query) = json.get("query").and_then(|q| q.as_str()) &&
-		query.trim_start().starts_with("mutation")
-	{
-		let req = Request::from_parts(parts, Body::from(bytes));
-		return Ok(next.run(req).await.into_response());
-	}
-
-	// 2. Hash body
-	let mut hasher = DefaultHasher::new();
-	bytes.hash(&mut hasher);
-	if let Some(auth_header) = parts.headers.get("Authorization") {
-		auth_header.hash(&mut hasher);
-	}
-	if let Some(cookie_header) = parts.headers.get(header::COOKIE) {
-		cookie_header.hash(&mut hasher);
-	}
-	let hash = hasher.finish();
-
-	// 3. Check cache
-	if let Some(cached) = state.inner.response_cache.get(&hash).await {
-		tracing::info!("Cache hit for hash: {}", hash);
-		let mut response = axum::response::Response::new(Body::from(cached.bytes));
-		*response.status_mut() = cached.status;
-		if let Some(content_type) = cached.content_type {
-			response.headers_mut().insert(header::CONTENT_TYPE, content_type);
-		}
-
-		let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
-		let etag = format!("\"{last_modified}\"");
-		response.headers_mut().insert(
-			"ETag",
-			HeaderValue::from_str(&etag).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-		);
-
-		return Ok(response);
-	}
-
-	// 4. Process request
-	let req = Request::from_parts(parts, Body::from(bytes));
-	let response = next.run(req).await;
-
-	// 5. Cache response (only successful GraphQL responses with no errors)
-	let (parts, body) = response.into_parts();
-	let bytes = match to_bytes(body, BODY_MAX_SIZE_LIMIT_BYTES).await {
-		Ok(b) => b,
-		Err(_) => return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-	};
-
-	if should_cache_response(parts.status, &bytes) {
-		let cached = CachedResponse {
-			status: parts.status,
-			content_type: parts.headers.get(header::CONTENT_TYPE).cloned(),
-			bytes: bytes.clone(),
-		};
-		state.inner.response_cache.insert(hash, cached).await;
-	}
-
-	let mut response = axum::response::Response::from_parts(parts, Body::from(bytes));
-
-	let last_modified = state.inner.last_modified.load(Ordering::Relaxed);
-	let etag = format!("\"{last_modified}\"");
-	response.headers_mut().insert(
-		"ETag",
-		HeaderValue::from_str(&etag).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-	);
-
-	Ok(response)
+async fn authenticated_user_id(
+	state: &BackendState,
+	jar: &PrivateCookieJar,
+) -> Option<i64> {
+	let user_id = jar.get("auth_token")?.value().parse::<i64>().ok()?;
+	let client = state.inner.pool.get().await.ok()?;
+	let statement = client.prepare_cached(SELECT_USER_EXISTS_QUERY).await.ok()?;
+	client.query_opt(&statement, &[&user_id]).await.ok().flatten()?;
+	Some(user_id)
 }
 
-/// Whether a GraphQL response is safe to cache.
-///
-/// Skips non-2xx and any response whose JSON body contains a top-level `errors` field,
-/// since partial-failure responses are intentionally heterogeneous over time.
-fn should_cache_response(
-	status: StatusCode,
-	body: &[u8],
-) -> bool {
-	if !status.is_success() {
-		return false;
+fn graphql_request_operation_type(request: &mut GraphqlRequestInner) -> Option<OperationType> {
+	let operation_name = request.operation_name.clone();
+	let document = request.parsed_query().ok()?;
+
+	match &document.operations {
+		DocumentOperations::Single(operation) => Some(operation.node.ty),
+		DocumentOperations::Multiple(operations) => {
+			let operation_name = operation_name?;
+			operations.get(operation_name.as_str()).map(|operation| operation.node.ty)
+		}
 	}
-	let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) else {
-		return false;
+}
+
+fn hash_cache_component(
+	hasher: &mut blake3::Hasher,
+	bytes: &[u8],
+) {
+	hasher.update(&(bytes.len() as u64).to_le_bytes());
+	hasher.update(bytes);
+}
+
+fn graphql_response_cache_key(
+	request: &GraphqlRequestInner,
+	user_id: Option<i64>,
+	authorization: Option<&HeaderValue>,
+	cache_epoch: u64,
+) -> Option<GraphqlResponseCacheKey> {
+	if !request.uploads.is_empty() || !request.extensions.is_empty() {
+		return None;
+	}
+
+	let mut hasher = blake3::Hasher::new();
+	hash_cache_component(&mut hasher, b"memory-map/graphql-response-cache/v1");
+	hasher.update(&cache_epoch.to_le_bytes());
+
+	match user_id {
+		Some(user_id) => {
+			hasher.update(&[1]);
+			hasher.update(&user_id.to_le_bytes());
+		}
+		None => {
+			hasher.update(&[0]);
+		}
 	};
-	json.get("errors").is_none()
+	if let Some(authorization) = authorization {
+		hasher.update(&[1]);
+		hash_cache_component(&mut hasher, authorization.as_bytes());
+	} else {
+		hasher.update(&[0]);
+	}
+
+	hash_cache_component(&mut hasher, request.query.as_bytes());
+	if let Some(operation_name) = &request.operation_name {
+		hasher.update(&[1]);
+		hash_cache_component(&mut hasher, operation_name.as_bytes());
+	} else {
+		hasher.update(&[0]);
+	}
+	let variables = serde_json::to_vec(&request.variables).ok()?;
+	hash_cache_component(&mut hasher, &variables);
+
+	let mut bytes = [0; 32];
+	bytes.copy_from_slice(hasher.finalize().as_bytes());
+	Some(GraphqlResponseCacheKey::new(bytes))
+}
+
+fn graphql_response_to_cache_entry(
+	response: GraphqlResponseBody
+) -> Result<CachedGraphqlResponse, serde_json::Error> {
+	let batch_response = BatchResponse::from(response);
+	let mut headers = HeaderMap::new();
+	headers.insert(
+		header::CONTENT_TYPE,
+		HeaderValue::from_static("application/graphql-response+json"),
+	);
+	if batch_response.is_ok() &&
+		let Some(cache_control) = batch_response.cache_control().value() &&
+		let Ok(value) = HeaderValue::from_str(&cache_control)
+	{
+		headers.insert(header::CACHE_CONTROL, value);
+	}
+	headers.extend(batch_response.http_headers());
+	let bytes = Bytes::from(serde_json::to_vec(&batch_response)?);
+
+	Ok(CachedGraphqlResponse {
+		status: StatusCode::OK,
+		headers,
+		bytes,
+	})
+}
+
+fn cache_entry_to_response(cached: CachedGraphqlResponse) -> Response {
+	let mut response = Response::new(Body::from(cached.bytes));
+	*response.status_mut() = cached.status;
+	*response.headers_mut() = cached.headers;
+	response
 }
 
 async fn graphql_handler(
 	State(state): State<BackendState>,
 	Extension(schema): Extension<BackendSchema>,
+	headers: HeaderMap,
 	jar: PrivateCookieJar,
 	req: GraphQLRequest,
-) -> (PrivateCookieJar, GraphQLResponse) {
+) -> (PrivateCookieJar, Response) {
 	let mut req = req.into_inner();
 
-	if let Some(cookie) = jar.get("auth_token") &&
-		let Ok(user_id) = cookie.value().parse::<i64>()
-	{
-		// Verify user exists in database
-		let user_exists = if let Ok(client) = state.inner.pool.get().await {
-			match client.prepare_cached(SELECT_USER_EXISTS_QUERY).await {
-				Ok(stmt) => matches!(client.query_opt(&stmt, &[&user_id]).await, Ok(Some(_))),
-				Err(_) => false,
-			}
-		} else {
-			false
-		};
+	let user_id = authenticated_user_id(&state, &jar).await;
+	if let Some(user_id) = user_id {
+		req = req.data(UserId(user_id));
+	}
 
-		if user_exists {
-			req = req.data(UserId(user_id));
-		}
+	let operation_type = graphql_request_operation_type(&mut req);
+	let cache_epoch = state.inner.graphql_response_cache_epoch();
+	let cache_key = if matches!(operation_type, Some(OperationType::Query)) {
+		graphql_response_cache_key(&req, user_id, headers.get(header::AUTHORIZATION), cache_epoch)
+	} else {
+		None
+	};
+	if let Some(cache_key) = &cache_key &&
+		let Some(cached_response) = state.inner.graphql_response_cache.get(cache_key).await
+	{
+		return (jar, cache_entry_to_response(cached_response));
 	}
 
 	// parking_lot::Mutex has no poisoning and is held only briefly around a vector
@@ -322,11 +311,122 @@ async fn graphql_handler(
 	req = req.data(cookies.clone());
 
 	let response = schema.execute(req).await;
+	let response_is_ok = response.is_ok();
+	let cached_response = match graphql_response_to_cache_entry(response) {
+		Ok(cached_response) => cached_response,
+		Err(error) => {
+			tracing::error!("Failed to serialize GraphQL response: {:?}", error);
+			return (jar, StatusCode::INTERNAL_SERVER_ERROR.into_response());
+		}
+	};
+
+	if matches!(operation_type, Some(OperationType::Mutation)) {
+		state.inner.invalidate_graphql_response_cache();
+	}
 
 	let mut jar = jar;
-	for cookie in cookies.lock().iter() {
+	let issued_cookies = cookies.lock().clone();
+	for cookie in &issued_cookies {
 		jar = jar.add(cookie.clone());
 	}
 
-	(jar, response.into())
+	if let Some(cache_key) = cache_key &&
+		response_is_ok &&
+		issued_cookies.is_empty() &&
+		!cached_response.headers.contains_key(header::SET_COOKIE) &&
+		state.inner.graphql_response_cache_epoch() == cache_epoch
+	{
+		state.inner.graphql_response_cache.insert(cache_key, cached_response.clone()).await;
+	}
+
+	(jar, cache_entry_to_response(cached_response))
+}
+
+#[cfg(test)]
+mod tests {
+	use {
+		super::*,
+		async_graphql::{
+			Value,
+			Variables,
+		},
+		serde_json::json,
+	};
+
+	fn request_with_variable(id: i64) -> GraphqlRequestInner {
+		GraphqlRequestInner::new("query Object($id: Int!) { s3ObjectById(id: $id) { id } }")
+			.variables(Variables::from_json(json!({ "id": id })))
+	}
+
+	fn cache_key(
+		request: &GraphqlRequestInner,
+		user_id: Option<i64>,
+		cache_epoch: u64,
+	) -> anyhow::Result<GraphqlResponseCacheKey> {
+		graphql_response_cache_key(request, user_id, None, cache_epoch)
+			.ok_or_else(|| anyhow::anyhow!("request should be cacheable"))
+	}
+
+	#[test]
+	fn graphql_operation_type_uses_selected_named_operation() {
+		let mut query = GraphqlRequestInner::new(
+			"query Read { config { enableRegistration } } mutation Write { logout }",
+		)
+		.operation_name("Read");
+		assert_eq!(graphql_request_operation_type(&mut query), Some(OperationType::Query));
+
+		let mut mutation = GraphqlRequestInner::new(
+			"query Read { config { enableRegistration } } mutation Write { logout }",
+		)
+		.operation_name("Write");
+		assert_eq!(graphql_request_operation_type(&mut mutation), Some(OperationType::Mutation));
+	}
+
+	#[test]
+	fn graphql_operation_type_skips_ambiguous_multi_operation_documents() {
+		let mut request = GraphqlRequestInner::new(
+			"query Read { config { enableRegistration } } mutation Write { logout }",
+		);
+		assert_eq!(graphql_request_operation_type(&mut request), None);
+	}
+
+	#[test]
+	fn graphql_response_cache_key_scopes_by_actor_variables_and_epoch() -> anyhow::Result<()> {
+		let key = cache_key(&request_with_variable(1), Some(10), 0)?;
+		assert_eq!(cache_key(&request_with_variable(1), Some(10), 0)?, key);
+		assert_ne!(cache_key(&request_with_variable(1), Some(11), 0)?, key);
+		assert_ne!(cache_key(&request_with_variable(2), Some(10), 0)?, key);
+		assert_ne!(cache_key(&request_with_variable(1), Some(10), 1)?, key);
+		Ok(())
+	}
+
+	#[test]
+	fn graphql_response_cache_key_skips_requests_with_extensions() {
+		let mut request = request_with_variable(1);
+		request.extensions.insert("cacheBypass".to_string(), Value::Boolean(true));
+		assert!(graphql_response_cache_key(&request, Some(10), None, 0).is_none());
+	}
+
+	#[test]
+	fn graphql_response_cache_key_scopes_by_authorization_header() -> anyhow::Result<()> {
+		let request = request_with_variable(1);
+		let bearer_a = HeaderValue::from_static("Bearer a");
+		let bearer_b = HeaderValue::from_static("Bearer b");
+
+		let key = graphql_response_cache_key(&request, Some(10), Some(&bearer_a), 0)
+			.ok_or_else(|| anyhow::anyhow!("request should be cacheable"))?;
+
+		assert_eq!(
+			graphql_response_cache_key(&request, Some(10), Some(&bearer_a), 0)
+				.ok_or_else(|| anyhow::anyhow!("request should be cacheable"))?,
+			key
+		);
+		assert_ne!(
+			graphql_response_cache_key(&request, Some(10), Some(&bearer_b), 0)
+				.ok_or_else(|| anyhow::anyhow!("request should be cacheable"))?,
+			key
+		);
+		assert_ne!(cache_key(&request, Some(10), 0)?, key);
+		Ok(())
+	}
 }

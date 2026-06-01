@@ -10,6 +10,7 @@ use {
 			SELECT_OBJECTS_BY_USER_ID_QUERY,
 			SELECT_VISIBLE_OBJECTS_QUERY,
 		},
+		errors::AppError,
 		graphql::objects::location::Location,
 	},
 	async_graphql::{
@@ -174,7 +175,7 @@ impl S3Object {
 		client
 			.query(&statement, &[])
 			.await
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 			.into_iter()
 			.map(Self::try_from)
 			.collect()
@@ -207,7 +208,7 @@ impl S3Object {
 		client
 			.query(&statement, &[&ids])
 			.await
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 			.into_iter()
 			.map(Self::try_from)
 			.collect()
@@ -222,7 +223,7 @@ impl S3Object {
 		client
 			.query(&statement, &[&user_id])
 			.await
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 			.into_iter()
 			.map(Self::try_from)
 			.collect()
@@ -237,7 +238,7 @@ impl S3Object {
 		client
 			.query(&statement, &[&user_id])
 			.await
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 			.into_iter()
 			.map(Self::try_from)
 			.collect()
@@ -275,7 +276,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.storage.presigned_get_url(&self.storage_key).await.map_err(GraphQLError::from)
+		data.storage.presigned_get_url(&self.storage_key).await.map_err(AppError::graphql)
 	}
 
 	async fn content_type(&self) -> String {

@@ -160,7 +160,7 @@ impl TestApp {
 		storage.ensure_bucket_exists().await?;
 
 		let enforcer = test_enforcer().await?;
-		let shared_state = build_shared_state(cfg, pool, storage, Arc::new(RwLock::new(enforcer)))?;
+		let shared_state = build_shared_state(cfg, pool, storage, Arc::new(RwLock::new(enforcer)));
 		let app = build_app(shared_state.clone());
 
 		Ok(Some(Self {
@@ -742,15 +742,15 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 		)
 		.await?;
 
-	let first_claim = claim_keys(&client, 1, 600, 60).await?;
+	let first_claim = claim_keys(&client, 1, 600, 60, 10).await?;
 	assert_eq!(first_claim.len(), 1);
 	let first_claimed_key =
 		first_claim.into_iter().next().context("first object storage deletion claim was empty")?;
 	let remaining_key =
 		if first_claimed_key == first_key { second_key.clone() } else { first_key.clone() };
 
-	assert_eq!(claim_keys(&client, 10, 600, 60).await?, vec![remaining_key.clone()]);
-	assert!(claim_keys(&client, 10, 600, 60).await?.is_empty());
+	assert_eq!(claim_keys(&client, 10, 600, 60, 10).await?, vec![remaining_key.clone()]);
+	assert!(claim_keys(&client, 10, 600, 60, 10).await?.is_empty());
 
 	client
 		.execute(
@@ -758,7 +758,7 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 			&[&vec![first_claimed_key.clone()], &"simulated storage failure"],
 		)
 		.await?;
-	assert!(claim_keys(&client, 10, 600, 60).await?.is_empty());
+	assert!(claim_keys(&client, 10, 600, 60, 10).await?.is_empty());
 
 	client
 		.execute(
@@ -768,7 +768,7 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 			&[&first_claimed_key],
 		)
 		.await?;
-	assert_eq!(claim_keys(&client, 10, 600, 60).await?, vec![first_claimed_key.clone()]);
+	assert_eq!(claim_keys(&client, 10, 600, 60, 10).await?, vec![first_claimed_key.clone()]);
 
 	let first_attempts: i32 = client
 		.query_one(
@@ -794,11 +794,12 @@ async fn claim_keys(
 	limit: i64,
 	lease_seconds: i64,
 	retry_after_seconds: i64,
+	max_attempts: i32,
 ) -> Result<Vec<String>, tokio_postgres::Error> {
 	client
 		.query(
 			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
-			&[&limit, &lease_seconds, &retry_after_seconds],
+			&[&limit, &lease_seconds, &retry_after_seconds, &max_attempts],
 		)
 		.await
 		.map(|rows| {

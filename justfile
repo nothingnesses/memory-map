@@ -210,9 +210,9 @@ backend-integration:
 	}
 	trap cleanup EXIT
 
-	memory_map_require_port_free "$PG__PORT" "PostgreSQL"
-	memory_map_require_port_free "9000" "RustFS API"
-	memory_map_require_port_free "9001" "RustFS console"
+	memory_map_require_port_free "$E2E_PG_PORT" "PostgreSQL"
+	memory_map_require_port_free "$E2E_STORAGE_API_PORT" "RustFS API"
+	memory_map_require_port_free "$E2E_STORAGE_CONSOLE_PORT" "RustFS console"
 	memory_map_require_port_free "$port" "process-compose"
 
 	memory_map_start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
@@ -276,11 +276,11 @@ e2e: frontend-config
 	}
 	trap cleanup EXIT INT TERM
 
-	memory_map_require_port_free "$PG__PORT" "PostgreSQL"
-	memory_map_require_port_free "9000" "RustFS API"
-	memory_map_require_port_free "9001" "RustFS console"
-	memory_map_require_port_free "$SERVER_PORT" "backend"
-	memory_map_require_port_free "3000" "frontend"
+	memory_map_require_port_free "$E2E_PG_PORT" "PostgreSQL"
+	memory_map_require_port_free "$E2E_STORAGE_API_PORT" "RustFS API"
+	memory_map_require_port_free "$E2E_STORAGE_CONSOLE_PORT" "RustFS console"
+	memory_map_require_port_free "$E2E_BACKEND_PORT" "backend"
+	memory_map_require_port_free "$E2E_FRONTEND_PORT" "frontend"
 	memory_map_require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
 
 	{{ direnv_prefix }} cargo build --bin backend
@@ -294,7 +294,7 @@ e2e: frontend-config
 	backend_pid=$!
 	wait_for_backend
 
-	{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address 127.0.0.1 --port 3000 --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
+	{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address "$E2E_FRONTEND_HOST" --port "$E2E_FRONTEND_PORT" --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
 	frontend_pid=$!
 	wait_for_frontend
 

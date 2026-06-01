@@ -110,6 +110,14 @@ impl AppError {
 			extensions.set("code", code);
 		})
 	}
+
+	/// Central conversion point for resolver code.
+	///
+	/// Use this instead of `async_graphql::Error::from` so every `AppError`
+	/// reaches clients with the stable `extensions.code` field.
+	pub fn graphql(error: impl Into<Self>) -> async_graphql::Error {
+		error.into().extend_graphql()
+	}
 }
 
 impl IntoResponse for AppError {

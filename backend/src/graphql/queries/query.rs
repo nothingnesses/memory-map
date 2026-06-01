@@ -78,7 +78,7 @@ impl Query {
 
 		if !enforcer
 			.enforce((casbin_user, casbin_obj, "read_all_users"))
-			.map_err(GraphQLError::from)?
+			.map_err(AppError::graphql)?
 		{
 			return Err(AppError::Forbidden.extend_graphql());
 		}
@@ -111,7 +111,7 @@ impl Query {
 			user_id: object.user_id.unwrap_or(0),
 		};
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(AppError::graphql)? {
 			return Err(AppError::Forbidden.extend_graphql());
 		}
 
@@ -143,7 +143,7 @@ impl Query {
 			user_id: object.user_id.unwrap_or(0),
 		};
 
-		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
+		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(AppError::graphql)? {
 			return Err(AppError::Forbidden.extend_graphql());
 		}
 
@@ -176,7 +176,7 @@ impl Query {
 
 			if enforcer
 				.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))
-				.map_err(GraphQLError::from)?
+				.map_err(AppError::graphql)?
 			{
 				return S3Object::all(ctx).await;
 			}
