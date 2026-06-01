@@ -70,6 +70,17 @@ Optional S3 settings (defaults shown):
 Optional object lifecycle settings (defaults shown):
 
 - `MEMORY_MAP__OBJECT_LIFECYCLE__PENDING_UPLOAD_TIMEOUT_SECONDS` (default `3600`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_MAX_FILE_SIZE_BYTES` (default
+  `1073741824`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_PART_SIZE_BYTES` (default `8388608`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_MAX_PART_COUNT` (default `10000`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_TTL_SECONDS` (default `3600`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_CLEANUP_RETRY_SECONDS` (default
+  `60`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_CLEANUP_LEASE_SECONDS` (default
+  `300`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_CLEANUP_MAX_ATTEMPTS` (default
+  `10`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_RETRY_SECONDS` (default `60`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_LEASE_SECONDS` (default `300`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_WORKER_INTERVAL_SECONDS` (default `30`)
@@ -91,6 +102,13 @@ different public endpoint.
 `MEMORY_MAP__OBJECT_LIFECYCLE__PENDING_UPLOAD_TIMEOUT_SECONDS` controls when an
 unfinalized upload is treated as failed and moved into cleanup. It should be
 comfortably longer than the longest expected object upload.
+
+`MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_PART_SIZE_BYTES` must be at least
+`5242880`, the S3 multipart minimum for non-final parts. The maximum file size
+must fit within `UPLOAD_MAX_PART_COUNT` parts.
+
+`MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_TTL_SECONDS` controls how long a
+direct-upload session can be completed before it is eligible for reconciliation.
 
 `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_MAX_ATTEMPTS` bounds how many
 times a failing storage deletion is retried before it is parked. Rows past the

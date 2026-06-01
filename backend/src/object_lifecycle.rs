@@ -58,6 +58,20 @@ use {
 pub struct ObjectLifecycleConfig {
 	#[serde(default = "ObjectLifecycleConfig::default_pending_upload_timeout_seconds")]
 	pub pending_upload_timeout_seconds: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_max_file_size_bytes")]
+	pub upload_max_file_size_bytes: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_part_size_bytes")]
+	pub upload_part_size_bytes: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_max_part_count")]
+	pub upload_max_part_count: i32,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_session_ttl_seconds")]
+	pub upload_session_ttl_seconds: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_session_cleanup_retry_seconds")]
+	pub upload_session_cleanup_retry_seconds: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_session_cleanup_lease_seconds")]
+	pub upload_session_cleanup_lease_seconds: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_session_cleanup_max_attempts")]
+	pub upload_session_cleanup_max_attempts: i32,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_retry_seconds")]
 	pub storage_deletion_retry_seconds: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_lease_seconds")]
@@ -71,8 +85,40 @@ pub struct ObjectLifecycleConfig {
 }
 
 impl ObjectLifecycleConfig {
+	pub const S3_MAX_MULTIPART_PART_COUNT: i32 = 10_000;
+	pub const S3_MAX_OBJECT_SIZE_BYTES: i64 = 5 * 1024 * 1024 * 1024 * 1024;
+	pub const S3_MIN_MULTIPART_PART_SIZE_BYTES: i64 = 5 * 1024 * 1024;
+
 	pub const fn default_pending_upload_timeout_seconds() -> i64 {
 		3600
+	}
+
+	pub const fn default_upload_max_file_size_bytes() -> i64 {
+		1024 * 1024 * 1024
+	}
+
+	pub const fn default_upload_part_size_bytes() -> i64 {
+		8 * 1024 * 1024
+	}
+
+	pub const fn default_upload_max_part_count() -> i32 {
+		Self::S3_MAX_MULTIPART_PART_COUNT
+	}
+
+	pub const fn default_upload_session_ttl_seconds() -> i64 {
+		3600
+	}
+
+	pub const fn default_upload_session_cleanup_retry_seconds() -> i64 {
+		60
+	}
+
+	pub const fn default_upload_session_cleanup_lease_seconds() -> i64 {
+		300
+	}
+
+	pub const fn default_upload_session_cleanup_max_attempts() -> i32 {
+		10
 	}
 
 	pub const fn default_storage_deletion_retry_seconds() -> i64 {
@@ -102,6 +148,43 @@ impl ObjectLifecycleConfig {
 		if self.pending_upload_timeout_seconds <= 0 {
 			anyhow::bail!("pending_upload_timeout_seconds must be greater than 0");
 		}
+		if self.upload_max_file_size_bytes <= 0 {
+			anyhow::bail!("upload_max_file_size_bytes must be greater than 0");
+		}
+		if self.upload_max_file_size_bytes > Self::S3_MAX_OBJECT_SIZE_BYTES {
+			anyhow::bail!(
+				"upload_max_file_size_bytes must be at most {}",
+				Self::S3_MAX_OBJECT_SIZE_BYTES
+			);
+		}
+		if self.upload_part_size_bytes < Self::S3_MIN_MULTIPART_PART_SIZE_BYTES {
+			anyhow::bail!(
+				"upload_part_size_bytes must be at least {}",
+				Self::S3_MIN_MULTIPART_PART_SIZE_BYTES
+			);
+		}
+		if self.upload_max_part_count <= 0 {
+			anyhow::bail!("upload_max_part_count must be greater than 0");
+		}
+		if self.upload_max_part_count > Self::S3_MAX_MULTIPART_PART_COUNT {
+			anyhow::bail!(
+				"upload_max_part_count must be at most {}",
+				Self::S3_MAX_MULTIPART_PART_COUNT
+			);
+		}
+		if self.upload_session_ttl_seconds <= 0 {
+			anyhow::bail!("upload_session_ttl_seconds must be greater than 0");
+		}
+		if self.upload_session_cleanup_retry_seconds <= 0 {
+			anyhow::bail!("upload_session_cleanup_retry_seconds must be greater than 0");
+		}
+		if self.upload_session_cleanup_lease_seconds <= 0 {
+			anyhow::bail!("upload_session_cleanup_lease_seconds must be greater than 0");
+		}
+		if self.upload_session_cleanup_max_attempts <= 0 {
+			anyhow::bail!("upload_session_cleanup_max_attempts must be greater than 0");
+		}
+		self.upload_session_total_parts(self.upload_max_file_size_bytes)?;
 		if self.storage_deletion_retry_seconds <= 0 {
 			anyhow::bail!("storage_deletion_retry_seconds must be greater than 0");
 		}
@@ -120,6 +203,39 @@ impl ObjectLifecycleConfig {
 		Ok(())
 	}
 
+	pub fn upload_session_total_parts(
+		&self,
+		file_size_bytes: i64,
+	) -> anyhow::Result<i32> {
+		if file_size_bytes <= 0 {
+			anyhow::bail!("file_size_bytes must be greater than 0");
+		}
+		if file_size_bytes > self.upload_max_file_size_bytes {
+			anyhow::bail!("file_size_bytes must be at most {}", self.upload_max_file_size_bytes);
+		}
+		let part_count = ((file_size_bytes - 1) / self.upload_part_size_bytes) + 1;
+		if part_count > i64::from(self.upload_max_part_count) {
+			anyhow::bail!(
+				"file_size_bytes requires {part_count} parts, exceeding upload_max_part_count {}",
+				self.upload_max_part_count
+			);
+		}
+		i32::try_from(part_count).context("upload part count exceeds i32 range")
+	}
+
+	pub fn upload_session_expected_part_size_bytes(
+		&self,
+		file_size_bytes: i64,
+		part_number: i32,
+	) -> anyhow::Result<i64> {
+		let total_parts = self.upload_session_total_parts(file_size_bytes)?;
+		if !(1 ..= total_parts).contains(&part_number) {
+			anyhow::bail!("part_number must be between 1 and {total_parts}");
+		}
+		let part_start = i64::from(part_number - 1) * self.upload_part_size_bytes;
+		Ok(self.upload_part_size_bytes.min(file_size_bytes - part_start))
+	}
+
 	/// Returns Self if `validate` succeeds; convenient for builder-style construction.
 	pub fn validated(self) -> anyhow::Result<Self> {
 		self.validate()?;
@@ -135,6 +251,16 @@ impl Default for ObjectLifecycleConfig {
 	fn default() -> Self {
 		Self {
 			pending_upload_timeout_seconds: Self::default_pending_upload_timeout_seconds(),
+			upload_max_file_size_bytes: Self::default_upload_max_file_size_bytes(),
+			upload_part_size_bytes: Self::default_upload_part_size_bytes(),
+			upload_max_part_count: Self::default_upload_max_part_count(),
+			upload_session_ttl_seconds: Self::default_upload_session_ttl_seconds(),
+			upload_session_cleanup_retry_seconds:
+				Self::default_upload_session_cleanup_retry_seconds(),
+			upload_session_cleanup_lease_seconds:
+				Self::default_upload_session_cleanup_lease_seconds(),
+			upload_session_cleanup_max_attempts: Self::default_upload_session_cleanup_max_attempts(
+			),
 			storage_deletion_retry_seconds: Self::default_storage_deletion_retry_seconds(),
 			storage_deletion_lease_seconds: Self::default_storage_deletion_lease_seconds(),
 			storage_deletion_worker_interval_seconds:
@@ -867,6 +993,44 @@ mod tests {
 				..valid.clone()
 			},
 			ObjectLifecycleConfig {
+				upload_max_file_size_bytes: 0,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_max_file_size_bytes: ObjectLifecycleConfig::S3_MAX_OBJECT_SIZE_BYTES + 1,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_part_size_bytes: ObjectLifecycleConfig::S3_MIN_MULTIPART_PART_SIZE_BYTES - 1,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_max_part_count: ObjectLifecycleConfig::S3_MAX_MULTIPART_PART_COUNT + 1,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_session_ttl_seconds: 0,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_session_cleanup_retry_seconds: -1,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_session_cleanup_lease_seconds: 0,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_session_cleanup_max_attempts: 0,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_max_file_size_bytes: (i64::from(valid.upload_max_part_count) *
+					valid.upload_part_size_bytes) +
+					1,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
 				storage_deletion_retry_seconds: -1,
 				..valid.clone()
 			},
@@ -896,6 +1060,29 @@ mod tests {
 			..valid
 		};
 		assert!(extreme.validate().is_ok());
+	}
+
+	#[test]
+	fn upload_session_policy_calculates_part_counts_and_lengths() -> anyhow::Result<()> {
+		let part_size = ObjectLifecycleConfig::S3_MIN_MULTIPART_PART_SIZE_BYTES;
+		let config = ObjectLifecycleConfig {
+			upload_max_file_size_bytes: part_size * 4,
+			upload_part_size_bytes: part_size,
+			upload_max_part_count: 4,
+			..ObjectLifecycleConfig::default()
+		};
+		let file_size = (part_size * 2) + 7;
+
+		assert_eq!(config.upload_session_total_parts(1)?, 1);
+		assert_eq!(config.upload_session_total_parts(part_size)?, 1);
+		assert_eq!(config.upload_session_total_parts(file_size)?, 3);
+		assert_eq!(config.upload_session_expected_part_size_bytes(file_size, 1)?, part_size);
+		assert_eq!(config.upload_session_expected_part_size_bytes(file_size, 2)?, part_size);
+		assert_eq!(config.upload_session_expected_part_size_bytes(file_size, 3)?, 7);
+		assert!(config.upload_session_total_parts(0).is_err());
+		assert!(config.upload_session_expected_part_size_bytes(file_size, 4).is_err());
+
+		Ok(())
 	}
 
 	fn storage_keys(
