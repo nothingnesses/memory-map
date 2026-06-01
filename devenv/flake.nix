@@ -127,6 +127,7 @@
             };
             localS3 = {
               endpointUrl = "http://${localRustfs.apiAddress}";
+              publicEndpointUrl = "http://${localRustfs.apiAddress}";
               region = "us-east-1";
               bucketName = "memory-map";
               forcePathStyle = true;
@@ -245,6 +246,7 @@
                 set -euo pipefail
 
                 export MEMORY_MAP__STORAGE__ENDPOINT_URL="${localS3.endpointUrl}"
+                export MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL="${localS3.publicEndpointUrl}"
                 export MEMORY_MAP__STORAGE__ACCESS_KEY="${localS3.accessKey}"
                 export MEMORY_MAP__STORAGE__SECRET_KEY="${localS3.secretKey}"
                 export MEMORY_MAP__STORAGE__BUCKET_NAME="${localS3.bucketName}"

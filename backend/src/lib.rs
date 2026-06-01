@@ -31,6 +31,7 @@ use {
 			Arc,
 			atomic::{
 				AtomicU64,
+				AtomicUsize,
 				Ordering,
 			},
 		},
@@ -228,6 +229,26 @@ impl CachedGraphqlResponse {
 			.map(|(name, value)| name.as_str().len().saturating_add(value.len()))
 			.sum::<usize>();
 		u32::try_from(self.bytes.len().saturating_add(header_bytes)).unwrap_or(u32::MAX)
+	}
+}
+
+/// Per-request mutation cache effect accounting.
+///
+/// Mutation resolvers that do not change query-visible state may mark their root
+/// field as non-invalidating. The handler suppresses global invalidation only
+/// when every root mutation field in the operation was marked this way.
+#[derive(Debug, Default)]
+pub struct GraphqlMutationCacheEffect {
+	non_invalidating_field_count: AtomicUsize,
+}
+
+impl GraphqlMutationCacheEffect {
+	pub fn mark_non_invalidating_field(&self) {
+		self.non_invalidating_field_count.fetch_add(1, Ordering::AcqRel);
+	}
+
+	pub fn non_invalidating_field_count(&self) -> usize {
+		self.non_invalidating_field_count.load(Ordering::Acquire)
 	}
 }
 
@@ -452,6 +473,7 @@ mod tests {
 			},
 			storage: StorageConfig {
 				endpoint_url: "https://s3.example.test".to_string(),
+				public_endpoint_url: Some("https://public-s3.example.test".to_string()),
 				access_key: "debug-storage-access-secret".to_string(),
 				secret_key: "debug-storage-secret-secret".to_string(),
 				bucket_name: "memory-map".to_string(),
@@ -467,6 +489,7 @@ mod tests {
 		assert!(debug.contains("Config"));
 		assert!(debug.contains("smtp.example.test"));
 		assert!(debug.contains("https://s3.example.test"));
+		assert!(debug.contains("https://public-s3.example.test"));
 		assert!(debug.contains("<redacted>"));
 		assert!(!debug.contains("debug-smtp-pass-secret"));
 		assert!(!debug.contains("debug-cookie-secret"));
@@ -491,8 +514,10 @@ mod tests {
 			enable_registration: true,
 		};
 
-		let error = config.validate().expect_err("short cookie secret should fail validation");
-		assert!(error.to_string().contains("at least 64 bytes"));
+		let error = config.validate().err();
+		assert!(
+			error.as_ref().is_some_and(|error| error.to_string().contains("at least 64 bytes"))
+		);
 	}
 
 	#[test]

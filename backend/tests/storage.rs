@@ -60,6 +60,7 @@ async fn storage_roundtrip_against_configured_service() -> anyhow::Result<()> {
 fn storage_config_from_env() -> anyhow::Result<StorageConfig> {
 	let config = StorageConfig {
 		endpoint_url: env_or_default("MEMORY_MAP__STORAGE__ENDPOINT_URL", "http://127.0.0.1:9000/"),
+		public_endpoint_url: std::env::var("MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL").ok(),
 		access_key: env_or_default("MEMORY_MAP__STORAGE__ACCESS_KEY", "memorymapdev"),
 		secret_key: env_or_default("MEMORY_MAP__STORAGE__SECRET_KEY", "memorymapdevsecret"),
 		bucket_name: env_or_default("MEMORY_MAP__STORAGE__BUCKET_NAME", "memory-map"),

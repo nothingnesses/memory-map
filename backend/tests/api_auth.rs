@@ -821,7 +821,7 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 }
 
 async fn claim_keys(
-	client: &(impl deadpool_postgres::GenericClient + Sync),
+	client: &impl deadpool_postgres::GenericClient,
 	limit: i64,
 	lease_seconds: i64,
 	max_attempts: i32,
@@ -874,6 +874,7 @@ fn test_config() -> anyhow::Result<Config> {
 				"MEMORY_MAP__STORAGE__ENDPOINT_URL",
 				"http://127.0.0.1:9000/",
 			),
+			public_endpoint_url: std::env::var("MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL").ok(),
 			access_key: env_or_default("MEMORY_MAP__STORAGE__ACCESS_KEY", "memorymapdev"),
 			secret_key: env_or_default("MEMORY_MAP__STORAGE__SECRET_KEY", "memorymapdevsecret"),
 			bucket_name: env_or_default("MEMORY_MAP__STORAGE__BUCKET_NAME", "memory-map"),

@@ -7,6 +7,37 @@ pub const INSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, storage_key, c
 VALUES ($1, $2, $3, 'pending_upload', $4::timestamptz, ST_GeomFromEWKT($5), $6, $7)
 RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
+pub const INSERT_OBJECT_UPLOAD_SESSION_QUERY: &str = "INSERT INTO object_upload_sessions (
+	object_id,
+	storage_key,
+	upload_id,
+	content_type,
+	file_size,
+	part_size_bytes,
+	expires_at,
+	cleanup_next_attempt_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::BIGINT * interval '1 second'), now() + ($7::BIGINT * interval '1 second'))";
+
+pub const SELECT_OBJECT_UPLOAD_SESSION_QUERY: &str = "SELECT
+	object_id,
+	storage_key,
+	upload_id,
+	content_type,
+	file_size,
+	part_size_bytes,
+	expires_at,
+	cleanup_attempts,
+	cleanup_last_attempt_at,
+	cleanup_next_attempt_at,
+	cleanup_last_error,
+	created_at
+FROM object_upload_sessions
+WHERE object_id = $1";
+
+pub const DELETE_OBJECT_UPLOAD_SESSION_QUERY: &str =
+	"DELETE FROM object_upload_sessions WHERE object_id = $1";
+
 pub const FINALIZE_OBJECT_UPLOAD_QUERY: &str = "UPDATE objects
 SET storage_state = 'available', storage_state_updated_at = now()
 WHERE id = $1 AND storage_key = $2 AND storage_state = 'pending_upload'

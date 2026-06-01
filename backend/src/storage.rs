@@ -19,6 +19,8 @@ use {
 		presigning::PresigningConfig,
 		primitives::ByteStream,
 		types::{
+			CompletedMultipartUpload,
+			CompletedPart,
 			Delete,
 			ObjectIdentifier,
 		},
@@ -33,6 +35,8 @@ use {
 #[derive(Clone, Deserialize)]
 pub struct StorageConfig {
 	pub endpoint_url: String,
+	#[serde(default)]
+	pub public_endpoint_url: Option<String>,
 	pub access_key: String,
 	pub secret_key: String,
 	pub bucket_name: String,
@@ -51,6 +55,7 @@ impl fmt::Debug for StorageConfig {
 	) -> fmt::Result {
 		f.debug_struct("StorageConfig")
 			.field("endpoint_url", &self.endpoint_url)
+			.field("public_endpoint_url", &self.public_endpoint_url)
 			.field("access_key", &"<redacted>")
 			.field("secret_key", &"<redacted>")
 			.field("bucket_name", &self.bucket_name)
@@ -96,6 +101,11 @@ impl StorageConfig {
 	}
 
 	pub fn validate(&self) -> anyhow::Result<()> {
+		if let Some(public_endpoint_url) = &self.public_endpoint_url &&
+			public_endpoint_url.trim().is_empty()
+		{
+			anyhow::bail!("storage.public_endpoint_url must not be empty when configured");
+		}
 		if !(1 ..= Self::MAX_PRESIGNED_URL_TTL_SECONDS).contains(&self.presigned_url_ttl_seconds) {
 			anyhow::bail!(
 				"s3_presigned_url_ttl_seconds must be between 1 and {}",
@@ -106,9 +116,36 @@ impl StorageConfig {
 	}
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresignedHeader {
+	pub name: String,
+	pub value: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresignedUploadPart {
+	pub url: String,
+	pub method: String,
+	pub headers: Vec<PresignedHeader>,
+	pub expected_content_length: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletedUploadPart {
+	pub part_number: i32,
+	pub e_tag: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoredObjectMetadata {
+	pub content_length: i64,
+	pub content_type: String,
+}
+
 #[derive(Clone)]
 pub struct StorageClient {
 	client: Client,
+	presigning_client: Client,
 	bucket_name: String,
 	presigning_config: PresigningConfig,
 }
@@ -125,26 +162,17 @@ impl StorageClient {
 
 	pub fn from_storage_config(config: &StorageConfig) -> anyhow::Result<Self> {
 		config.validate()?;
-		let credentials = Credentials::new(
-			config.access_key.clone(),
-			config.secret_key.clone(),
-			None,
-			None,
-			"memory-map",
-		);
-		let sdk_config = aws_sdk_s3::Config::builder()
-			.behavior_version(BehaviorVersion::latest())
-			.region(Region::new(config.region.clone()))
-			.credentials_provider(credentials)
-			.endpoint_url(config.endpoint_url.clone())
-			.force_path_style(config.force_path_style)
-			.build();
+		let client_config = s3_client_config(config, &config.endpoint_url);
+		let presigning_endpoint_url =
+			config.public_endpoint_url.as_deref().unwrap_or(&config.endpoint_url);
+		let presigning_client_config = s3_client_config(config, presigning_endpoint_url);
 		let presigning_config =
 			PresigningConfig::expires_in(Duration::from_secs(config.presigned_url_ttl_seconds))
 				.context("Failed to configure S3 presigned URL expiry")?;
 
 		Ok(Self {
-			client: Client::from_conf(sdk_config),
+			client: Client::from_conf(client_config),
+			presigning_client: Client::from_conf(presigning_client_config),
 			bucket_name: config.bucket_name.clone(),
 			presigning_config,
 		})
@@ -172,6 +200,128 @@ impl StorageClient {
 		&self,
 		storage_key: &str,
 	) -> anyhow::Result<String> {
+		Ok(self.head_object(storage_key).await?.content_type)
+	}
+
+	pub async fn presigned_get_url(
+		&self,
+		storage_key: &str,
+	) -> anyhow::Result<String> {
+		let request = self
+			.presigning_client
+			.get_object()
+			.bucket(&self.bucket_name)
+			.key(storage_key)
+			.presigned(self.presigning_config.clone())
+			.await
+			.context("Failed to generate S3 presigned GET URL")?;
+		Ok(request.uri().to_string())
+	}
+
+	pub async fn create_multipart_upload(
+		&self,
+		storage_key: &str,
+		content_type: &str,
+	) -> anyhow::Result<String> {
+		let output = self
+			.client
+			.create_multipart_upload()
+			.bucket(&self.bucket_name)
+			.key(storage_key)
+			.content_type(content_type)
+			.send()
+			.await
+			.context("Failed to create S3 multipart upload")?;
+		output
+			.upload_id()
+			.map(str::to_string)
+			.context("S3 multipart upload response did not include an upload id")
+	}
+
+	pub async fn presigned_upload_part_url(
+		&self,
+		storage_key: &str,
+		upload_id: &str,
+		part_number: i32,
+		expected_content_length: i64,
+	) -> anyhow::Result<PresignedUploadPart> {
+		let request = self
+			.presigning_client
+			.upload_part()
+			.bucket(&self.bucket_name)
+			.key(storage_key)
+			.upload_id(upload_id)
+			.part_number(part_number)
+			.content_length(expected_content_length)
+			.presigned(self.presigning_config.clone())
+			.await
+			.context("Failed to generate S3 presigned upload-part URL")?;
+		let headers = request
+			.headers()
+			.filter(|(name, _value)| browser_can_set_header(name))
+			.map(|(name, value)| PresignedHeader {
+				name: name.to_string(),
+				value: value.to_string(),
+			})
+			.collect();
+
+		Ok(PresignedUploadPart {
+			url: request.uri().to_string(),
+			method: request.method().to_string(),
+			headers,
+			expected_content_length,
+		})
+	}
+
+	pub async fn complete_multipart_upload(
+		&self,
+		storage_key: &str,
+		upload_id: &str,
+		completed_parts: &[CompletedUploadPart],
+	) -> anyhow::Result<()> {
+		let completed_parts = completed_parts
+			.iter()
+			.map(|part| {
+				CompletedPart::builder()
+					.part_number(part.part_number)
+					.e_tag(part.e_tag.clone())
+					.build()
+			})
+			.collect::<Vec<_>>();
+		let upload = CompletedMultipartUpload::builder().set_parts(Some(completed_parts)).build();
+
+		self.client
+			.complete_multipart_upload()
+			.bucket(&self.bucket_name)
+			.key(storage_key)
+			.upload_id(upload_id)
+			.multipart_upload(upload)
+			.send()
+			.await
+			.context("Failed to complete S3 multipart upload")?;
+		Ok(())
+	}
+
+	pub async fn abort_multipart_upload(
+		&self,
+		storage_key: &str,
+		upload_id: &str,
+	) -> anyhow::Result<()> {
+		self.client
+			.abort_multipart_upload()
+			.bucket(&self.bucket_name)
+			.key(storage_key)
+			.upload_id(upload_id)
+			.send()
+			.await
+			.context("Failed to abort S3 multipart upload")?;
+		Ok(())
+	}
+
+	pub async fn head_object(
+		&self,
+		storage_key: &str,
+	) -> anyhow::Result<StoredObjectMetadata> {
 		let output = self
 			.client
 			.head_object()
@@ -180,25 +330,17 @@ impl StorageClient {
 			.send()
 			.await
 			.context("Failed to read S3 object metadata")?;
-		output
+		let content_length =
+			output.content_length().context("S3 object response did not include Content-Length")?;
+		let content_type = output
 			.content_type()
 			.map(str::to_string)
-			.context("S3 object response did not include Content-Type")
-	}
+			.context("S3 object response did not include Content-Type")?;
 
-	pub async fn presigned_get_url(
-		&self,
-		storage_key: &str,
-	) -> anyhow::Result<String> {
-		let request = self
-			.client
-			.get_object()
-			.bucket(&self.bucket_name)
-			.key(storage_key)
-			.presigned(self.presigning_config.clone())
-			.await
-			.context("Failed to generate S3 presigned GET URL")?;
-		Ok(request.uri().to_string())
+		Ok(StoredObjectMetadata {
+			content_length,
+			content_type,
+		})
 	}
 
 	pub async fn delete_objects(
@@ -317,6 +459,51 @@ fn create_bucket_error_means_existing_bucket(error: &SdkError<CreateBucketError>
 	})
 }
 
+fn s3_client_config(
+	config: &StorageConfig,
+	endpoint_url: &str,
+) -> aws_sdk_s3::Config {
+	let credentials = Credentials::new(
+		config.access_key.clone(),
+		config.secret_key.clone(),
+		None,
+		None,
+		"memory-map",
+	);
+	aws_sdk_s3::Config::builder()
+		.behavior_version(BehaviorVersion::latest())
+		.region(Region::new(config.region.clone()))
+		.credentials_provider(credentials)
+		.endpoint_url(endpoint_url)
+		.force_path_style(config.force_path_style)
+		.build()
+}
+
+fn browser_can_set_header(name: &str) -> bool {
+	let name = name.to_ascii_lowercase();
+	if name.starts_with("proxy-") || name.starts_with("sec-") {
+		return false;
+	}
+
+	!matches!(
+		name.as_str(),
+		"accept-charset" |
+			"accept-encoding" |
+			"access-control-request-headers" |
+			"access-control-request-method" |
+			"connection" |
+			"content-length" |
+			"cookie" | "date" |
+			"dnt" | "expect" |
+			"host" | "keep-alive" |
+			"origin" | "permissions-policy" |
+			"referer" | "te" |
+			"trailer" | "transfer-encoding" |
+			"upgrade" | "user-agent" |
+			"via"
+	)
+}
+
 fn storage_key_delete_batches(storage_keys: &[String]) -> impl Iterator<Item = &[String]> {
 	storage_keys.chunks(StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST)
 }
@@ -326,12 +513,14 @@ mod tests {
 	use super::{
 		StorageClient,
 		StorageConfig,
+		browser_can_set_header,
 		storage_key_delete_batches,
 	};
 
 	fn storage_config_with_ttl(presigned_url_ttl_seconds: u64) -> StorageConfig {
 		StorageConfig {
 			endpoint_url: "http://127.0.0.1:9000/".to_string(),
+			public_endpoint_url: None,
 			access_key: "memorymapdev".to_string(),
 			secret_key: "memorymapdevsecret".to_string(),
 			bucket_name: "memory-map".to_string(),
@@ -364,6 +553,7 @@ mod tests {
 	#[test]
 	fn storage_config_debug_redacts_credentials() {
 		let mut config = storage_config_with_ttl(60);
+		config.public_endpoint_url = Some("https://public-s3.example.test".to_string());
 		config.access_key = "debug-access-key-secret".to_string();
 		config.secret_key = "debug-secret-key-secret".to_string();
 
@@ -371,9 +561,30 @@ mod tests {
 
 		assert!(debug.contains("StorageConfig"));
 		assert!(debug.contains("http://127.0.0.1:9000/"));
+		assert!(debug.contains("https://public-s3.example.test"));
 		assert!(debug.contains("<redacted>"));
 		assert!(!debug.contains("debug-access-key-secret"));
 		assert!(!debug.contains("debug-secret-key-secret"));
+	}
+
+	#[test]
+	fn storage_config_rejects_empty_public_endpoint_url() {
+		let mut config = storage_config_with_ttl(60);
+		config.public_endpoint_url = Some(" ".to_string());
+
+		let error = config.validate().err();
+		assert!(
+			error.as_ref().is_some_and(|error| error.to_string().contains("public_endpoint_url"))
+		);
+	}
+
+	#[test]
+	fn presigned_upload_headers_skip_browser_forbidden_headers() {
+		assert!(browser_can_set_header("x-amz-checksum-crc32"));
+		assert!(!browser_can_set_header("host"));
+		assert!(!browser_can_set_header("content-length"));
+		assert!(!browser_can_set_header("proxy-authorization"));
+		assert!(!browser_can_set_header("sec-fetch-mode"));
 	}
 
 	#[test]

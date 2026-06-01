@@ -64,6 +64,8 @@ Optional S3 settings (defaults shown):
 - `MEMORY_MAP__STORAGE__REGION` (default `us-east-1`)
 - `MEMORY_MAP__STORAGE__FORCE_PATH_STYLE` (default `true`)
 - `MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS` (default `604800`)
+- `MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL` (default: use
+  `MEMORY_MAP__STORAGE__ENDPOINT_URL`)
 
 Optional object lifecycle settings (defaults shown):
 
@@ -81,6 +83,10 @@ or `devenv/flake.nix` into production.
 
 `MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS` must be between `1` and
 `604800`.
+
+`MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL` signs browser-facing object URLs
+when the backend reaches storage through a private endpoint but browsers need a
+different public endpoint.
 
 `MEMORY_MAP__OBJECT_LIFECYCLE__PENDING_UPLOAD_TIMEOUT_SECONDS` controls when an
 unfinalized upload is treated as failed and moved into cleanup. It should be
@@ -130,8 +136,10 @@ The backend uses the AWS Rust S3 SDK against the configured S3-compatible
 endpoint. The app needs:
 
 - object upload
+- multipart object upload and abort
 - object metadata lookup
 - presigned GET URLs
+- presigned multipart upload-part URLs
 - content-type metadata
 - bulk object delete
 
