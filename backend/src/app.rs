@@ -7,7 +7,7 @@ use {
 		UserId,
 		constants::{
 			BODY_MAX_SIZE_LIMIT_BYTES,
-			CACHE_MAX_CAPACITY,
+			CACHE_MAX_CAPACITY_BYTES,
 			CACHE_TTL_SECONDS,
 			GRAPHQL_BODY_LIMIT_BYTES,
 		},
@@ -116,7 +116,8 @@ pub fn build_shared_state(
 	);
 
 	let response_cache = Cache::builder()
-		.max_capacity(CACHE_MAX_CAPACITY)
+		.max_capacity(CACHE_MAX_CAPACITY_BYTES)
+		.weigher(|_key, value: &CachedResponse| value.weight())
 		.time_to_live(Duration::from_secs(CACHE_TTL_SECONDS))
 		.build();
 
@@ -200,10 +201,12 @@ async fn caching_middleware(
 
 	// Return early if it's a mutation.
 	// Mutations change state and should not be cached. Caching them would prevent
-	// the server from executing the mutation on subsequent requests.
+	// the server from executing the mutation on subsequent requests. GraphQL keywords
+	// are case-sensitive per spec, so a literal lowercase prefix match is enough; no
+	// need to lowercase the entire query string on every request.
 	if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) &&
 		let Some(query) = json.get("query").and_then(|q| q.as_str()) &&
-		query.trim().to_lowercase().starts_with("mutation")
+		query.trim_start().starts_with("mutation")
 	{
 		let req = Request::from_parts(parts, Body::from(bytes));
 		return Ok(next.run(req).await.into_response());

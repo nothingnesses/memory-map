@@ -1,5 +1,7 @@
-// Amount of bytes to cache.
-pub const CACHE_MAX_CAPACITY: u64 = 10_000;
+// Total bytes the response cache may hold across all entries, enforced via a
+// per-entry weigher on `CachedResponse`. Keeps memory predictable independent
+// of how many distinct queries are cached or how large each response is.
+pub const CACHE_MAX_CAPACITY_BYTES: u64 = 64 * 1024 * 1024;
 // Cache time-to-live duration in seconds. Currently 10 minutes.
 pub const CACHE_TTL_SECONDS: u64 = 600;
 // Max body size for GraphQL queries (1MB).
