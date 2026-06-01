@@ -635,6 +635,12 @@ async fn replace_allowed_users(
 	Ok(valid_allowed_users)
 }
 
+/// Generates an unguessable storage key used directly in presigned S3 URLs.
+///
+/// MUST use a cryptographically secure RNG. `rand::rng()` (the default
+/// `ThreadRng`) is documented as a CSPRNG; do not switch to `SmallRng`,
+/// `StdRng::from_seed` with a guessable seed, or any non-cryptographic
+/// generator, or presigned URLs become enumerable.
 fn generate_storage_key() -> String {
 	let key: String = rand::rng().sample_iter(Alphanumeric).take(40).map(char::from).collect();
 	format!("objects/{key}")

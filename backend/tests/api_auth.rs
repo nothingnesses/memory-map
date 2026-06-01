@@ -1000,8 +1000,18 @@ fn integration_service_required() -> bool {
 }
 
 fn unique_suffix() -> anyhow::Result<String> {
+	use std::sync::atomic::{
+		AtomicU64,
+		Ordering,
+	};
+	// Tests in this file currently run with --test-threads=1, so the nanosecond
+	// timestamp alone would suffice today. The atomic counter makes the suffix
+	// robust against accidental parallelism (or two suffixes constructed in the
+	// same nanosecond on a fast machine) without requiring the test runner config.
+	static COUNTER: AtomicU64 = AtomicU64::new(0);
 	let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-	Ok(now.as_nanos().to_string())
+	let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+	Ok(format!("{}-{counter}", now.as_nanos()))
 }
 
 fn env_or_default(

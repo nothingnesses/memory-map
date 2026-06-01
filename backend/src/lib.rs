@@ -222,16 +222,18 @@ impl<M: ManagedManager, W: From<Object<M>>> FromRef<SharedState<M, W>> for Key {
 }
 
 impl<M: ManagedManager, W: From<Object<M>>> SharedState<M, W> {
-	pub fn update_last_modified(&self) {
+	/// Bumps the cache-busting timestamp and invalidates the response cache.
+	///
+	/// Returns Err if the system clock is somehow before UNIX_EPOCH; callers
+	/// propagate via `?` so the failure is observable rather than silently
+	/// producing a zero timestamp that would break ETag semantics.
+	pub fn update_last_modified(&self) -> Result<(), errors::AppError> {
 		let now = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
-			.map(|d| d.as_millis() as u64)
-			.unwrap_or_else(|e| {
-				tracing::error!("System time is before UNIX EPOCH: {}", e);
-				0
-			});
-		self.last_modified.store(now, std::sync::atomic::Ordering::Relaxed);
+			.map_err(|e| anyhow::anyhow!("System time is before UNIX EPOCH: {e}"))?;
+		self.last_modified.store(now.as_millis() as u64, std::sync::atomic::Ordering::Relaxed);
 		self.response_cache.invalidate_all();
+		Ok(())
 	}
 }
 
@@ -288,6 +290,42 @@ impl<'a> ContextWrapper<'a> {
 			.0
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()?
 			.storage)
+	}
+
+	/// Resolves the caller's `UserId`, loads their `User`, looks up the enforcer,
+	/// and returns the `CasbinUser` if `(caller, target, action)` is allowed.
+	///
+	/// Replaces ~15 lines of repeated state/enforcer/user/casbin boilerplate
+	/// in every authorized mutation and query resolver.
+	pub async fn require_permission(
+		&self,
+		action: &str,
+		target: CasbinObject,
+	) -> Result<CasbinUser, GraphQLError> {
+		use {
+			casbin::CoreApi,
+			errors::AppError,
+			graphql::objects::user::User,
+		};
+
+		let user_id =
+			self.0.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let state = self
+			.0
+			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
+		let enforcer = state.enforcer.read().await;
+		let user = User::by_id(self.0, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
+		let casbin_user = CasbinUser {
+			id: user_id,
+			role: user.role.to_string(),
+		};
+		if !enforcer.enforce((casbin_user.clone(), target, action)).map_err(AppError::from)? {
+			return Err(AppError::Forbidden.extend_graphql());
+		}
+		Ok(casbin_user)
 	}
 }
 

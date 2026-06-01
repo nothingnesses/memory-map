@@ -796,6 +796,7 @@ dependencies = [
  "jiff",
  "lettre",
  "moka",
+ "parking_lot",
  "postgres-types",
  "rand 0.10.1",
  "refinery",

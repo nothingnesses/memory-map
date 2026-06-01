@@ -68,12 +68,8 @@ use {
 		RngExt,
 		distr::Alphanumeric,
 	},
-	std::sync::{
-		Arc,
-		Mutex,
-	},
+	std::sync::Arc,
 	time::Duration,
-	tracing,
 };
 
 #[derive(InputObject)]
@@ -170,7 +166,7 @@ impl Mutation {
 		.await
 		.map_err(GraphQLError::from)?;
 
-		state.update_last_modified();
+		state.update_last_modified().map_err(GraphQLError::from)?;
 
 		Ok(result)
 	}
@@ -231,7 +227,7 @@ impl Mutation {
 		.await
 		.map_err(GraphQLError::from)?;
 
-		state.update_last_modified();
+		state.update_last_modified().map_err(GraphQLError::from)?;
 
 		Ok(result)
 	}
@@ -241,31 +237,20 @@ impl Mutation {
 		ctx: &Context<'_>,
 		default_publicity: PublicityDefault,
 	) -> Result<User, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
 		let wrapper = ContextWrapper(ctx);
+		let user_id = ctx
+			.data_opt::<UserId>()
+			.map(|u| u.0)
+			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
+		wrapper
+			.require_permission(
+				"update",
+				CasbinObject {
+					user_id,
+				},
+			)
+			.await?;
 		let client = wrapper.get_db_client().await?;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
-		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-		let casbin_obj = CasbinObject {
-			user_id,
-		};
-
-		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(AppError::Forbidden.extend_graphql());
-		}
 
 		let row = client
 			.query_one(UPDATE_USER_PUBLICITY_QUERY, &[&default_publicity, &user_id])
@@ -365,16 +350,10 @@ impl Mutation {
 		let cookie = auth_cookie(user.id.to_string(), None, state.config.cookie_secure());
 
 		let cookies = ctx
-			.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()
+			.data::<Arc<parking_lot::Mutex<Vec<Cookie<'static>>>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Cookies not found in context"))
 			.map_err(GraphQLError::from)?;
-		cookies
-			.lock()
-			.map_err(|e| {
-				tracing::error!("Mutex poisoned: {}", e);
-				AppError::Internal(anyhow::anyhow!("Internal server error")).extend_graphql()
-			})?
-			.push(cookie);
+		cookies.lock().push(cookie);
 
 		Ok(user)
 	}
@@ -388,16 +367,10 @@ impl Mutation {
 			auth_cookie(String::new(), Some(Duration::seconds(0)), state.config.cookie_secure());
 
 		let cookies = ctx
-			.data::<Arc<Mutex<Vec<Cookie<'static>>>>>()
+			.data::<Arc<parking_lot::Mutex<Vec<Cookie<'static>>>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Cookies not found in context"))
 			.map_err(GraphQLError::from)?;
-		cookies
-			.lock()
-			.map_err(|e| {
-				tracing::error!("Mutex poisoned: {}", e);
-				AppError::Internal(anyhow::anyhow!("Internal server error")).extend_graphql()
-			})?
-			.push(cookie);
+		cookies.lock().push(cookie);
 
 		Ok(true)
 	}
@@ -408,36 +381,25 @@ impl Mutation {
 		old_password: String,
 		new_password: String,
 	) -> Result<bool, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
 		let wrapper = ContextWrapper(ctx);
+		let user_id = ctx
+			.data_opt::<UserId>()
+			.map(|u| u.0)
+			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
+		wrapper
+			.require_permission(
+				"update",
+				CasbinObject {
+					user_id,
+				},
+			)
+			.await?;
 		let client = wrapper.get_db_client().await?;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
-		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id.0)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id.0,
-			role: user.role.to_string(),
-		};
-		let casbin_obj = CasbinObject {
-			user_id: user_id.0,
-		};
-
-		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(AppError::Forbidden.extend_graphql());
-		}
 
 		validate_password(&new_password).map_err(GraphQLError::from)?;
 
 		let password_hash_str: String = client
-			.query_one(SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, &[&user_id.0])
+			.query_one(SELECT_USER_PASSWORD_HASH_BY_ID_QUERY, &[&user_id])
 			.await?
 			.try_get("password_hash")
 			.context("Failed to get password hash from database row")?;
@@ -458,7 +420,7 @@ impl Mutation {
 			.to_string();
 
 		client
-			.execute(UPDATE_USER_PASSWORD_QUERY, &[&new_hash, &user_id.0])
+			.execute(UPDATE_USER_PASSWORD_QUERY, &[&new_hash, &user_id])
 			.await
 			.context("Failed to update user password in database")?;
 
@@ -470,31 +432,20 @@ impl Mutation {
 		ctx: &Context<'_>,
 		new_email: String,
 	) -> Result<User, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
 		let wrapper = ContextWrapper(ctx);
+		let user_id = ctx
+			.data_opt::<UserId>()
+			.map(|u| u.0)
+			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
+		wrapper
+			.require_permission(
+				"update",
+				CasbinObject {
+					user_id,
+				},
+			)
+			.await?;
 		let client = wrapper.get_db_client().await?;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(GraphQLError::from)?;
-		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id.0)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id.0,
-			role: user.role.to_string(),
-		};
-		let casbin_obj = CasbinObject {
-			user_id: user_id.0,
-		};
-
-		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(AppError::Forbidden.extend_graphql());
-		}
 
 		if !EmailAddress::is_valid(&new_email) {
 			return Err(AppError::Validation("Invalid email format".to_string()).extend_graphql());
@@ -502,7 +453,7 @@ impl Mutation {
 
 		// Check if email is taken
 		let count: i64 = client
-			.query_one(SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, &[&new_email, &user_id.0])
+			.query_one(SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY, &[&new_email, &user_id])
 			.await?
 			.try_get(0)
 			.context("Failed to get user count from database")?;
@@ -512,7 +463,7 @@ impl Mutation {
 		}
 
 		let row = client
-			.query_one(UPDATE_USER_EMAIL_QUERY, &[&new_email, &user_id.0])
+			.query_one(UPDATE_USER_EMAIL_QUERY, &[&new_email, &user_id])
 			.await
 			.context("Failed to update user email in database")?;
 

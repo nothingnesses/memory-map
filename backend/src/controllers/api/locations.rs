@@ -208,7 +208,7 @@ pub async fn post(
 			}
 		}
 
-		state.inner.update_last_modified();
+		state.inner.update_last_modified()?;
 	}
 
 	Ok(Json(uploaded_objects).into_response())

@@ -79,7 +79,6 @@ use {
 		},
 		sync::{
 			Arc,
-			Mutex,
 			atomic::{
 				AtomicU64,
 				Ordering,
@@ -317,16 +316,16 @@ async fn graphql_handler(
 		}
 	}
 
-	let cookies = Arc::new(Mutex::new(Vec::<Cookie<'static>>::new()));
+	// parking_lot::Mutex has no poisoning and is held only briefly around a vector
+	// push during resolver execution, so the lock acquisition is infallible.
+	let cookies = Arc::new(parking_lot::Mutex::new(Vec::<Cookie<'static>>::new()));
 	req = req.data(cookies.clone());
 
 	let response = schema.execute(req).await;
 
 	let mut jar = jar;
-	if let Ok(cookies) = cookies.lock() {
-		for cookie in cookies.iter() {
-			jar = jar.add(cookie.clone());
-		}
+	for cookie in cookies.lock().iter() {
+		jar = jar.add(cookie.clone());
 	}
 
 	(jar, response.into())
