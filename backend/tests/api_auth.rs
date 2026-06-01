@@ -383,6 +383,26 @@ async fn login_cookie_authenticates_graphql_requests() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn authenticated_query_auth_db_error_returns_500_without_cache_write() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	assert_eq!(app.state.graphql_response_cache.entry_count(), 0);
+
+	app.state.pool.close();
+	let response = app
+		.graphql("query Config { config { enableRegistration } }", json!({}), Some(&user.cookie))
+		.await?;
+
+	assert_eq!(response.status, StatusCode::INTERNAL_SERVER_ERROR);
+	assert_eq!(app.state.graphql_response_cache.entry_count(), 0);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
 async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> anyhow::Result<()> {
 	let Some(app) = TestApp::new().await? else {
 		return Ok(());

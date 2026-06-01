@@ -14,6 +14,7 @@ use {
 		},
 		controllers::api::locations::post as post_locations,
 		db::queries::SELECT_USER_EXISTS_QUERY,
+		errors::AppError,
 		graphiql,
 		graphql::queries::{
 			mutation::Mutation,
@@ -172,12 +173,14 @@ fn cors_layer(config: &Config) -> CorsLayer {
 async fn authenticated_user_id(
 	state: &BackendState,
 	jar: &PrivateCookieJar,
-) -> Option<i64> {
-	let user_id = jar.get("auth_token")?.value().parse::<i64>().ok()?;
-	let client = state.inner.pool.get().await.ok()?;
-	let statement = client.prepare_cached(SELECT_USER_EXISTS_QUERY).await.ok()?;
-	client.query_opt(&statement, &[&user_id]).await.ok().flatten()?;
-	Some(user_id)
+) -> Result<Option<i64>, AppError> {
+	let Some(user_id) = jar.get("auth_token").and_then(|cookie| cookie.value().parse::<i64>().ok())
+	else {
+		return Ok(None);
+	};
+	let client = state.inner.pool.get().await?;
+	let statement = client.prepare_cached(SELECT_USER_EXISTS_QUERY).await?;
+	Ok(client.query_opt(&statement, &[&user_id]).await?.map(|_| user_id))
 }
 
 fn graphql_request_operation_type(request: &mut GraphqlRequestInner) -> Option<OperationType> {
@@ -287,7 +290,10 @@ async fn graphql_handler(
 ) -> (PrivateCookieJar, Response) {
 	let mut req = req.into_inner();
 
-	let user_id = authenticated_user_id(&state, &jar).await;
+	let user_id = match authenticated_user_id(&state, &jar).await {
+		Ok(user_id) => user_id,
+		Err(error) => return (jar, error.into_response()),
+	};
 	if let Some(user_id) = user_id {
 		req = req.data(UserId(user_id));
 	}
