@@ -31,6 +31,7 @@ use {
 				S3Object,
 			},
 			upload_session::{
+				AbortedObjectUpload,
 				CreatedObjectUploadSession,
 				PresignedObjectUploadPart,
 			},
@@ -43,6 +44,7 @@ use {
 			ObjectLifecycleService,
 			ObjectUploadSessionCreate,
 		},
+		storage::CompletedUploadPart,
 	},
 	anyhow::Context as AnyhowContext,
 	argon2::{
@@ -100,6 +102,12 @@ pub struct CreateObjectUploadSessionInput {
 	pub location: Option<Location>,
 	pub publicity: PublicityOverride,
 	pub allowed_users: Option<Vec<String>>,
+}
+
+#[derive(InputObject)]
+pub struct CompletedObjectUploadPartInput {
+	pub part_number: i32,
+	pub e_tag: String,
 }
 
 fn validate_password(password: &str) -> Result<(), AppError> {
@@ -210,6 +218,56 @@ impl Mutation {
 			.into_iter()
 			.map(|part| PresignedObjectUploadPart::new(part, url_expires_at))
 			.collect())
+	}
+
+	async fn complete_object_upload(
+		&self,
+		ctx: &Context<'_>,
+		object_id: ID,
+		parts: Vec<CompletedObjectUploadPartInput>,
+	) -> Result<S3Object, GraphQLError> {
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let object_id =
+			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
+		let wrapper = ContextWrapper(ctx);
+		let storage = wrapper.get_storage_client()?;
+		let mut client = wrapper.get_db_client().await?;
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let completed_parts = parts
+			.into_iter()
+			.map(|part| CompletedUploadPart {
+				part_number: part.part_number,
+				e_tag: part.e_tag,
+			})
+			.collect();
+
+		ObjectLifecycleService::new(&mut client, storage, state.config.object_lifecycle.clone())
+			.complete_upload(object_id, user_id, completed_parts)
+			.await
+			.map_err(AppError::graphql)
+	}
+
+	async fn abort_object_upload(
+		&self,
+		ctx: &Context<'_>,
+		object_id: ID,
+	) -> Result<AbortedObjectUpload, GraphQLError> {
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let object_id =
+			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
+		let wrapper = ContextWrapper(ctx);
+		let storage = wrapper.get_storage_client()?;
+		let mut client = wrapper.get_db_client().await?;
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+
+		ObjectLifecycleService::new(&mut client, storage, state.config.object_lifecycle.clone())
+			.abort_upload(object_id, user_id)
+			.await
+			.map_err(AppError::graphql)?;
+
+		Ok(AbortedObjectUpload::new(object_id))
 	}
 
 	async fn delete_s3_objects(

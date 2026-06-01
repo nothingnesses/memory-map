@@ -4,7 +4,9 @@ use {
 			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
 			DELETE_OBJECT_ALLOWED_USERS_QUERY,
 			DELETE_OBJECT_STORAGE_DELETIONS_QUERY,
+			DELETE_OBJECT_UPLOAD_SESSION_QUERY,
 			DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY,
+			DELETE_PENDING_OBJECT_UPLOAD_QUERY,
 			FINALIZE_OBJECT_UPLOAD_QUERY,
 			INSERT_OBJECT_ALLOWED_USER_QUERY,
 			INSERT_OBJECT_QUERY,
@@ -15,6 +17,8 @@ use {
 			MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
 			MARK_UPLOAD_DELETE_PENDING_QUERY,
 			SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY,
+			SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY,
+			SELECT_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY,
 			SELECT_USERS_BY_EMAILS_QUERY,
 			UPDATE_OBJECT_QUERY,
 		},
@@ -27,8 +31,12 @@ use {
 			},
 		},
 		storage::{
+			CompletedUploadPart,
+			MultipartUploadAbortOutcome,
+			MultipartUploadCompleteOutcome,
 			PresignedHeader,
 			StorageClient,
+			StoredObjectMetadata,
 		},
 	},
 	anyhow::Context,
@@ -321,6 +329,7 @@ struct ObjectUploadSession {
 	object_id: i64,
 	storage_key: String,
 	upload_id: String,
+	content_type: String,
 	file_size_bytes: i64,
 	part_size_bytes: i64,
 	expires_at: Timestamp,
@@ -351,6 +360,9 @@ impl TryFrom<Row> for ObjectUploadSession {
 			upload_id: row
 				.try_get("upload_id")
 				.context("Failed to read upload session upload_id")?,
+			content_type: row
+				.try_get("content_type")
+				.context("Failed to read upload session content_type")?,
 			file_size_bytes: row
 				.try_get("file_size")
 				.context("Failed to read upload session file_size")?,
@@ -470,6 +482,65 @@ impl<'a> ObjectLifecycleService<'a> {
 		}
 
 		Ok(presigned_parts)
+	}
+
+	pub async fn complete_upload(
+		&mut self,
+		object_id: i64,
+		user_id: i64,
+		completed_parts: Vec<CompletedUploadPart>,
+	) -> Result<S3Object, AppError> {
+		if let Some(object) = self.available_object_for_user(object_id, user_id).await? {
+			return Ok(object);
+		}
+
+		let session = self.active_upload_session_for_user(object_id, user_id).await?;
+		let completed_parts = validate_completed_parts(&session, completed_parts)?;
+
+		match self
+			.storage
+			.complete_multipart_upload(&session.storage_key, &session.upload_id, &completed_parts)
+			.await?
+		{
+			MultipartUploadCompleteOutcome::Completed => {}
+			MultipartUploadCompleteOutcome::UploadNotFound =>
+				return match self.storage.head_object_opt(&session.storage_key).await.context(
+					"Failed to check completed object after multipart upload was missing",
+				)? {
+					Some(metadata) =>
+						self.finalize_verified_upload_session(&session, user_id, metadata).await,
+					None => Err(AppError::NotFound("Multipart upload not found".to_string())),
+				},
+		}
+
+		let metadata = self
+			.storage
+			.head_object(&session.storage_key)
+			.await
+			.context("Failed to verify completed object metadata")?;
+		self.finalize_verified_upload_session(&session, user_id, metadata).await
+	}
+
+	pub async fn abort_upload(
+		&mut self,
+		object_id: i64,
+		user_id: i64,
+	) -> Result<(), AppError> {
+		let session = self.upload_session_for_user(object_id, user_id).await?;
+
+		match self.storage.abort_multipart_upload(&session.storage_key, &session.upload_id).await? {
+			MultipartUploadAbortOutcome::Aborted =>
+				self.delete_pending_upload_metadata(&session, user_id).await,
+			MultipartUploadAbortOutcome::UploadNotFound => match self
+				.storage
+				.head_object_opt(&session.storage_key)
+				.await
+				.context("Failed to check object after multipart upload was missing")?
+			{
+				Some(_) => self.enqueue_completed_upload_cleanup(&session).await,
+				None => self.delete_pending_upload_metadata(&session, user_id).await,
+			},
+		}
 	}
 
 	pub async fn upload_and_create_object(
@@ -688,6 +759,110 @@ impl<'a> ObjectLifecycleService<'a> {
 			.map(ObjectUploadSession::try_from)
 			.transpose()?
 			.ok_or_else(|| AppError::NotFound("Upload session not found".to_string()))
+	}
+
+	async fn upload_session_for_user(
+		&mut self,
+		object_id: i64,
+		user_id: i64,
+	) -> Result<ObjectUploadSession, AppError> {
+		self.db_client
+			.query_opt(SELECT_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY, &[&object_id, &user_id])
+			.await
+			.context("Failed to load object upload session")?
+			.map(ObjectUploadSession::try_from)
+			.transpose()?
+			.ok_or_else(|| AppError::NotFound("Upload session not found".to_string()))
+	}
+
+	async fn available_object_for_user(
+		&mut self,
+		object_id: i64,
+		user_id: i64,
+	) -> Result<Option<S3Object>, AppError> {
+		self.db_client
+			.query_opt(SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY, &[&object_id, &user_id])
+			.await
+			.context("Failed to load available object")?
+			.map(s3_object_from_row)
+			.transpose()
+	}
+
+	async fn finalize_verified_upload_session(
+		&mut self,
+		session: &ObjectUploadSession,
+		user_id: i64,
+		metadata: StoredObjectMetadata,
+	) -> Result<S3Object, AppError> {
+		if let Some(error_message) = completed_upload_metadata_error(session, &metadata) {
+			self.enqueue_completed_upload_cleanup(session).await?;
+			return Err(AppError::Validation(error_message));
+		}
+
+		self.finalize_upload_session(session, user_id).await
+	}
+
+	async fn finalize_upload_session(
+		&mut self,
+		session: &ObjectUploadSession,
+		user_id: i64,
+	) -> Result<S3Object, AppError> {
+		let transaction = self.db_client.transaction().await?;
+		let finalized = transaction
+			.query_opt(FINALIZE_OBJECT_UPLOAD_QUERY, &[&session.object_id, &session.storage_key])
+			.await
+			.context("Failed to finalize object upload")?;
+		let Some(finalized) = finalized else {
+			drop(transaction);
+			return self
+				.available_object_for_user(session.object_id, user_id)
+				.await?
+				.ok_or_else(|| AppError::NotFound("Upload session not found".to_string()));
+		};
+		transaction
+			.execute(DELETE_OBJECT_UPLOAD_SESSION_QUERY, &[&session.object_id])
+			.await
+			.context("Failed to delete finalized object upload session")?;
+		transaction.commit().await?;
+		s3_object_from_row(finalized)
+	}
+
+	async fn delete_pending_upload_metadata(
+		&mut self,
+		session: &ObjectUploadSession,
+		user_id: i64,
+	) -> Result<(), AppError> {
+		self.db_client
+			.execute(
+				DELETE_PENDING_OBJECT_UPLOAD_QUERY,
+				&[&session.object_id, &session.storage_key, &user_id],
+			)
+			.await
+			.context("Failed to delete aborted object upload metadata")?;
+		Ok(())
+	}
+
+	async fn enqueue_completed_upload_cleanup(
+		&mut self,
+		session: &ObjectUploadSession,
+	) -> Result<(), AppError> {
+		let transaction = self.db_client.transaction().await?;
+		let object = s3_object_from_row(
+			transaction
+				.query_one(
+					MARK_UPLOAD_DELETE_PENDING_QUERY,
+					&[&session.object_id, &session.storage_key],
+				)
+				.await
+				.context("Failed to mark completed upload for storage cleanup")?,
+		)?;
+		transaction
+			.execute(DELETE_OBJECT_UPLOAD_SESSION_QUERY, &[&session.object_id])
+			.await
+			.context("Failed to delete object upload session queued for cleanup")?;
+		enqueue_storage_deletions(&transaction, &[object]).await?;
+		transaction.commit().await?;
+		Ok(())
 	}
 }
 
@@ -1035,6 +1210,53 @@ fn upload_session_part_size(
 	Ok(session.part_size_bytes.min(session.file_size_bytes - part_start))
 }
 
+fn validate_completed_parts(
+	session: &ObjectUploadSession,
+	mut completed_parts: Vec<CompletedUploadPart>,
+) -> Result<Vec<CompletedUploadPart>, AppError> {
+	let total_parts = upload_session_total_parts(session)?;
+	if completed_parts.len() != total_parts as usize {
+		return Err(AppError::Validation(format!(
+			"completed parts must contain exactly {total_parts} entries"
+		)));
+	}
+
+	completed_parts.sort_by_key(|part| part.part_number);
+	for (index, part) in completed_parts.iter().enumerate() {
+		if part.e_tag.trim().is_empty() {
+			return Err(AppError::Validation(format!(
+				"completed part {} must include a non-empty ETag",
+				part.part_number
+			)));
+		}
+		let expected_part_number = i32::try_from(index + 1)
+			.context("completed part index exceeds i32 range")
+			.map_err(AppError::from)?;
+		if part.part_number != expected_part_number {
+			return Err(AppError::Validation(format!(
+				"completed parts must include every part number from 1 to {total_parts} exactly once"
+			)));
+		}
+	}
+
+	Ok(completed_parts)
+}
+
+fn completed_upload_metadata_error(
+	session: &ObjectUploadSession,
+	metadata: &StoredObjectMetadata,
+) -> Option<String> {
+	if metadata.content_length != session.file_size_bytes {
+		return Some("Completed upload size did not match declared file size".to_string());
+	}
+	if metadata.content_type != session.content_type {
+		return Some(
+			"Completed upload content type did not match declared content type".to_string(),
+		);
+	}
+	None
+}
+
 async fn enqueue_storage_deletions(
 	transaction: &Transaction<'_>,
 	objects: &[S3Object],
@@ -1056,6 +1278,15 @@ fn collect_s3_objects(rows: Vec<Row>) -> Result<Vec<S3Object>, AppError> {
 	rows.into_iter().map(S3Object::try_from).collect::<Result<Vec<_>, _>>().map_err(|e| {
 		AppError::Internal(anyhow::anyhow!(
 			"Failed to convert database rows to S3 objects: {}",
+			e.message
+		))
+	})
+}
+
+fn s3_object_from_row(row: Row) -> Result<S3Object, AppError> {
+	S3Object::try_from(row).map_err(|e| {
+		AppError::Internal(anyhow::anyhow!(
+			"Failed to convert database row to S3 object: {}",
 			e.message
 		))
 	})
@@ -1123,10 +1354,18 @@ mod tests {
 		super::{
 			AppError,
 			ObjectLifecycleConfig,
+			ObjectUploadSession,
 			StorageDeletionOutbox,
 			StorageDeletionSink,
+			completed_upload_metadata_error,
 			drain_storage_deletion_outbox,
+			validate_completed_parts,
 		},
+		crate::storage::{
+			CompletedUploadPart,
+			StoredObjectMetadata,
+		},
+		jiff::Timestamp,
 		std::{
 			collections::VecDeque,
 			sync::Mutex,
@@ -1411,10 +1650,104 @@ mod tests {
 		Ok(())
 	}
 
+	#[test]
+	fn completed_parts_validation_requires_exact_sequential_parts() -> anyhow::Result<()> {
+		let session = upload_session_for_test(
+			(ObjectLifecycleConfig::S3_MIN_MULTIPART_PART_SIZE_BYTES * 2) - 1,
+			ObjectLifecycleConfig::S3_MIN_MULTIPART_PART_SIZE_BYTES,
+		);
+
+		let sorted = validate_completed_parts(
+			&session,
+			vec![completed_part(2, "etag-2"), completed_part(1, "etag-1")],
+		)?;
+
+		assert_eq!(sorted.iter().map(|part| part.part_number).collect::<Vec<_>>(), vec![1, 2]);
+		assert!(validate_completed_parts(&session, vec![completed_part(1, "etag-1")]).is_err());
+		assert!(
+			validate_completed_parts(
+				&session,
+				vec![completed_part(1, "etag-1"), completed_part(1, "etag-duplicate")]
+			)
+			.is_err()
+		);
+		assert!(
+			validate_completed_parts(
+				&session,
+				vec![completed_part(1, "etag-1"), completed_part(2, " ")]
+			)
+			.is_err()
+		);
+
+		Ok(())
+	}
+
+	#[test]
+	fn completed_upload_metadata_must_match_session_policy() {
+		let session =
+			upload_session_for_test(10, ObjectLifecycleConfig::S3_MIN_MULTIPART_PART_SIZE_BYTES);
+
+		assert_eq!(
+			completed_upload_metadata_error(
+				&session,
+				&StoredObjectMetadata {
+					content_length: 10,
+					content_type: "image/png".to_string(),
+				}
+			),
+			None
+		);
+		assert!(
+			completed_upload_metadata_error(
+				&session,
+				&StoredObjectMetadata {
+					content_length: 11,
+					content_type: "image/png".to_string(),
+				}
+			)
+			.is_some()
+		);
+		assert!(
+			completed_upload_metadata_error(
+				&session,
+				&StoredObjectMetadata {
+					content_length: 10,
+					content_type: "image/jpeg".to_string(),
+				}
+			)
+			.is_some()
+		);
+	}
+
 	fn storage_keys(
 		prefix: &str,
 		count: usize,
 	) -> Vec<String> {
 		(0 .. count).map(|index| format!("{prefix}-{index}")).collect()
+	}
+
+	fn completed_part(
+		part_number: i32,
+		e_tag: &str,
+	) -> CompletedUploadPart {
+		CompletedUploadPart {
+			part_number,
+			e_tag: e_tag.to_string(),
+		}
+	}
+
+	fn upload_session_for_test(
+		file_size_bytes: i64,
+		part_size_bytes: i64,
+	) -> ObjectUploadSession {
+		ObjectUploadSession {
+			object_id: 1,
+			storage_key: "objects/test".to_string(),
+			upload_id: "upload-id".to_string(),
+			content_type: "image/png".to_string(),
+			file_size_bytes,
+			part_size_bytes,
+			expires_at: Timestamp::now(),
+		}
 	}
 }

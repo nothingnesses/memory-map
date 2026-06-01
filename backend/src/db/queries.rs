@@ -68,13 +68,76 @@ WHERE session.object_id = $1
 	AND object.storage_state = 'pending_upload'
 	AND session.expires_at > now()";
 
+pub const SELECT_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = "SELECT
+	session.object_id,
+	session.storage_key,
+	session.upload_id,
+	session.content_type,
+	session.file_size,
+	session.part_size_bytes,
+	session.expires_at,
+	session.cleanup_attempts,
+	session.cleanup_last_attempt_at,
+	session.cleanup_next_attempt_at,
+	session.cleanup_last_error,
+	session.created_at
+FROM object_upload_sessions session
+JOIN objects object ON object.id = session.object_id
+WHERE session.object_id = $1
+	AND object.user_id = $2
+	AND object.storage_state = 'pending_upload'";
+
 pub const DELETE_OBJECT_UPLOAD_SESSION_QUERY: &str =
 	"DELETE FROM object_upload_sessions WHERE object_id = $1";
 
-pub const FINALIZE_OBJECT_UPLOAD_QUERY: &str = "UPDATE objects
-SET storage_state = 'available', storage_state_updated_at = now()
-WHERE id = $1 AND storage_key = $2 AND storage_state = 'pending_upload'
-RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+pub const FINALIZE_OBJECT_UPLOAD_QUERY: &str = "WITH finalized AS (
+	UPDATE objects
+	SET storage_state = 'available', storage_state_updated_at = now()
+	WHERE id = $1 AND storage_key = $2 AND storage_state = 'pending_upload'
+	RETURNING id, name, storage_key, content_type, made_on, location, user_id, publicity
+)
+SELECT
+	finalized.id,
+	finalized.name,
+	finalized.storage_key,
+	finalized.content_type,
+	finalized.made_on,
+	ST_Y(finalized.location::geometry) AS latitude,
+	ST_X(finalized.location::geometry) AS longitude,
+	finalized.user_id,
+	finalized.publicity,
+	COALESCE((
+		SELECT array_agg(users.email)
+		FROM object_allowed_users allowed
+		JOIN users ON allowed.user_id = users.id
+		WHERE allowed.object_id = finalized.id
+	), '{}') AS allowed_users
+FROM finalized;";
+
+pub const SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY: &str = "SELECT
+	o.id,
+	o.name,
+	o.storage_key,
+	o.content_type,
+	o.made_on,
+	ST_Y(o.location::geometry) AS latitude,
+	ST_X(o.location::geometry) AS longitude,
+	o.user_id,
+	o.publicity,
+	COALESCE(array_agg(users.email) FILTER (WHERE users.email IS NOT NULL), '{}') AS allowed_users
+FROM objects o
+LEFT JOIN object_allowed_users allowed ON o.id = allowed.object_id
+LEFT JOIN users ON allowed.user_id = users.id
+WHERE o.id = $1
+	AND o.user_id = $2
+	AND o.storage_state = 'available'
+GROUP BY o.id;";
+
+pub const DELETE_PENDING_OBJECT_UPLOAD_QUERY: &str = "DELETE FROM objects
+WHERE id = $1
+	AND storage_key = $2
+	AND user_id = $3
+	AND storage_state = 'pending_upload'";
 
 pub const MARK_UPLOAD_DELETE_PENDING_QUERY: &str = "UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()

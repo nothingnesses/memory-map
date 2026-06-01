@@ -41,6 +41,26 @@ impl From<CreatedObjectUploadSessionInner> for CreatedObjectUploadSession {
 	}
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct AbortedObjectUpload {
+	object_id: i64,
+}
+
+impl AbortedObjectUpload {
+	pub fn new(object_id: i64) -> Self {
+		Self {
+			object_id,
+		}
+	}
+}
+
+#[Object]
+impl AbortedObjectUpload {
+	async fn object_id(&self) -> ID {
+		self.object_id.into()
+	}
+}
+
 #[derive(Clone, Debug)]
 pub struct PresignedObjectUploadPart {
 	inner: PresignedObjectUploadPartInner,

@@ -11,10 +11,16 @@ use {
 			BehaviorVersion,
 			Region,
 		},
-		error::SdkError,
+		error::{
+			ProvideErrorMetadata,
+			SdkError,
+		},
 		operation::{
+			abort_multipart_upload::AbortMultipartUploadError,
+			complete_multipart_upload::CompleteMultipartUploadError,
 			create_bucket::CreateBucketError,
 			head_bucket::HeadBucketError,
+			head_object::HeadObjectError,
 		},
 		presigning::PresigningConfig,
 		primitives::ByteStream,
@@ -140,6 +146,18 @@ pub struct CompletedUploadPart {
 pub struct StoredObjectMetadata {
 	pub content_length: i64,
 	pub content_type: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MultipartUploadCompleteOutcome {
+	Completed,
+	UploadNotFound,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MultipartUploadAbortOutcome {
+	Aborted,
+	UploadNotFound,
 }
 
 #[derive(Clone)]
@@ -278,7 +296,7 @@ impl StorageClient {
 		storage_key: &str,
 		upload_id: &str,
 		completed_parts: &[CompletedUploadPart],
-	) -> anyhow::Result<()> {
+	) -> anyhow::Result<MultipartUploadCompleteOutcome> {
 		let completed_parts = completed_parts
 			.iter()
 			.map(|part| {
@@ -290,7 +308,8 @@ impl StorageClient {
 			.collect::<Vec<_>>();
 		let upload = CompletedMultipartUpload::builder().set_parts(Some(completed_parts)).build();
 
-		self.client
+		match self
+			.client
 			.complete_multipart_upload()
 			.bucket(&self.bucket_name)
 			.key(storage_key)
@@ -298,38 +317,55 @@ impl StorageClient {
 			.multipart_upload(upload)
 			.send()
 			.await
-			.context("Failed to complete S3 multipart upload")?;
-		Ok(())
+		{
+			Ok(_) => Ok(MultipartUploadCompleteOutcome::Completed),
+			Err(error) if complete_multipart_upload_error_is_no_such_upload(&error) =>
+				Ok(MultipartUploadCompleteOutcome::UploadNotFound),
+			Err(error) => Err(error).context("Failed to complete S3 multipart upload"),
+		}
 	}
 
 	pub async fn abort_multipart_upload(
 		&self,
 		storage_key: &str,
 		upload_id: &str,
-	) -> anyhow::Result<()> {
-		self.client
+	) -> anyhow::Result<MultipartUploadAbortOutcome> {
+		match self
+			.client
 			.abort_multipart_upload()
 			.bucket(&self.bucket_name)
 			.key(storage_key)
 			.upload_id(upload_id)
 			.send()
 			.await
-			.context("Failed to abort S3 multipart upload")?;
-		Ok(())
+		{
+			Ok(_) => Ok(MultipartUploadAbortOutcome::Aborted),
+			Err(error) if abort_multipart_upload_error_is_no_such_upload(&error) =>
+				Ok(MultipartUploadAbortOutcome::UploadNotFound),
+			Err(error) => Err(error).context("Failed to abort S3 multipart upload"),
+		}
 	}
 
 	pub async fn head_object(
 		&self,
 		storage_key: &str,
 	) -> anyhow::Result<StoredObjectMetadata> {
-		let output = self
-			.client
-			.head_object()
-			.bucket(&self.bucket_name)
-			.key(storage_key)
-			.send()
-			.await
-			.context("Failed to read S3 object metadata")?;
+		self.head_object_opt(storage_key)
+			.await?
+			.with_context(|| format!("S3 object not found: {storage_key}"))
+	}
+
+	pub async fn head_object_opt(
+		&self,
+		storage_key: &str,
+	) -> anyhow::Result<Option<StoredObjectMetadata>> {
+		let output =
+			match self.client.head_object().bucket(&self.bucket_name).key(storage_key).send().await
+			{
+				Ok(output) => output,
+				Err(error) if head_object_error_is_not_found(&error) => return Ok(None),
+				Err(error) => return Err(error).context("Failed to read S3 object metadata"),
+			};
 		let content_length =
 			output.content_length().context("S3 object response did not include Content-Length")?;
 		let content_type = output
@@ -337,10 +373,10 @@ impl StorageClient {
 			.map(str::to_string)
 			.context("S3 object response did not include Content-Type")?;
 
-		Ok(StoredObjectMetadata {
+		Ok(Some(StoredObjectMetadata {
 			content_length,
 			content_type,
-		})
+		}))
 	}
 
 	pub async fn delete_objects(
@@ -451,6 +487,24 @@ impl fmt::Debug for StorageClient {
 
 fn head_bucket_error_is_not_found(error: &SdkError<HeadBucketError>) -> bool {
 	error.as_service_error().is_some_and(HeadBucketError::is_not_found)
+}
+
+fn head_object_error_is_not_found(error: &SdkError<HeadObjectError>) -> bool {
+	error.as_service_error().is_some_and(HeadObjectError::is_not_found)
+}
+
+fn abort_multipart_upload_error_is_no_such_upload(
+	error: &SdkError<AbortMultipartUploadError>
+) -> bool {
+	error
+		.as_service_error()
+		.is_some_and(|error| error.is_no_such_upload() || error.code() == Some("NoSuchUpload"))
+}
+
+fn complete_multipart_upload_error_is_no_such_upload(
+	error: &SdkError<CompleteMultipartUploadError>
+) -> bool {
+	error.as_service_error().is_some_and(|error| error.code() == Some("NoSuchUpload"))
 }
 
 fn create_bucket_error_means_existing_bucket(error: &SdkError<CreateBucketError>) -> bool {
