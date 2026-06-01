@@ -91,6 +91,20 @@ pub struct AuthConfig {
 	pub enable_registration: bool,
 }
 
+impl AuthConfig {
+	const MIN_COOKIE_SECRET_BYTES: usize = 64;
+
+	pub fn validate(&self) -> anyhow::Result<()> {
+		if self.cookie_secret.len() < Self::MIN_COOKIE_SECRET_BYTES {
+			anyhow::bail!(
+				"auth.cookie_secret must be at least {} bytes",
+				Self::MIN_COOKIE_SECRET_BYTES
+			);
+		}
+		Ok(())
+	}
+}
+
 impl fmt::Debug for AuthConfig {
 	fn fmt(
 		&self,
@@ -156,6 +170,7 @@ impl Config {
 
 	/// Runs sub-config validation. Call after deserialization or struct construction.
 	pub fn validated(self) -> anyhow::Result<Self> {
+		self.auth.validate()?;
 		self.storage.validate()?;
 		self.object_lifecycle.validate()?;
 		Ok(self)
@@ -457,6 +472,27 @@ mod tests {
 		assert!(!debug.contains("debug-cookie-secret"));
 		assert!(!debug.contains("debug-storage-access-secret"));
 		assert!(!debug.contains("debug-storage-secret-secret"));
+	}
+
+	#[test]
+	fn auth_config_validate_accepts_cookie_secret_boundary_length() {
+		let config = AuthConfig {
+			cookie_secret: "a".repeat(64),
+			enable_registration: true,
+		};
+
+		assert!(config.validate().is_ok());
+	}
+
+	#[test]
+	fn auth_config_validate_rejects_short_cookie_secret() {
+		let config = AuthConfig {
+			cookie_secret: "a".repeat(63),
+			enable_registration: true,
+		};
+
+		let error = config.validate().expect_err("short cookie secret should fail validation");
+		assert!(error.to_string().contains("at least 64 bytes"));
 	}
 
 	#[test]
