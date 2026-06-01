@@ -6,6 +6,7 @@ use {
 			SELECT_USER_BY_EMAIL_QUERY,
 			SELECT_USER_BY_ID_QUERY,
 		},
+		errors::AppError,
 	},
 	async_graphql::{
 		Context,
@@ -102,7 +103,9 @@ pub struct User {
 impl User {
 	pub fn try_from(row: Row) -> Result<Self, GraphQLError> {
 		let role_str: String = row.try_get("role")?;
-		let role = role_str.parse().map_err(|_| GraphQLError::new("Invalid role"))?;
+		let role = role_str
+			.parse()
+			.map_err(|_| AppError::Validation("Invalid role".to_string()).extend_graphql())?;
 		let default_publicity: PublicityDefault = row.try_get("default_publicity")?;
 		Ok(User {
 			id: Row::try_get::<_, i64>(&row, "id")?.into(),

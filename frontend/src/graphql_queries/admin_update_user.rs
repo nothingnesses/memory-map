@@ -1,5 +1,9 @@
 use {
 	crate::{
+		errors::{
+			AppError,
+			graphql_data,
+		},
 		graphql_queries::admin_update_user::admin_update_user_mutation::{
 			AdminUpdateUserMutationAdminUpdateUser as User,
 			Variables,
@@ -7,7 +11,6 @@ use {
 		post_graphql_with_auth,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -22,15 +25,13 @@ impl AdminUpdateUserMutation {
 	pub async fn run(
 		api_url: String,
 		variables: Variables,
-	) -> Result<User, Error> {
-		Ok(post_graphql_with_auth::<AdminUpdateUserMutation, _>(
+	) -> Result<User, AppError> {
+		let response = post_graphql_with_auth::<AdminUpdateUserMutation, _>(
 			&reqwest::Client::new(),
 			api_url,
 			variables,
 		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.admin_update_user)?)
+		.await?;
+		Ok(graphql_data(response)?.admin_update_user)
 	}
 }

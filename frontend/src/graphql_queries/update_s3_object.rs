@@ -1,5 +1,9 @@
 use {
 	crate::{
+		errors::{
+			AppError,
+			graphql_data,
+		},
 		graphql_queries::update_s3_object::update_s3_object_mutation::{
 			UpdateS3ObjectMutationUpdateS3Object as S3Object,
 			Variables,
@@ -7,7 +11,6 @@ use {
 		post_graphql_with_auth,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -26,15 +29,13 @@ impl UpdateS3ObjectMutation {
 	pub async fn run(
 		api_url: String,
 		variables: Variables,
-	) -> Result<S3Object, Error> {
-		Ok(post_graphql_with_auth::<UpdateS3ObjectMutation, _>(
+	) -> Result<S3Object, AppError> {
+		let response = post_graphql_with_auth::<UpdateS3ObjectMutation, _>(
 			&reqwest::Client::new(),
 			api_url,
 			variables,
 		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.update_s3_object)?)
+		.await?;
+		Ok(graphql_data(response)?.update_s3_object)
 	}
 }

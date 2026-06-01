@@ -125,7 +125,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		ids: Vec<ID>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
 		let wrapper = ContextWrapper(ctx);
 		let storage = wrapper.get_storage_client()?;
 		let mut client = wrapper.get_db_client().await?;
@@ -140,8 +141,9 @@ impl Mutation {
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
 			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let casbin_user = CasbinUser {
 			id: user_id,
 			role: user.role.to_string(),
@@ -156,7 +158,7 @@ impl Mutation {
 				.enforce((casbin_user.clone(), casbin_obj, "delete"))
 				.map_err(AppError::from)?
 				.then_some(())
-				.ok_or_else(|| GraphQLError::new("Forbidden"))?;
+				.ok_or_else(|| AppError::Forbidden.extend_graphql())?;
 		}
 
 		let result = ObjectLifecycleService::new(
@@ -181,7 +183,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		input: UpdateS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
 		let wrapper = ContextWrapper(ctx);
 		let storage = wrapper.get_storage_client()?;
 		let mut client = wrapper.get_db_client().await?;
@@ -194,8 +197,9 @@ impl Mutation {
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
 			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let casbin_user = CasbinUser {
 			id: user_id,
 			role: user.role.to_string(),
@@ -206,7 +210,7 @@ impl Mutation {
 			user_id: obj.user_id.unwrap_or(0),
 		};
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		let allowed_users = input.allowed_users.unwrap_or_default();
@@ -237,7 +241,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		default_publicity: PublicityDefault,
 	) -> Result<User, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
@@ -247,8 +252,9 @@ impl Mutation {
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
 			.map_err(GraphQLError::from)?;
 		let enforcer = state.enforcer.read().await;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let casbin_user = CasbinUser {
 			id: user_id,
 			role: user.role.to_string(),
@@ -258,7 +264,7 @@ impl Mutation {
 		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		let row = client
@@ -282,13 +288,13 @@ impl Mutation {
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 
 		if !state.config.auth.enable_registration {
-			return Err(GraphQLError::new("Registration is disabled"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		validate_password(&password).map_err(GraphQLError::from)?;
 
 		if !EmailAddress::is_valid(&email) {
-			return Err(GraphQLError::new("Invalid email format"));
+			return Err(AppError::Validation("Invalid email format".to_string()).extend_graphql());
 		}
 
 		// Check if email is taken
@@ -299,7 +305,7 @@ impl Mutation {
 			.context("Failed to get user count from database")?;
 
 		if count > 0 {
-			return Err(GraphQLError::new("Email already in use"));
+			return Err(AppError::Validation("Email already in use".to_string()).extend_graphql());
 		}
 
 		let salt = SaltString::generate(&mut OsRng);
@@ -337,7 +343,7 @@ impl Mutation {
 			.query_opt(&statement, &[&email])
 			.await
 			.context("Failed to query user from database")?
-			.ok_or_else(|| GraphQLError::new("Invalid email or password"))?;
+			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
 
 		let password_hash_str: String = row
 			.try_get("password_hash")
@@ -352,7 +358,7 @@ impl Mutation {
 
 		Argon2::default()
 			.verify_password(password.as_bytes(), &parsed_hash)
-			.map_err(|_| GraphQLError::new("Invalid email or password"))?;
+			.map_err(|_| AppError::Unauthorized.extend_graphql())?;
 
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 
@@ -366,7 +372,7 @@ impl Mutation {
 			.lock()
 			.map_err(|e| {
 				tracing::error!("Mutex poisoned: {}", e);
-				GraphQLError::new("Internal server error")
+				AppError::Internal(anyhow::anyhow!("Internal server error")).extend_graphql()
 			})?
 			.push(cookie);
 
@@ -389,7 +395,7 @@ impl Mutation {
 			.lock()
 			.map_err(|e| {
 				tracing::error!("Mutex poisoned: {}", e);
-				GraphQLError::new("Internal server error")
+				AppError::Internal(anyhow::anyhow!("Internal server error")).extend_graphql()
 			})?
 			.push(cookie);
 
@@ -402,7 +408,8 @@ impl Mutation {
 		old_password: String,
 		new_password: String,
 	) -> Result<bool, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
@@ -414,7 +421,7 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let user = User::by_id(ctx, user_id.0)
 			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let casbin_user = CasbinUser {
 			id: user_id.0,
 			role: user.role.to_string(),
@@ -424,7 +431,7 @@ impl Mutation {
 		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		validate_password(&new_password).map_err(GraphQLError::from)?;
@@ -441,7 +448,7 @@ impl Mutation {
 
 		Argon2::default()
 			.verify_password(old_password.as_bytes(), &parsed_hash)
-			.map_err(|_| GraphQLError::new("Invalid old password"))?;
+			.map_err(|_| AppError::Unauthorized.extend_graphql())?;
 
 		let salt = SaltString::generate(&mut OsRng);
 		let new_hash = Argon2::default()
@@ -463,7 +470,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		new_email: String,
 	) -> Result<User, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
@@ -475,7 +483,7 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let user = User::by_id(ctx, user_id.0)
 			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let casbin_user = CasbinUser {
 			id: user_id.0,
 			role: user.role.to_string(),
@@ -485,11 +493,11 @@ impl Mutation {
 		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		if !EmailAddress::is_valid(&new_email) {
-			return Err(GraphQLError::new("Invalid email format"));
+			return Err(AppError::Validation("Invalid email format".to_string()).extend_graphql());
 		}
 
 		// Check if email is taken
@@ -500,7 +508,7 @@ impl Mutation {
 			.context("Failed to get user count from database")?;
 
 		if count > 0 {
-			return Err(GraphQLError::new("Email already in use"));
+			return Err(AppError::Validation("Email already in use".to_string()).extend_graphql());
 		}
 
 		let row = client
@@ -619,7 +627,7 @@ impl Mutation {
 
 			Ok(true)
 		} else {
-			Err(GraphQLError::new("Invalid or expired token"))
+			Err(AppError::Validation("Invalid or expired token".to_string()).extend_graphql())
 		}
 	}
 
@@ -630,7 +638,8 @@ impl Mutation {
 		role: Option<String>,
 		email: Option<String>,
 	) -> Result<User, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
 		let wrapper = ContextWrapper(ctx);
 		let client = wrapper.get_db_client().await?;
 
@@ -645,7 +654,7 @@ impl Mutation {
 		let enforcer = state.enforcer.read().await;
 		let current_user = User::by_id(ctx, user_id.0)
 			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let casbin_user = CasbinUser {
 			id: user_id.0,
 			role: current_user.role.to_string(),
@@ -658,16 +667,18 @@ impl Mutation {
 			.enforce((casbin_user, casbin_obj, "manage_user"))
 			.map_err(GraphQLError::from)?
 		{
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		let mut target_user = User::by_id(ctx, target_id)
 			.await?
-			.ok_or_else(|| GraphQLError::new("User not found"))?;
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 
 		if let Some(new_email) = email {
 			if !EmailAddress::is_valid(&new_email) {
-				return Err(GraphQLError::new("Invalid email format"));
+				return Err(
+					AppError::Validation("Invalid email format".to_string()).extend_graphql()
+				);
 			}
 
 			// Check email uniqueness if changed
@@ -678,13 +689,17 @@ impl Mutation {
 				.context("Failed to get user count from database")?;
 
 			if count > 0 {
-				return Err(GraphQLError::new("Email already in use"));
+				return Err(
+					AppError::Validation("Email already in use".to_string()).extend_graphql()
+				);
 			}
 			target_user.email = new_email;
 		}
 
 		if let Some(new_role_str) = role {
-			let new_role = new_role_str.parse().map_err(|_| GraphQLError::new("Invalid role"))?;
+			let new_role = new_role_str
+				.parse()
+				.map_err(|_| AppError::Validation("Invalid role".to_string()).extend_graphql())?;
 			target_user.role = new_role;
 		}
 

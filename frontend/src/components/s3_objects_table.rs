@@ -22,6 +22,7 @@ use {
 			MSG_DELETE_SUCCESS,
 		},
 		dump_errors,
+		errors::AppError,
 		graphql_queries::{
 			delete_s3_objects::DeleteS3ObjectsMutation,
 			s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
@@ -42,7 +43,7 @@ use {
 
 #[component]
 pub fn S3ObjectsTable(
-	#[prop(into)] s3_objects_resource: Signal<LocalResource<Result<Vec<S3Object>, Error>>>,
+	#[prop(into)] s3_objects_resource: Signal<LocalResource<Result<Vec<S3Object>, AppError>>>,
 	#[prop(into, default = Callback::new(|_| BUTTON_CLOSE.into_any()))]
 	close_button_content: CallbackAnyView,
 	// Callback to trigger a refresh of the data after deletion

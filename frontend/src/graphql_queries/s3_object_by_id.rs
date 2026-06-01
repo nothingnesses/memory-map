@@ -1,5 +1,9 @@
 use {
 	crate::{
+		errors::{
+			AppError,
+			graphql_data,
+		},
 		graphql_queries::s3_object_by_id::s3_object_by_id_query::{
 			S3ObjectByIdQueryS3ObjectById as S3Object,
 			Variables,
@@ -7,7 +11,6 @@ use {
 		post_graphql_with_auth,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -25,17 +28,15 @@ impl S3ObjectByIdQuery {
 	pub async fn run(
 		api_url: String,
 		id: i64,
-	) -> Result<S3Object, Error> {
-		Ok(post_graphql_with_auth::<S3ObjectByIdQuery, _>(
+	) -> Result<S3Object, AppError> {
+		let response = post_graphql_with_auth::<S3ObjectByIdQuery, _>(
 			&reqwest::Client::new(),
 			api_url,
 			Variables {
 				id,
 			},
 		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.s3_object_by_id)?)
+		.await?;
+		Ok(graphql_data(response)?.s3_object_by_id)
 	}
 }

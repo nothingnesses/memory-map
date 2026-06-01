@@ -4,6 +4,7 @@ use {
 		CasbinUser,
 		SharedState,
 		UserId,
+		errors::AppError,
 		graphql::objects::{
 			config::PublicConfig,
 			s3_object::S3Object,
@@ -54,15 +55,17 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<User>, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
 
 		// Check permissions
 		let state = ctx
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		let enforcer = state.enforcer.read().await;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 
 		let casbin_user = CasbinUser {
 			id: user_id,
@@ -77,7 +80,7 @@ impl Query {
 			.enforce((casbin_user, casbin_obj, "read_all_users"))
 			.map_err(GraphQLError::from)?
 		{
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		User::all(ctx).await
@@ -88,9 +91,11 @@ impl Query {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let object = S3Object::where_id(ctx, id).await?;
 
 		// Check permissions
@@ -107,7 +112,7 @@ impl Query {
 		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		Ok(object)
@@ -118,9 +123,11 @@ impl Query {
 		ctx: &Context<'_>,
 		name: String,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let user = User::by_id(ctx, user_id)
+			.await?
+			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 		let object = S3Object::where_name(ctx, name).await?;
 
 		// Check permissions
@@ -137,7 +144,7 @@ impl Query {
 		};
 
 		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
+			return Err(AppError::Forbidden.extend_graphql());
 		}
 
 		Ok(object)
@@ -152,7 +159,7 @@ impl Query {
 		if let Some(user_id) = user_id_opt {
 			let user = User::by_id(ctx, user_id)
 				.await?
-				.ok_or_else(|| GraphQLError::new("User not found"))?;
+				.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 
 			// Check permissions
 			let state = ctx.data::<Arc<SharedState<Manager, Client>>>().map_err(|e| {

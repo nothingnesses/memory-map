@@ -1,10 +1,13 @@
 use {
 	crate::{
+		errors::{
+			AppError,
+			graphql_data,
+		},
 		graphql_queries::change_password::change_password_mutation::Variables,
 		post_graphql_with_auth,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -19,15 +22,13 @@ impl ChangePasswordMutation {
 	pub async fn run(
 		api_url: String,
 		variables: Variables,
-	) -> Result<bool, Error> {
-		Ok(post_graphql_with_auth::<ChangePasswordMutation, _>(
+	) -> Result<bool, AppError> {
+		let response = post_graphql_with_auth::<ChangePasswordMutation, _>(
 			&reqwest::Client::new(),
 			api_url,
 			variables,
 		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.change_password)?)
+		.await?;
+		Ok(graphql_data(response)?.change_password)
 	}
 }

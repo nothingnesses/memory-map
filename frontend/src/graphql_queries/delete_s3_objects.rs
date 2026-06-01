@@ -1,7 +1,12 @@
 use {
-	crate::post_graphql_with_auth,
+	crate::{
+		errors::{
+			AppError,
+			graphql_data,
+		},
+		post_graphql_with_auth,
+	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -21,17 +26,15 @@ impl DeleteS3ObjectsMutation {
 	pub async fn run(
 		api_url: String,
 		ids: Vec<String>,
-	) -> Result<Vec<DeletedS3Object>, Error> {
-		Ok(post_graphql_with_auth::<DeleteS3ObjectsMutation, _>(
+	) -> Result<Vec<DeletedS3Object>, AppError> {
+		let response = post_graphql_with_auth::<DeleteS3ObjectsMutation, _>(
 			&reqwest::Client::new(),
 			api_url,
 			Variables {
 				ids,
 			},
 		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.delete_s3_objects)?)
+		.await?;
+		Ok(graphql_data(response)?.delete_s3_objects)
 	}
 }

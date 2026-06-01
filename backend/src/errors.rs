@@ -1,25 +1,5 @@
 use {
-	crate::constants::{
-		ERR_CASBIN,
-		ERR_CONFIG,
-		ERR_CREATE_POOL,
-		ERR_DB,
-		ERR_EMAIL,
-		ERR_EMAIL_ADDRESS,
-		ERR_FORBIDDEN,
-		ERR_HASHING,
-		ERR_INTERNAL_SERVER,
-		ERR_INVALID_NUMBER,
-		ERR_IO,
-		ERR_MIGRATION,
-		ERR_MULTIPART,
-		ERR_NOT_FOUND,
-		ERR_POOL,
-		ERR_SMTP,
-		ERR_SYSTEM_TIME,
-		ERR_UNAUTHORIZED,
-		ERR_VALIDATION,
-	},
+	async_graphql::ErrorExtensions,
 	axum::{
 		http::StatusCode,
 		response::{
@@ -27,72 +7,108 @@ use {
 			Response,
 		},
 	},
-	std::fmt,
 };
 
-#[derive(Debug)]
+/// Application-level error categories that all backend operations funnel into.
+///
+/// Source-specific errors (database, S3, hashing, SMTP, config, casbin, etc.)
+/// all become `AppError::Internal` via `anyhow::Error`. Variants exist only for
+/// categories that the client needs to distinguish in the response. Site-specific
+/// detail belongs in `.context("Failed to ...")` chains at call sites; it is no
+/// longer baked into per-source-type prefix constants.
+#[derive(Debug, thiserror::Error)]
 pub enum AppError {
-	Internal(anyhow::Error),
+	#[error("Internal server error: {0}")]
+	Internal(#[from] anyhow::Error),
+	#[error("Unauthorized")]
 	Unauthorized,
+	#[error("Forbidden")]
 	Forbidden,
+	#[error("Not found: {0}")]
 	NotFound(String),
+	#[error("Validation error: {0}")]
 	Validation(String),
 }
 
-impl fmt::Display for AppError {
-	fn fmt(
-		&self,
-		f: &mut fmt::Formatter<'_>,
-	) -> fmt::Result {
-		match self {
-			AppError::Internal(e) => write!(f, "{}: {}", ERR_INTERNAL_SERVER, e),
-			AppError::Unauthorized => write!(f, "{}", ERR_UNAUTHORIZED),
-			AppError::Forbidden => write!(f, "{}", ERR_FORBIDDEN),
-			AppError::NotFound(msg) => write!(f, "{}{}", ERR_NOT_FOUND, msg),
-			AppError::Validation(msg) => write!(f, "{}{}", ERR_VALIDATION, msg),
-		}
-	}
+/// Stable, client-facing error categories surfaced via `extensions.code` on
+/// GraphQL errors and via HTTP status on the REST endpoint. Wire format
+/// uses SCREAMING_SNAKE_CASE strings so existing API consumers can match
+/// against literal codes without parsing message text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCode {
+	Internal,
+	Unauthorized,
+	Forbidden,
+	NotFound,
+	Validation,
 }
 
-impl std::error::Error for AppError {
-	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl ErrorCode {
+	pub fn as_str(self) -> &'static str {
 		match self {
-			AppError::Internal(e) => e.source(),
-			_ => None,
+			ErrorCode::Internal => "INTERNAL",
+			ErrorCode::Unauthorized => "UNAUTHORIZED",
+			ErrorCode::Forbidden => "FORBIDDEN",
+			ErrorCode::NotFound => "NOT_FOUND",
+			ErrorCode::Validation => "VALIDATION",
 		}
 	}
-}
 
-impl From<anyhow::Error> for AppError {
-	fn from(err: anyhow::Error) -> Self {
-		AppError::Internal(err)
+	pub fn parse(value: &str) -> Option<Self> {
+		Some(match value {
+			"INTERNAL" => ErrorCode::Internal,
+			"UNAUTHORIZED" => ErrorCode::Unauthorized,
+			"FORBIDDEN" => ErrorCode::Forbidden,
+			"NOT_FOUND" => ErrorCode::NotFound,
+			"VALIDATION" => ErrorCode::Validation,
+			_ => return None,
+		})
 	}
 }
 
 impl AppError {
 	pub fn status_code(&self) -> StatusCode {
-		match self {
-			AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-			AppError::Unauthorized => StatusCode::UNAUTHORIZED,
-			AppError::Forbidden => StatusCode::FORBIDDEN,
-			AppError::NotFound(_) => StatusCode::NOT_FOUND,
-			AppError::Validation(_) => StatusCode::BAD_REQUEST,
+		match self.code() {
+			ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+			ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+			ErrorCode::Forbidden => StatusCode::FORBIDDEN,
+			ErrorCode::NotFound => StatusCode::NOT_FOUND,
+			ErrorCode::Validation => StatusCode::BAD_REQUEST,
 		}
 	}
 
+	/// Stable category code that mirrors the HTTP status / GraphQL extension.
+	pub fn code(&self) -> ErrorCode {
+		match self {
+			AppError::Internal(_) => ErrorCode::Internal,
+			AppError::Unauthorized => ErrorCode::Unauthorized,
+			AppError::Forbidden => ErrorCode::Forbidden,
+			AppError::NotFound(_) => ErrorCode::NotFound,
+			AppError::Validation(_) => ErrorCode::Validation,
+		}
+	}
+
+	/// Message shown to clients. Internal errors are intentionally opaque to
+	/// avoid leaking internal details; the full source is in tracing logs.
 	pub fn client_message(&self) -> String {
 		match self {
-			AppError::Internal(_) => ERR_INTERNAL_SERVER.to_string(),
-			AppError::Unauthorized => ERR_UNAUTHORIZED.to_string(),
-			AppError::Forbidden => ERR_FORBIDDEN.to_string(),
+			AppError::Internal(_) => "Internal server error".to_string(),
+			AppError::Unauthorized => "Unauthorized".to_string(),
+			AppError::Forbidden => "Forbidden".to_string(),
 			AppError::NotFound(msg) => msg.clone(),
 			AppError::Validation(msg) => msg.clone(),
 		}
 	}
 
+	/// Wraps the error into an async-graphql Error, populating `extensions.code`
+	/// so clients can branch on the stable code instead of parsing the message.
 	pub fn extend_graphql(self) -> async_graphql::Error {
 		tracing::error!("GraphQL error: {:?}", self);
-		async_graphql::Error::new(self.to_string())
+		let code = self.code().as_str();
+		let message = self.client_message();
+		async_graphql::Error::new(message).extend_with(|_, extensions| {
+			extensions.set("code", code);
+		})
 	}
 }
 
@@ -105,96 +121,68 @@ impl IntoResponse for AppError {
 
 impl From<async_graphql::Error> for AppError {
 	fn from(err: async_graphql::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!(err.message))
+		let code = err
+			.extensions
+			.as_ref()
+			.and_then(|extensions| extensions.get("code"))
+			.and_then(|value| match value {
+				async_graphql::Value::String(string) => Some(string.as_str()),
+				_ => None,
+			})
+			.and_then(ErrorCode::parse);
+
+		match code {
+			Some(ErrorCode::Unauthorized) => AppError::Unauthorized,
+			Some(ErrorCode::Forbidden) => AppError::Forbidden,
+			Some(ErrorCode::NotFound) => AppError::NotFound(err.message),
+			Some(ErrorCode::Validation) => AppError::Validation(err.message),
+			Some(ErrorCode::Internal) | None => AppError::Internal(anyhow::anyhow!(err.message)),
+		}
+	}
+}
+
+// Bare `?` is convenient at call sites. Each source-specific error type that
+// the code hits routinely gets an explicit From impl that funnels into
+// AppError::Internal via anyhow. Per-type message prefixes are dropped:
+// site-specific context lives in `.context("Failed to ...")` chains.
+macro_rules! impl_into_internal {
+	($($ty:ty),* $(,)?) => {
+		$(
+			impl From<$ty> for AppError {
+				fn from(err: $ty) -> Self {
+					AppError::Internal(anyhow::Error::new(err))
+				}
+			}
+		)*
+	};
+}
+
+impl_into_internal!(
+	axum::extract::multipart::MultipartError,
+	casbin::Error,
+	config::ConfigError,
+	deadpool_postgres::CreatePoolError,
+	deadpool_postgres::PoolError,
+	lettre::address::AddressError,
+	lettre::error::Error,
+	lettre::transport::smtp::Error,
+	refinery::error::Error,
+	std::io::Error,
+	std::num::ParseIntError,
+	std::time::SystemTimeError,
+	tokio_postgres::Error,
+);
+
+// argon2::password_hash::Error doesn't implement std::error::Error, so it goes
+// through Display rather than the std::error::Error blanket conversion.
+impl From<argon2::password_hash::Error> for AppError {
+	fn from(err: argon2::password_hash::Error) -> Self {
+		AppError::Internal(anyhow::anyhow!("{err}"))
 	}
 }
 
 impl From<Box<dyn std::error::Error + Send + Sync>> for AppError {
 	fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
 		AppError::Internal(anyhow::anyhow!(err))
-	}
-}
-
-impl From<argon2::password_hash::Error> for AppError {
-	fn from(err: argon2::password_hash::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_HASHING, err))
-	}
-}
-
-impl From<lettre::error::Error> for AppError {
-	fn from(err: lettre::error::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_EMAIL, err))
-	}
-}
-
-impl From<lettre::address::AddressError> for AppError {
-	fn from(err: lettre::address::AddressError) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_EMAIL_ADDRESS, err))
-	}
-}
-
-impl From<lettre::transport::smtp::Error> for AppError {
-	fn from(err: lettre::transport::smtp::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_SMTP, err))
-	}
-}
-
-impl From<std::num::ParseIntError> for AppError {
-	fn from(err: std::num::ParseIntError) -> Self {
-		AppError::Validation(format!("{}{}", ERR_INVALID_NUMBER, err))
-	}
-}
-
-impl From<deadpool_postgres::CreatePoolError> for AppError {
-	fn from(err: deadpool_postgres::CreatePoolError) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_CREATE_POOL, err))
-	}
-}
-
-impl From<deadpool_postgres::PoolError> for AppError {
-	fn from(err: deadpool_postgres::PoolError) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_POOL, err))
-	}
-}
-
-impl From<tokio_postgres::Error> for AppError {
-	fn from(err: tokio_postgres::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_DB, err))
-	}
-}
-
-impl From<axum::extract::multipart::MultipartError> for AppError {
-	fn from(err: axum::extract::multipart::MultipartError) -> Self {
-		AppError::Validation(format!("{}{}", ERR_MULTIPART, err))
-	}
-}
-
-impl From<casbin::Error> for AppError {
-	fn from(err: casbin::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_CASBIN, err))
-	}
-}
-
-impl From<config::ConfigError> for AppError {
-	fn from(err: config::ConfigError) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_CONFIG, err))
-	}
-}
-
-impl From<refinery::error::Error> for AppError {
-	fn from(err: refinery::error::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_MIGRATION, err))
-	}
-}
-
-impl From<std::time::SystemTimeError> for AppError {
-	fn from(err: std::time::SystemTimeError) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_SYSTEM_TIME, err))
-	}
-}
-
-impl From<std::io::Error> for AppError {
-	fn from(err: std::io::Error) -> Self {
-		AppError::Internal(anyhow::anyhow!("{}{}", ERR_IO, err))
 	}
 }

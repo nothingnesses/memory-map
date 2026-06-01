@@ -1,5 +1,9 @@
 use {
 	crate::{
+		errors::{
+			AppError,
+			graphql_data,
+		},
 		graphql_queries::config::config_query::{
 			ConfigQueryConfig as PublicConfig,
 			Variables,
@@ -7,7 +11,6 @@ use {
 		post_graphql,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -19,11 +22,9 @@ use {
 pub struct ConfigQuery;
 
 impl ConfigQuery {
-	pub async fn run(api_url: String) -> Result<PublicConfig, Error> {
-		Ok(post_graphql::<ConfigQuery, _>(&reqwest::Client::new(), api_url, Variables {})
-			.await?
-			.data
-			.ok_or("Empty response".to_string())
-			.map(|response| response.config)?)
+	pub async fn run(api_url: String) -> Result<PublicConfig, AppError> {
+		let response =
+			post_graphql::<ConfigQuery, _>(&reqwest::Client::new(), api_url, Variables {}).await?;
+		Ok(graphql_data(response)?.config)
 	}
 }
