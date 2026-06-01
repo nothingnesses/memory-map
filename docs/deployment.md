@@ -81,6 +81,8 @@ Optional object lifecycle settings (defaults shown):
   `300`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_CLEANUP_MAX_ATTEMPTS` (default
   `10`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_CLEANUP_BATCH_SIZE` (default
+  `1000`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_RETRY_SECONDS` (default `60`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_LEASE_SECONDS` (default `300`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_WORKER_INTERVAL_SECONDS` (default `30`)
@@ -109,6 +111,10 @@ must fit within `UPLOAD_MAX_PART_COUNT` parts.
 
 `MEMORY_MAP__OBJECT_LIFECYCLE__UPLOAD_SESSION_TTL_SECONDS` controls how long a
 direct-upload session can be completed before it is eligible for reconciliation.
+
+Expired direct-upload sessions are reconciled by the backend worker. It aborts
+incomplete multipart uploads, removes pending metadata after successful aborts,
+and moves completed-object orphans into the storage-deletion outbox.
 
 `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_MAX_ATTEMPTS` bounds how many
 times a failing storage deletion is retried before it is parked. Rows past the
@@ -177,8 +183,8 @@ cleanup by the immutable storage key, not the user-visible object name. A
 backend worker claims cleanup rows in bounded batches, deletes the blobs, and
 then removes the delete-pending metadata rows. If storage deletion fails, the
 queue row remains for a later retry instead of losing track of the blob cleanup
-work. Stale pending uploads are also moved into the same cleanup path after the
-configured timeout.
+work. Pending rows without upload sessions are also moved into the same cleanup
+path after the configured timeout.
 
 ## Reverse Proxy And TLS
 

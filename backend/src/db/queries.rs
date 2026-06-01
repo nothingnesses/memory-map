@@ -87,6 +87,42 @@ WHERE session.object_id = $1
 	AND object.user_id = $2
 	AND object.storage_state = 'pending_upload'";
 
+/// Claims up to `$1` expired upload sessions whose retry/lease time has arrived
+/// and which still have retry budget left. Rows past `$3::INTEGER` attempts are
+/// parked with their last error for operator triage.
+pub const CLAIM_EXPIRED_OBJECT_UPLOAD_SESSIONS_QUERY: &str = "WITH claimed AS MATERIALIZED (
+	SELECT session.object_id
+	FROM object_upload_sessions session
+	JOIN objects object ON object.id = session.object_id
+	WHERE session.expires_at <= now()
+		AND session.cleanup_next_attempt_at <= now()
+		AND session.cleanup_attempts < $3::INTEGER
+		AND object.storage_state = 'pending_upload'
+	ORDER BY session.expires_at, session.cleanup_next_attempt_at, session.created_at
+	LIMIT $1
+	FOR UPDATE OF session SKIP LOCKED
+)
+UPDATE object_upload_sessions session
+SET cleanup_attempts = cleanup_attempts + 1,
+	cleanup_last_attempt_at = now(),
+	cleanup_next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
+	cleanup_last_error = NULL
+FROM claimed
+WHERE session.object_id = claimed.object_id
+RETURNING
+	session.object_id,
+	session.storage_key,
+	session.upload_id,
+	session.content_type,
+	session.file_size,
+	session.part_size_bytes,
+	session.expires_at,
+	session.cleanup_attempts,
+	session.cleanup_last_attempt_at,
+	session.cleanup_next_attempt_at,
+	session.cleanup_last_error,
+	session.created_at";
+
 pub const DELETE_OBJECT_UPLOAD_SESSION_QUERY: &str =
 	"DELETE FROM object_upload_sessions WHERE object_id = $1";
 
@@ -139,6 +175,16 @@ WHERE id = $1
 	AND user_id = $3
 	AND storage_state = 'pending_upload'";
 
+pub const DELETE_PENDING_OBJECT_UPLOAD_BY_SESSION_QUERY: &str = "DELETE FROM objects
+WHERE id = $1
+	AND storage_key = $2
+	AND storage_state = 'pending_upload'";
+
+pub const MARK_OBJECT_UPLOAD_SESSION_CLEANUP_FAILED_QUERY: &str = "UPDATE object_upload_sessions
+SET cleanup_next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
+	cleanup_last_error = $2
+WHERE object_id = $1";
+
 pub const MARK_UPLOAD_DELETE_PENDING_QUERY: &str = "UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()
 WHERE id = $1 AND storage_key = $2 AND storage_state IN ('pending_upload', 'available')
@@ -148,6 +194,10 @@ pub const MARK_STALE_UPLOADS_DELETE_PENDING_QUERY: &str = "UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()
 WHERE storage_state = 'pending_upload'
 	AND storage_state_updated_at < now() - ($1::BIGINT * interval '1 second')
+	AND NOT EXISTS (
+		SELECT 1 FROM object_upload_sessions session
+		WHERE session.object_id = objects.id
+	)
 RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
 /// Query to update an existing object in the database.

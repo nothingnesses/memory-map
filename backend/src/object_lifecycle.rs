@@ -1,11 +1,13 @@
 use {
 	crate::{
 		db::queries::{
+			CLAIM_EXPIRED_OBJECT_UPLOAD_SESSIONS_QUERY,
 			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
 			DELETE_OBJECT_ALLOWED_USERS_QUERY,
 			DELETE_OBJECT_STORAGE_DELETIONS_QUERY,
 			DELETE_OBJECT_UPLOAD_SESSION_QUERY,
 			DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY,
+			DELETE_PENDING_OBJECT_UPLOAD_BY_SESSION_QUERY,
 			DELETE_PENDING_OBJECT_UPLOAD_QUERY,
 			FINALIZE_OBJECT_UPLOAD_QUERY,
 			INSERT_OBJECT_ALLOWED_USER_QUERY,
@@ -13,6 +15,7 @@ use {
 			INSERT_OBJECT_STORAGE_DELETIONS_QUERY,
 			INSERT_OBJECT_UPLOAD_SESSION_QUERY,
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
+			MARK_OBJECT_UPLOAD_SESSION_CLEANUP_FAILED_QUERY,
 			MARK_OBJECTS_DELETE_PENDING_QUERY,
 			MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
 			MARK_UPLOAD_DELETE_PENDING_QUERY,
@@ -89,6 +92,8 @@ pub struct ObjectLifecycleConfig {
 	pub upload_session_cleanup_lease_seconds: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_upload_session_cleanup_max_attempts")]
 	pub upload_session_cleanup_max_attempts: i32,
+	#[serde(default = "ObjectLifecycleConfig::default_upload_session_cleanup_batch_size")]
+	pub upload_session_cleanup_batch_size: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_retry_seconds")]
 	pub storage_deletion_retry_seconds: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_lease_seconds")]
@@ -136,6 +141,10 @@ impl ObjectLifecycleConfig {
 
 	pub const fn default_upload_session_cleanup_max_attempts() -> i32 {
 		10
+	}
+
+	pub const fn default_upload_session_cleanup_batch_size() -> i64 {
+		1000
 	}
 
 	pub const fn default_storage_deletion_retry_seconds() -> i64 {
@@ -200,6 +209,9 @@ impl ObjectLifecycleConfig {
 		}
 		if self.upload_session_cleanup_max_attempts <= 0 {
 			anyhow::bail!("upload_session_cleanup_max_attempts must be greater than 0");
+		}
+		if self.upload_session_cleanup_batch_size <= 0 {
+			anyhow::bail!("upload_session_cleanup_batch_size must be greater than 0");
 		}
 		self.upload_session_total_parts(self.upload_max_file_size_bytes)?;
 		if self.storage_deletion_retry_seconds <= 0 {
@@ -278,6 +290,7 @@ impl Default for ObjectLifecycleConfig {
 				Self::default_upload_session_cleanup_lease_seconds(),
 			upload_session_cleanup_max_attempts: Self::default_upload_session_cleanup_max_attempts(
 			),
+			upload_session_cleanup_batch_size: Self::default_upload_session_cleanup_batch_size(),
 			storage_deletion_retry_seconds: Self::default_storage_deletion_retry_seconds(),
 			storage_deletion_lease_seconds: Self::default_storage_deletion_lease_seconds(),
 			storage_deletion_worker_interval_seconds:
@@ -638,16 +651,28 @@ impl<'a> ObjectLifecycleService<'a> {
 		Ok(objects)
 	}
 
-	/// Runs both maintenance stages in sequence, surfacing the first failure if any.
+	/// Runs maintenance stages in sequence, surfacing the first failure if any.
 	///
 	/// Each stage logs its own outcome (success count or error) so operators can tell
 	/// from logs which stage struggled even when the composite returns Ok. `.and()`
 	/// gives the desired "first-failure" semantics without the bookkeeping the
 	/// previous shape required.
 	pub async fn run_storage_maintenance(&mut self) -> Result<(), AppError> {
+		let reconcile = self.reconcile_expired_upload_sessions().await;
 		let reap = self.reap_stale_pending_uploads().await;
 		let drain = self.drain_storage_deletions().await;
 
+		match &reconcile {
+			Ok(reconciled_uploads) if *reconciled_uploads > 0 => tracing::warn!(
+				count = reconciled_uploads,
+				"Reconciled expired object upload sessions"
+			),
+			Ok(_) => {}
+			Err(error) => tracing::warn!(
+				error = ?error,
+				"Failed to reconcile expired object upload sessions"
+			),
+		}
 		match &reap {
 			Ok(stale_uploads) if !stale_uploads.is_empty() => tracing::warn!(
 				count = stale_uploads.len(),
@@ -663,7 +688,45 @@ impl<'a> ObjectLifecycleService<'a> {
 			tracing::warn!(error = ?error, "Failed to drain object storage deletions");
 		}
 
-		reap.map(|_| ()).and(drain)
+		reconcile.map(|_| ()).and(reap.map(|_| ())).and(drain)
+	}
+
+	pub async fn reconcile_expired_upload_sessions(&mut self) -> Result<usize, AppError> {
+		let mut reconciled_count = 0;
+		let mut first_error: Option<AppError> = None;
+
+		loop {
+			let sessions = self.claim_expired_upload_sessions().await?;
+			if sessions.is_empty() {
+				break;
+			}
+
+			for session in sessions {
+				match self.reconcile_expired_upload_session(&session).await {
+					Ok(()) => reconciled_count += 1,
+					Err(error) => {
+						let error_message = error.to_string();
+						if let Err(mark_error) = self
+							.mark_upload_session_cleanup_failed(session.object_id, &error_message)
+							.await
+						{
+							if first_error.is_none() {
+								first_error = Some(mark_error);
+							}
+							continue;
+						}
+						if first_error.is_none() {
+							first_error = Some(error);
+						}
+					}
+				}
+			}
+		}
+
+		match first_error {
+			Some(error) => Err(error),
+			None => Ok(reconciled_count),
+		}
 	}
 
 	pub async fn reap_stale_pending_uploads(&mut self) -> Result<Vec<S3Object>, AppError> {
@@ -683,6 +746,63 @@ impl<'a> ObjectLifecycleService<'a> {
 
 	pub async fn drain_storage_deletions(&mut self) -> Result<(), AppError> {
 		drain_storage_deletion_outbox(self.db_client, self.storage, &self.config).await
+	}
+
+	async fn claim_expired_upload_sessions(
+		&mut self
+	) -> Result<Vec<ObjectUploadSession>, AppError> {
+		let rows = self
+			.db_client
+			.query(
+				CLAIM_EXPIRED_OBJECT_UPLOAD_SESSIONS_QUERY,
+				&[
+					&self.config.upload_session_cleanup_batch_size,
+					&self.config.upload_session_cleanup_lease_seconds,
+					&self.config.upload_session_cleanup_max_attempts,
+				],
+			)
+			.await
+			.context("Failed to claim expired object upload sessions")?;
+		rows.into_iter().map(ObjectUploadSession::try_from).collect()
+	}
+
+	async fn reconcile_expired_upload_session(
+		&mut self,
+		session: &ObjectUploadSession,
+	) -> Result<(), AppError> {
+		match self
+			.storage
+			.abort_multipart_upload(&session.storage_key, &session.upload_id)
+			.await
+			.context("Failed to abort expired multipart upload")?
+		{
+			MultipartUploadAbortOutcome::Aborted =>
+				self.delete_pending_upload_metadata_for_cleanup(session).await,
+			MultipartUploadAbortOutcome::UploadNotFound => match self
+				.storage
+				.head_object_opt(&session.storage_key)
+				.await
+				.context("Failed to check object after expired multipart upload was missing")?
+			{
+				Some(_) => self.enqueue_completed_upload_cleanup(session).await,
+				None => self.delete_pending_upload_metadata_for_cleanup(session).await,
+			},
+		}
+	}
+
+	async fn mark_upload_session_cleanup_failed(
+		&mut self,
+		object_id: i64,
+		error_message: &str,
+	) -> Result<(), AppError> {
+		self.db_client
+			.execute(
+				MARK_OBJECT_UPLOAD_SESSION_CLEANUP_FAILED_QUERY,
+				&[&object_id, &error_message, &self.config.upload_session_cleanup_retry_seconds],
+			)
+			.await
+			.context("Failed to record object upload session cleanup failure")?;
+		Ok(())
 	}
 
 	pub async fn update_object_metadata(
@@ -839,6 +959,20 @@ impl<'a> ObjectLifecycleService<'a> {
 			)
 			.await
 			.context("Failed to delete aborted object upload metadata")?;
+		Ok(())
+	}
+
+	async fn delete_pending_upload_metadata_for_cleanup(
+		&mut self,
+		session: &ObjectUploadSession,
+	) -> Result<(), AppError> {
+		self.db_client
+			.execute(
+				DELETE_PENDING_OBJECT_UPLOAD_BY_SESSION_QUERY,
+				&[&session.object_id, &session.storage_key],
+			)
+			.await
+			.context("Failed to delete expired object upload metadata")?;
 		Ok(())
 	}
 
@@ -1587,6 +1721,10 @@ mod tests {
 			},
 			ObjectLifecycleConfig {
 				upload_session_cleanup_max_attempts: 0,
+				..valid.clone()
+			},
+			ObjectLifecycleConfig {
+				upload_session_cleanup_batch_size: 0,
 				..valid.clone()
 			},
 			ObjectLifecycleConfig {
