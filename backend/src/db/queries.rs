@@ -17,7 +17,20 @@ pub const INSERT_OBJECT_UPLOAD_SESSION_QUERY: &str = "INSERT INTO object_upload_
 	expires_at,
 	cleanup_next_attempt_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::BIGINT * interval '1 second'), now() + ($7::BIGINT * interval '1 second'))";
+VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::BIGINT * interval '1 second'), now() + ($7::BIGINT * interval '1 second'))
+RETURNING
+	object_id,
+	storage_key,
+	upload_id,
+	content_type,
+	file_size,
+	part_size_bytes,
+	expires_at,
+	cleanup_attempts,
+	cleanup_last_attempt_at,
+	cleanup_next_attempt_at,
+	cleanup_last_error,
+	created_at";
 
 pub const SELECT_OBJECT_UPLOAD_SESSION_QUERY: &str = "SELECT
 	object_id,
@@ -34,6 +47,26 @@ pub const SELECT_OBJECT_UPLOAD_SESSION_QUERY: &str = "SELECT
 	created_at
 FROM object_upload_sessions
 WHERE object_id = $1";
+
+pub const SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = "SELECT
+	session.object_id,
+	session.storage_key,
+	session.upload_id,
+	session.content_type,
+	session.file_size,
+	session.part_size_bytes,
+	session.expires_at,
+	session.cleanup_attempts,
+	session.cleanup_last_attempt_at,
+	session.cleanup_next_attempt_at,
+	session.cleanup_last_error,
+	session.created_at
+FROM object_upload_sessions session
+JOIN objects object ON object.id = session.object_id
+WHERE session.object_id = $1
+	AND object.user_id = $2
+	AND object.storage_state = 'pending_upload'
+	AND session.expires_at > now()";
 
 pub const DELETE_OBJECT_UPLOAD_SESSION_QUERY: &str =
 	"DELETE FROM object_upload_sessions WHERE object_id = $1";

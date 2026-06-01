@@ -9,10 +9,12 @@ use {
 			INSERT_OBJECT_ALLOWED_USER_QUERY,
 			INSERT_OBJECT_QUERY,
 			INSERT_OBJECT_STORAGE_DELETIONS_QUERY,
+			INSERT_OBJECT_UPLOAD_SESSION_QUERY,
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
 			MARK_OBJECTS_DELETE_PENDING_QUERY,
 			MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
 			MARK_UPLOAD_DELETE_PENDING_QUERY,
+			SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY,
 			SELECT_USERS_BY_EMAILS_QUERY,
 			UPDATE_OBJECT_QUERY,
 		},
@@ -24,7 +26,10 @@ use {
 				S3Object,
 			},
 		},
-		storage::StorageClient,
+		storage::{
+			PresignedHeader,
+			StorageClient,
+		},
 	},
 	anyhow::Context,
 	aws_sdk_s3::primitives::ByteStream,
@@ -39,7 +44,11 @@ use {
 		distr::Alphanumeric,
 	},
 	serde::Deserialize,
-	std::time::Duration,
+	shared::ALLOWED_MIME_TYPES,
+	std::{
+		collections::BTreeSet,
+		time::Duration,
+	},
 	tokio::{
 		task::JoinHandle,
 		time::{
@@ -288,6 +297,73 @@ pub struct ObjectUpload {
 	pub allowed_users: Vec<String>,
 }
 
+pub struct ObjectUploadSessionCreate {
+	pub name: String,
+	pub content_type: String,
+	pub file_size_bytes: i64,
+	pub made_on: Option<String>,
+	pub location: Option<Location>,
+	pub user_id: i64,
+	pub publicity: PublicityOverride,
+	pub allowed_users: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CreatedObjectUploadSession {
+	pub object_id: i64,
+	pub part_size_bytes: i64,
+	pub total_parts: i32,
+	pub expires_at: Timestamp,
+}
+
+#[derive(Clone, Debug)]
+struct ObjectUploadSession {
+	object_id: i64,
+	storage_key: String,
+	upload_id: String,
+	file_size_bytes: i64,
+	part_size_bytes: i64,
+	expires_at: Timestamp,
+}
+
+#[derive(Clone, Debug)]
+pub struct PresignedObjectUploadPart {
+	pub part_number: i32,
+	pub url: String,
+	pub method: String,
+	pub headers: Vec<PresignedHeader>,
+	pub expected_content_length: i64,
+}
+
+const MAX_PRESIGN_PARTS_PER_REQUEST: usize = 100;
+
+impl TryFrom<Row> for ObjectUploadSession {
+	type Error = AppError;
+
+	fn try_from(row: Row) -> Result<Self, Self::Error> {
+		Ok(Self {
+			object_id: row
+				.try_get("object_id")
+				.context("Failed to read upload session object_id")?,
+			storage_key: row
+				.try_get("storage_key")
+				.context("Failed to read upload session storage_key")?,
+			upload_id: row
+				.try_get("upload_id")
+				.context("Failed to read upload session upload_id")?,
+			file_size_bytes: row
+				.try_get("file_size")
+				.context("Failed to read upload session file_size")?,
+			part_size_bytes: row
+				.try_get("part_size_bytes")
+				.context("Failed to read upload session part_size_bytes")?,
+			expires_at: row
+				.try_get("expires_at")
+				.context("Failed to read upload session expires_at")?,
+		})
+	}
+}
+
 impl<'a> ObjectLifecycleService<'a> {
 	pub fn new(
 		db_client: &'a mut Client,
@@ -299,6 +375,101 @@ impl<'a> ObjectLifecycleService<'a> {
 			storage,
 			config,
 		}
+	}
+
+	pub async fn create_upload_session(
+		&mut self,
+		upload: ObjectUploadSessionCreate,
+	) -> Result<CreatedObjectUploadSession, AppError> {
+		validate_upload_name(&upload.name)?;
+		validate_upload_content_type(&upload.content_type)?;
+		let parsed_made_on = parse_made_on(upload.made_on.clone())?;
+		let location_geometry = location_geometry(upload.location.as_ref())?;
+		let total_parts = self.config.upload_session_total_parts(upload.file_size_bytes)?;
+		let part_size_bytes = self.config.upload_part_size_bytes;
+		let session_ttl_seconds = self.config.upload_session_ttl_seconds;
+		let allowed_users = upload.allowed_users.clone();
+		let storage_key = generate_storage_key();
+		let upload_id = self
+			.storage
+			.create_multipart_upload(&storage_key, &upload.content_type)
+			.await
+			.context("Failed to create object upload session in storage")?;
+
+		let session_result = async {
+			let transaction = self.db_client.transaction().await?;
+			let object_id = insert_pending_upload_object(
+				&transaction,
+				&upload,
+				&storage_key,
+				&parsed_made_on,
+				&location_geometry,
+			)
+			.await?;
+			replace_allowed_users(&transaction, object_id, allowed_users).await?;
+			let session = insert_object_upload_session(
+				&transaction,
+				object_id,
+				&storage_key,
+				&upload_id,
+				&upload,
+				part_size_bytes,
+				session_ttl_seconds,
+			)
+			.await?;
+			transaction.commit().await?;
+			Ok::<_, AppError>(session)
+		}
+		.await;
+		let session = match session_result {
+			Ok(session) => session,
+			Err(error) => {
+				abort_created_multipart_upload(self.storage, &storage_key, &upload_id, &error)
+					.await;
+				return Err(error);
+			}
+		};
+
+		Ok(CreatedObjectUploadSession {
+			object_id: session.object_id,
+			part_size_bytes: session.part_size_bytes,
+			total_parts,
+			expires_at: session.expires_at,
+		})
+	}
+
+	pub async fn presign_upload_parts(
+		&mut self,
+		object_id: i64,
+		user_id: i64,
+		part_numbers: Vec<i32>,
+	) -> Result<Vec<PresignedObjectUploadPart>, AppError> {
+		let session = self.active_upload_session_for_user(object_id, user_id).await?;
+		validate_part_numbers(&session, &part_numbers)?;
+
+		let mut presigned_parts = Vec::with_capacity(part_numbers.len());
+		for part_number in part_numbers {
+			let expected_content_length = upload_session_part_size(&session, part_number)?;
+			let presigned = self
+				.storage
+				.presigned_upload_part_url(
+					&session.storage_key,
+					&session.upload_id,
+					part_number,
+					expected_content_length,
+				)
+				.await
+				.context("Failed to presign object upload part")?;
+			presigned_parts.push(PresignedObjectUploadPart {
+				part_number,
+				url: presigned.url,
+				method: presigned.method,
+				headers: presigned.headers,
+				expected_content_length: presigned.expected_content_length,
+			});
+		}
+
+		Ok(presigned_parts)
 	}
 
 	pub async fn upload_and_create_object(
@@ -504,6 +675,37 @@ impl<'a> ObjectLifecycleService<'a> {
 
 		Ok(())
 	}
+
+	async fn active_upload_session_for_user(
+		&mut self,
+		object_id: i64,
+		user_id: i64,
+	) -> Result<ObjectUploadSession, AppError> {
+		self.db_client
+			.query_opt(SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY, &[&object_id, &user_id])
+			.await
+			.context("Failed to load active object upload session")?
+			.map(ObjectUploadSession::try_from)
+			.transpose()?
+			.ok_or_else(|| AppError::NotFound("Upload session not found".to_string()))
+	}
+}
+
+async fn abort_created_multipart_upload(
+	storage: &StorageClient,
+	storage_key: &str,
+	upload_id: &str,
+	source_error: &AppError,
+) {
+	if let Err(abort_error) = storage.abort_multipart_upload(storage_key, upload_id).await {
+		tracing::error!(
+			storage_key = %storage_key,
+			upload_id = %upload_id,
+			source_error = ?source_error,
+			error = ?abort_error,
+			"Failed to abort multipart upload after upload-session creation failed"
+		);
+	}
 }
 
 #[derive(Clone)]
@@ -707,6 +909,130 @@ fn parse_made_on(made_on: Option<String>) -> Result<Option<Timestamp>, AppError>
 
 fn location_geometry(location: Option<&Location>) -> Result<Option<String>, AppError> {
 	location.map(Location::geometry).transpose()
+}
+
+async fn insert_pending_upload_object(
+	transaction: &Transaction<'_>,
+	upload: &ObjectUploadSessionCreate,
+	storage_key: &str,
+	parsed_made_on: &Option<Timestamp>,
+	location_geometry: &Option<String>,
+) -> Result<i64, AppError> {
+	let row = transaction
+		.query_one(
+			INSERT_OBJECT_QUERY,
+			&[
+				&upload.name,
+				&storage_key,
+				&upload.content_type,
+				&parsed_made_on,
+				&location_geometry,
+				&upload.user_id,
+				&upload.publicity,
+			],
+		)
+		.await
+		.map_err(|error| insert_object_error(error, &upload.name))?;
+	row.try_get("id").context("Failed to read inserted object id").map_err(AppError::from)
+}
+
+async fn insert_object_upload_session(
+	transaction: &Transaction<'_>,
+	object_id: i64,
+	storage_key: &str,
+	upload_id: &str,
+	upload: &ObjectUploadSessionCreate,
+	part_size_bytes: i64,
+	session_ttl_seconds: i64,
+) -> Result<ObjectUploadSession, AppError> {
+	let row = transaction
+		.query_one(
+			INSERT_OBJECT_UPLOAD_SESSION_QUERY,
+			&[
+				&object_id,
+				&storage_key,
+				&upload_id,
+				&upload.content_type,
+				&upload.file_size_bytes,
+				&part_size_bytes,
+				&session_ttl_seconds,
+			],
+		)
+		.await
+		.context("Failed to insert object upload session")?;
+	ObjectUploadSession::try_from(row)
+}
+
+fn validate_upload_name(name: &str) -> Result<(), AppError> {
+	if name.trim().is_empty() {
+		return Err(AppError::Validation("Object name must not be empty".to_string()));
+	}
+	Ok(())
+}
+
+fn validate_upload_content_type(content_type: &str) -> Result<(), AppError> {
+	if ALLOWED_MIME_TYPES.contains(&content_type) {
+		return Ok(());
+	}
+	Err(AppError::Validation(format!("Unsupported file type: {content_type}")))
+}
+
+fn validate_part_numbers(
+	session: &ObjectUploadSession,
+	part_numbers: &[i32],
+) -> Result<(), AppError> {
+	if part_numbers.is_empty() {
+		return Err(AppError::Validation("part_numbers must not be empty".to_string()));
+	}
+	if part_numbers.len() > MAX_PRESIGN_PARTS_PER_REQUEST {
+		return Err(AppError::Validation(format!(
+			"part_numbers may contain at most {MAX_PRESIGN_PARTS_PER_REQUEST} entries"
+		)));
+	}
+
+	let total_parts = upload_session_total_parts(session)?;
+	let mut seen = BTreeSet::new();
+	for part_number in part_numbers {
+		if !(1 ..= total_parts).contains(part_number) {
+			return Err(AppError::Validation(format!(
+				"part_number must be between 1 and {total_parts}"
+			)));
+		}
+		if !seen.insert(*part_number) {
+			return Err(AppError::Validation(format!(
+				"part_number {part_number} was requested more than once"
+			)));
+		}
+	}
+
+	Ok(())
+}
+
+fn upload_session_total_parts(session: &ObjectUploadSession) -> Result<i32, AppError> {
+	let part_count = ((session.file_size_bytes - 1) / session.part_size_bytes) + 1;
+	if part_count > i64::from(ObjectLifecycleConfig::S3_MAX_MULTIPART_PART_COUNT) {
+		return Err(AppError::Validation(format!(
+			"upload session requires {part_count} parts, exceeding S3 multipart limit {}",
+			ObjectLifecycleConfig::S3_MAX_MULTIPART_PART_COUNT
+		)));
+	}
+	i32::try_from(part_count)
+		.context("upload session part count exceeds i32 range")
+		.map_err(AppError::from)
+}
+
+fn upload_session_part_size(
+	session: &ObjectUploadSession,
+	part_number: i32,
+) -> Result<i64, AppError> {
+	let total_parts = upload_session_total_parts(session)?;
+	if !(1 ..= total_parts).contains(&part_number) {
+		return Err(AppError::Validation(format!(
+			"part_number must be between 1 and {total_parts}"
+		)));
+	}
+	let part_start = i64::from(part_number - 1) * session.part_size_bytes;
+	Ok(session.part_size_bytes.min(session.file_size_bytes - part_start))
 }
 
 async fn enqueue_storage_deletions(

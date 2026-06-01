@@ -3,6 +3,7 @@ use {
 		CasbinObject,
 		CasbinUser,
 		ContextWrapper,
+		GraphqlMutationCacheEffect,
 		SharedState,
 		UserId,
 		constants::PASSWORD_RESET_RATE_LIMIT_SECONDS,
@@ -29,12 +30,19 @@ use {
 				PublicityOverride,
 				S3Object,
 			},
+			upload_session::{
+				CreatedObjectUploadSession,
+				PresignedObjectUploadPart,
+			},
 			user::{
 				PublicityDefault,
 				User,
 			},
 		},
-		object_lifecycle::ObjectLifecycleService,
+		object_lifecycle::{
+			ObjectLifecycleService,
+			ObjectUploadSessionCreate,
+		},
 	},
 	anyhow::Context as AnyhowContext,
 	argon2::{
@@ -64,6 +72,7 @@ use {
 		Manager,
 	},
 	email_address::EmailAddress,
+	jiff::Timestamp,
 	rand::{
 		RngExt,
 		distr::Alphanumeric,
@@ -76,6 +85,17 @@ use {
 pub struct UpdateS3ObjectInput {
 	pub id: ID,
 	pub name: String,
+	pub made_on: Option<String>,
+	pub location: Option<Location>,
+	pub publicity: PublicityOverride,
+	pub allowed_users: Option<Vec<String>>,
+}
+
+#[derive(InputObject)]
+pub struct CreateObjectUploadSessionInput {
+	pub name: String,
+	pub content_type: String,
+	pub file_size_bytes: i64,
 	pub made_on: Option<String>,
 	pub location: Option<Location>,
 	pub publicity: PublicityOverride,
@@ -112,10 +132,86 @@ fn auth_cookie(
 	builder.build()
 }
 
+fn presigned_url_expires_at(config: &crate::Config) -> Result<Timestamp, GraphQLError> {
+	Timestamp::now()
+		.checked_add(std::time::Duration::from_secs(config.storage.presigned_url_ttl_seconds))
+		.context("Failed to calculate presigned URL expiry")
+		.map_err(AppError::graphql)
+}
+
 pub struct Mutation;
 
 #[Object]
 impl Mutation {
+	async fn create_object_upload_session(
+		&self,
+		ctx: &Context<'_>,
+		input: CreateObjectUploadSessionInput,
+	) -> Result<CreatedObjectUploadSession, GraphQLError> {
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let wrapper = ContextWrapper(ctx);
+		let storage = wrapper.get_storage_client()?;
+		let mut client = wrapper.get_db_client().await?;
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+
+		let session = ObjectLifecycleService::new(
+			&mut client,
+			storage,
+			state.config.object_lifecycle.clone(),
+		)
+		.create_upload_session(ObjectUploadSessionCreate {
+			name: input.name,
+			content_type: input.content_type,
+			file_size_bytes: input.file_size_bytes,
+			made_on: input.made_on,
+			location: input.location,
+			user_id,
+			publicity: input.publicity,
+			allowed_users: input.allowed_users.unwrap_or_default(),
+		})
+		.await
+		.map_err(AppError::graphql)?;
+
+		Ok(session.into())
+	}
+
+	async fn presign_object_upload_parts(
+		&self,
+		ctx: &Context<'_>,
+		object_id: ID,
+		part_numbers: Vec<i32>,
+	) -> Result<Vec<PresignedObjectUploadPart>, GraphQLError> {
+		let user_id =
+			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let object_id =
+			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
+		let wrapper = ContextWrapper(ctx);
+		let storage = wrapper.get_storage_client()?;
+		let mut client = wrapper.get_db_client().await?;
+		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let url_expires_at = presigned_url_expires_at(&state.config)?;
+
+		let parts = ObjectLifecycleService::new(
+			&mut client,
+			storage,
+			state.config.object_lifecycle.clone(),
+		)
+		.presign_upload_parts(object_id, user_id, part_numbers)
+		.await
+		.map_err(AppError::graphql)?;
+
+		ctx.data::<Arc<GraphqlMutationCacheEffect>>()
+			.map_err(|e| anyhow::anyhow!(e.message).context("Mutation cache effect not found"))
+			.map_err(AppError::graphql)?
+			.mark_non_invalidating_field();
+
+		Ok(parts
+			.into_iter()
+			.map(|part| PresignedObjectUploadPart::new(part, url_expires_at))
+			.collect())
+	}
+
 	async fn delete_s3_objects(
 		&self,
 		ctx: &Context<'_>,
