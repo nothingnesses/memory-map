@@ -122,6 +122,10 @@ build *args:
 frontend-build: require-frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build {{ release_flag }} --skip-version-check'
 
+# Typecheck the Playwright E2E TypeScript support code and specs.
+frontend-e2e-typecheck:
+	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && pnpm run e2e:typecheck'
+
 # Run any cargo subcommand except test; use `just test` for tests.
 [positional-arguments]
 cargo *args:
@@ -221,7 +225,7 @@ backend-integration:
 	just backend-integration-test
 
 # Run Playwright E2E tests against the headless local service graph.
-e2e: frontend-config
+e2e: frontend-config frontend-e2e-typecheck
 	#!/usr/bin/env bash
 	set -euo pipefail
 
@@ -363,7 +367,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|storage-ci|storage-test|test|verify) ;;
+		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|frontend-e2e-typecheck|storage-ci|storage-test|test|verify) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2
@@ -412,5 +416,6 @@ verify:
 	just deny
 	just doc
 	just test
+	just frontend-e2e-typecheck
 	just frontend-config
 	just frontend-build

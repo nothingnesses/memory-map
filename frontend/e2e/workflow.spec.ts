@@ -1,7 +1,15 @@
-const fs = require("node:fs");
-const path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+import type {
+	Locator,
+	Page,
+	Response as PlaywrightResponse,
+} from "@playwright/test";
 
-const { expect, test } = require("./fixtures");
+import {
+	expect,
+	test,
+} from "./fixtures";
 
 const fixtureBuffer = fs.readFileSync(
 	path.join(__dirname, "fixtures", "memory-map-e2e.svg"),
@@ -10,27 +18,33 @@ const fixtureBuffer = fs.readFileSync(
 const password = "memory-map-e2e-password-123";
 const backendUrl = process.env.E2E_BACKEND_URL ?? "http://127.0.0.1:8000";
 
-function runId() {
+function runId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-async function expectImageLoaded(locator) {
+async function expectImageLoaded(locator: Locator): Promise<void> {
 	await expect(locator).toBeVisible();
 	await expect
 		.poll(async () =>
-			locator.evaluate(
-				(image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0,
-			),
+			locator.evaluate((element) => {
+				if (!(element instanceof HTMLImageElement)) {
+					return false;
+				}
+				return element.complete && element.naturalWidth > 0 && element.naturalHeight > 0;
+			}),
 		)
 		.toBe(true);
 }
 
-async function openMenu(page) {
+async function openMenu(page: Page): Promise<void> {
 	await page.getByRole("button", { name: "Open menu" }).click();
 	await expect(page.getByRole("button", { name: "Close menu" })).toBeVisible();
 }
 
-async function openMarkerPopup(page, text) {
+async function openMarkerPopup(
+	page: Page,
+	text: string,
+): Promise<Locator> {
 	const markers = page.locator(".leaflet-marker-icon");
 	await expect(markers.first()).toBeVisible();
 
@@ -46,13 +60,16 @@ async function openMarkerPopup(page, text) {
 	throw new Error(`Could not find marker popup for ${text}`);
 }
 
-function waitForGraphqlOperation(page, operationName) {
+function waitForGraphqlOperation(
+	page: Page,
+	operationName: string,
+): Promise<PlaywrightResponse> {
 	return page.waitForResponse((response) => {
 		const request = response.request();
 		return (
 			request.method() === "POST" &&
 			response.url().startsWith(backendUrl) &&
-			request.postData()?.includes(operationName)
+			(request.postData()?.includes(operationName) ?? false)
 		);
 	});
 }

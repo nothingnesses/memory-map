@@ -1,8 +1,11 @@
-const { defineConfig, devices } = require("@playwright/test");
+import {
+	defineConfig,
+	devices,
+} from "@playwright/test";
 
 const frontendUrl = process.env.E2E_FRONTEND_URL ?? "http://127.0.0.1:3000";
 
-module.exports = defineConfig({
+export default defineConfig({
 	testDir: "./e2e",
 	timeout: 60_000,
 	expect: {

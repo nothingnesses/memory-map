@@ -1,4 +1,7 @@
-const { expect, test } = require("./fixtures");
+import {
+	expect,
+	test,
+} from "./fixtures";
 
 test("home page loads the map shell", async ({ page }) => {
 	await page.goto("/");

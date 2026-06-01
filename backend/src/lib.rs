@@ -122,6 +122,7 @@ pub struct Config {
 	pub frontend: FrontendConfig,
 	pub cors: CorsConfig,
 	pub storage: StorageConfig,
+	#[serde(default)]
 	pub object_lifecycle: ObjectLifecycleConfig,
 }
 
@@ -456,5 +457,52 @@ mod tests {
 		assert!(!debug.contains("debug-cookie-secret"));
 		assert!(!debug.contains("debug-storage-access-secret"));
 		assert!(!debug.contains("debug-storage-secret-secret"));
+	}
+
+	#[test]
+	fn config_deserialization_defaults_missing_object_lifecycle_section() -> anyhow::Result<()> {
+		let config: Config = serde_json::from_value(serde_json::json!({
+			"pg": {},
+			"server": {
+				"host": "127.0.0.1",
+				"port": 8000
+			},
+			"smtp": {
+				"host": "smtp.example.test",
+				"user": "smtp-user",
+				"pass": "smtp-pass",
+				"from": "noreply@example.test"
+			},
+			"auth": {
+				"cookie_secret": "cookie-secret",
+				"enable_registration": true
+			},
+			"frontend": {
+				"url": "http://127.0.0.1:3000"
+			},
+			"cors": {
+				"allowed_origins": "http://127.0.0.1:3000"
+			},
+			"storage": {
+				"endpoint_url": "http://127.0.0.1:9000/",
+				"access_key": "storage-access",
+				"secret_key": "storage-secret",
+				"bucket_name": "memory-map",
+				"region": "us-east-1",
+				"force_path_style": true,
+				"presigned_url_ttl_seconds": 60
+			}
+		}))?;
+
+		let default = ObjectLifecycleConfig::default();
+		assert_eq!(
+			config.object_lifecycle.pending_upload_timeout_seconds,
+			default.pending_upload_timeout_seconds
+		);
+		assert_eq!(
+			config.object_lifecycle.storage_deletion_max_attempts,
+			default.storage_deletion_max_attempts
+		);
+		Ok(())
 	}
 }

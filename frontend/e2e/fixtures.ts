@@ -1,4 +1,7 @@
-const { expect, test: base } = require("@playwright/test");
+import {
+	expect,
+	test as base,
+} from "@playwright/test";
 
 const transparentPng = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lz7eSgAAAABJRU5ErkJggg==",
@@ -7,8 +10,8 @@ const transparentPng = Buffer.from(
 
 const test = base.extend({
 	page: async ({ page }, use) => {
-		const consoleErrors = [];
-		const failedRequests = [];
+		const consoleErrors: string[] = [];
+		const failedRequests: string[] = [];
 
 		await page.route("https://tile.openstreetmap.org/**", async (route) => {
 			await route.fulfill({
@@ -38,7 +41,7 @@ const test = base.extend({
 	},
 });
 
-module.exports = {
+export {
 	expect,
 	test,
 };
