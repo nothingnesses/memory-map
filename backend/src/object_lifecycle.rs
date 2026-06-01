@@ -43,7 +43,6 @@ use {
 		},
 	},
 	anyhow::Context,
-	aws_sdk_s3::primitives::ByteStream,
 	deadpool::managed::Pool,
 	deadpool_postgres::{
 		Client,
@@ -307,17 +306,6 @@ pub struct ObjectLifecycleService<'a> {
 	config: ObjectLifecycleConfig,
 }
 
-pub struct ObjectUpload {
-	pub name: String,
-	pub bytes: ByteStream,
-	pub content_type: String,
-	pub made_on: Option<String>,
-	pub location: Option<Location>,
-	pub user_id: i64,
-	pub publicity: PublicityOverride,
-	pub allowed_users: Vec<String>,
-}
-
 pub struct ObjectUploadSessionCreate {
 	pub name: String,
 	pub content_type: String,
@@ -556,86 +544,6 @@ impl<'a> ObjectLifecycleService<'a> {
 		}
 	}
 
-	pub async fn upload_and_create_object(
-		&mut self,
-		upload: ObjectUpload,
-	) -> Result<S3Object, AppError> {
-		let parsed_made_on = parse_made_on(upload.made_on)?;
-		let location_geometry = location_geometry(upload.location.as_ref())?;
-		let storage_key = generate_storage_key();
-		let transaction = self.db_client.transaction().await?;
-		let mut s3_object = S3Object::try_from(
-			transaction
-				.query_one(
-					INSERT_OBJECT_QUERY,
-					&[
-						&upload.name,
-						&storage_key,
-						&upload.content_type,
-						&parsed_made_on,
-						&location_geometry,
-						&upload.user_id,
-						&upload.publicity,
-					],
-				)
-				.await
-				.map_err(|error| insert_object_error(error, &upload.name))?,
-		)
-		.map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
-		})?;
-		let id = s3_object.id;
-		s3_object.allowed_users =
-			replace_allowed_users(&transaction, id, upload.allowed_users).await?;
-		transaction.commit().await?;
-
-		if let Err(error) = self
-			.storage
-			.upload_object(&s3_object.storage_key, upload.bytes, upload.content_type)
-			.await
-		{
-			if let Err(cleanup_error) =
-				self.enqueue_pending_upload_cleanup(id, &s3_object.storage_key).await
-			{
-				tracing::error!(
-					object_id = id,
-					storage_key = %s3_object.storage_key,
-					error = ?cleanup_error,
-					"Failed to enqueue storage cleanup after upload failed"
-				);
-			}
-			return Err(AppError::from(error));
-		}
-
-		let storage_key = s3_object.storage_key.clone();
-		let allowed_users = s3_object.allowed_users;
-		let finalized_row = match self
-			.db_client
-			.query_one(FINALIZE_OBJECT_UPLOAD_QUERY, &[&id, &storage_key])
-			.await
-		{
-			Ok(row) => row,
-			Err(error) => {
-				if let Err(cleanup_error) =
-					self.enqueue_pending_upload_cleanup(id, &storage_key).await
-				{
-					tracing::error!(
-						object_id = id,
-						storage_key = %storage_key,
-						error = ?cleanup_error,
-						"Failed to enqueue storage cleanup after upload finalization failed"
-					);
-				}
-				return Err(AppError::from(error));
-			}
-		};
-		let mut finalized = S3Object::try_from(finalized_row).map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
-		})?;
-		finalized.allowed_users = allowed_users;
-		Ok(finalized)
-	}
-
 	pub async fn delete_objects(
 		&mut self,
 		ids: &[i64],
@@ -844,27 +752,6 @@ impl<'a> ObjectLifecycleService<'a> {
 		s3_object.allowed_users = replace_allowed_users(&transaction, id, allowed_users).await?;
 		transaction.commit().await?;
 		Ok(s3_object)
-	}
-
-	async fn enqueue_pending_upload_cleanup(
-		&mut self,
-		object_id: i64,
-		storage_key: &str,
-	) -> Result<(), AppError> {
-		let transaction = self.db_client.transaction().await?;
-		let object = S3Object::try_from(
-			transaction
-				.query_one(MARK_UPLOAD_DELETE_PENDING_QUERY, &[&object_id, &storage_key])
-				.await
-				.context("Failed to mark failed upload for storage cleanup")?,
-		)
-		.map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
-		})?;
-		enqueue_storage_deletions(&transaction, &[object]).await?;
-		transaction.commit().await?;
-
-		Ok(())
 	}
 
 	async fn active_upload_session_for_user(

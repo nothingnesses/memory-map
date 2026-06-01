@@ -8,12 +8,10 @@ use {
 		SharedState,
 		UserId,
 		constants::{
-			BODY_MAX_SIZE_LIMIT_BYTES,
 			GRAPHQL_BODY_LIMIT_BYTES,
 			GRAPHQL_RESPONSE_CACHE_MAX_CAPACITY_BYTES,
 			GRAPHQL_RESPONSE_CACHE_TTL_SECONDS,
 		},
-		controllers::api::locations::post as post_locations,
 		db::queries::SELECT_USER_EXISTS_QUERY,
 		errors::AppError,
 		graphiql,
@@ -43,7 +41,6 @@ use {
 			Bytes,
 		},
 		extract::{
-			DefaultBodyLimit,
 			Extension,
 			State,
 		},
@@ -142,12 +139,6 @@ pub fn build_app(shared_state: Arc<BackendSharedState>) -> Router {
 			post(graphql_handler)
 				.route_layer(RequestBodyLimitLayer::new(GRAPHQL_BODY_LIMIT_BYTES))
 				.with_state(app_state.clone()),
-		)
-		.route(
-			"/api/locations/",
-			post(post_locations)
-				.route_layer(DefaultBodyLimit::max(BODY_MAX_SIZE_LIMIT_BYTES))
-				.with_state(app_state),
 		)
 		.layer(Extension(schema))
 		.layer(Extension(key))

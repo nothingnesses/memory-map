@@ -16,13 +16,12 @@ aws-sdk-s3 = { version = "1.133.0", default-features = false, features = [
 	"rt-tokio",
 	"sigv4a"
 ] }
-axum = { version = "0.8", features = ["multipart"] }
+axum = "0.8"
 axum-extra = { version = "0.12", features = [
 	"cookie",
 	"cookie-private",
 	"cookie-signed"
 ] }
-axum-macros = "0.5"
 blake3 = "1.8"
 casbin = { version = "2.20", features = ["logging", "runtime-tokio"] }
 config = "0.15"

@@ -41,7 +41,6 @@ use {
 
 pub mod app;
 pub mod constants;
-pub mod controllers;
 pub mod db;
 pub mod email;
 pub mod errors;

@@ -197,8 +197,9 @@ path after the configured timeout.
 
 Serve the frontend over HTTPS in production.
 
-Route backend GraphQL and upload traffic to the backend service. The backend
-serves GraphQL at `/` and uploads at `/api/locations/`.
+Route backend GraphQL traffic to the backend service. The backend serves
+GraphQL at `/`; browser object bytes upload directly to the configured
+S3-compatible storage endpoint through presigned multipart URLs.
 
 Set `MEMORY_MAP__FRONTEND__URL` and `MEMORY_MAP__CORS__ALLOWED_ORIGINS` to the
 public frontend origin. For example:

@@ -22,7 +22,6 @@ use {
 			build_app,
 			build_shared_state,
 		},
-		constants::BODY_MAX_SIZE_LIMIT_BYTES,
 		db::queries::{
 			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
@@ -75,6 +74,8 @@ use {
 	tower::ServiceExt,
 };
 
+const TEST_RESPONSE_BODY_LIMIT_BYTES: usize = 1024 * 1024;
+
 struct TestApp {
 	app: Router,
 	state: Arc<SharedState<Manager, Object<Manager>>>,
@@ -86,37 +87,65 @@ struct TestResponse {
 	body: Bytes,
 }
 
-struct UploadLocationRequest<'a> {
+struct DirectUploadResult {
+	object: Value,
+	object_id: String,
+	completed_parts: Vec<Value>,
+}
+
+struct DirectUploadRequest<'a> {
 	object_name: &'a str,
-	latitude: &'a str,
-	longitude: &'a str,
-	made_on: &'a str,
+	location: Option<Value>,
+	made_on: Option<&'a str>,
 	content_type: &'a str,
 	body: &'a [u8],
 }
 
-impl<'a> UploadLocationRequest<'a> {
+impl<'a> DirectUploadRequest<'a> {
 	fn svg(
 		object_name: &'a str,
-		latitude: &'a str,
-		longitude: &'a str,
+		latitude: f64,
+		longitude: f64,
 		body: &'a [u8],
 	) -> Self {
 		Self {
 			object_name,
-			latitude,
-			longitude,
-			made_on: "2026-05-31T12:00:00Z",
+			location: Some(json!({
+				"latitude": latitude,
+				"longitude": longitude,
+			})),
+			made_on: Some("2026-05-31T12:00:00Z"),
 			content_type: "image/svg+xml",
 			body,
 		}
+	}
+
+	fn svg_without_location(
+		object_name: &'a str,
+		body: &'a [u8],
+	) -> Self {
+		Self {
+			object_name,
+			location: None,
+			made_on: Some("2026-05-31T12:00:00Z"),
+			content_type: "image/svg+xml",
+			body,
+		}
+	}
+
+	fn with_location(
+		mut self,
+		location: Option<Value>,
+	) -> Self {
+		self.location = location;
+		self
 	}
 
 	fn with_made_on(
 		mut self,
 		made_on: &'a str,
 	) -> Self {
-		self.made_on = made_on;
+		self.made_on = Some(made_on);
 		self
 	}
 
@@ -130,10 +159,6 @@ impl<'a> UploadLocationRequest<'a> {
 }
 
 impl TestResponse {
-	fn text(&self) -> anyhow::Result<&str> {
-		std::str::from_utf8(&self.body).context("response body is not valid UTF-8")
-	}
-
 	fn json(&self) -> anyhow::Result<Value> {
 		serde_json::from_slice(&self.body).context("response body is not valid JSON")
 	}
@@ -180,7 +205,7 @@ impl TestApp {
 			.await
 			.map_err(|err| anyhow::anyhow!("router request failed: {err}"))?;
 		let (parts, body) = response.into_parts();
-		let body = to_bytes(body, BODY_MAX_SIZE_LIMIT_BYTES).await?;
+		let body = to_bytes(body, TEST_RESPONSE_BODY_LIMIT_BYTES).await?;
 
 		Ok(TestResponse {
 			status: parts.status,
@@ -211,24 +236,175 @@ impl TestApp {
 		self.request(request.body(Body::from(body.to_string()))?).await
 	}
 
-	async fn upload_location(
+	async fn create_object_upload_session(
 		&self,
 		cookie: Option<&str>,
-		upload: UploadLocationRequest<'_>,
+		upload: &DirectUploadRequest<'_>,
 	) -> anyhow::Result<TestResponse> {
-		let boundary = format!("memory-map-boundary-{}", unique_suffix()?);
-		let multipart = multipart_body(&boundary, upload);
+		self.graphql(
+			"mutation CreateObjectUploadSession($input: CreateObjectUploadSessionInput!) {
+				createObjectUploadSession(input: $input) {
+					objectId
+					partSizeBytes
+					totalParts
+				}
+			}",
+			json!({
+				"input": {
+					"name": upload.object_name,
+					"contentType": upload.content_type,
+					"fileSizeBytes": upload.body.len() as i64,
+					"madeOn": upload.made_on,
+					"location": upload.location,
+					"publicity": "DEFAULT",
+					"allowedUsers": [],
+				},
+			}),
+			cookie,
+		)
+		.await
+	}
 
-		let mut request = Request::builder()
-			.method("POST")
-			.uri("/api/locations/")
-			.header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"));
+	async fn direct_upload_object(
+		&self,
+		cookie: &str,
+		upload: &DirectUploadRequest<'_>,
+	) -> anyhow::Result<Value> {
+		Ok(self.direct_upload_object_with_result(cookie, upload).await?.object)
+	}
 
-		if let Some(cookie) = cookie {
-			request = request.header(header::COOKIE, cookie);
+	async fn direct_upload_object_with_result(
+		&self,
+		cookie: &str,
+		upload: &DirectUploadRequest<'_>,
+	) -> anyhow::Result<DirectUploadResult> {
+		let create = self.create_object_upload_session(Some(cookie), upload).await?;
+		assert_eq!(create.status, StatusCode::OK);
+		let create = create.json()?;
+		assert_graphql_success(&create)?;
+		let session = json_path(&create, &["data", "createObjectUploadSession"])?;
+		let object_id = json_path(session, &["objectId"])?
+			.as_str()
+			.context("createObjectUploadSession.objectId is not a string")?
+			.to_string();
+		let part_size_bytes = json_path(session, &["partSizeBytes"])?
+			.as_i64()
+			.context("createObjectUploadSession.partSizeBytes is not an integer")?;
+		let total_parts = json_path(session, &["totalParts"])?
+			.as_i64()
+			.context("createObjectUploadSession.totalParts is not an integer")?;
+
+		let mut completed_parts = Vec::with_capacity(total_parts as usize);
+		let http = reqwest::Client::new();
+		for part_number in 1 ..= total_parts {
+			let presign = self
+				.graphql(
+					"mutation PresignObjectUploadParts($objectId: ID!, $partNumbers: [Int!]!) {
+						presignObjectUploadParts(objectId: $objectId, partNumbers: $partNumbers) {
+							partNumber
+							url
+							method
+							headers { name value }
+							expectedContentLength
+						}
+					}",
+					json!({
+						"objectId": object_id,
+						"partNumbers": [part_number],
+					}),
+					Some(cookie),
+				)
+				.await?;
+			assert_eq!(presign.status, StatusCode::OK);
+			let presign = presign.json()?;
+			assert_graphql_success(&presign)?;
+			let parts = json_path(&presign, &["data", "presignObjectUploadParts"])?
+				.as_array()
+				.context("presignObjectUploadParts response is not an array")?;
+			let part = parts.first().context("presignObjectUploadParts response is empty")?;
+			let expected_content_length = json_path(part, &["expectedContentLength"])?
+				.as_i64()
+				.context("expectedContentLength is not an integer")?;
+			let start = ((part_number - 1) * part_size_bytes) as usize;
+			let end = start + expected_content_length as usize;
+			let chunk = upload
+				.body
+				.get(start .. end)
+				.with_context(|| format!("part {part_number} byte range was out of bounds"))?;
+			assert_eq!(chunk.len(), expected_content_length as usize);
+
+			let method = json_path(part, &["method"])?
+				.as_str()
+				.context("presigned part method is not a string")?
+				.parse::<reqwest::Method>()?;
+			let url = json_path(part, &["url"])?
+				.as_str()
+				.context("presigned part URL is not a string")?;
+			let mut request = http.request(method, url).body(chunk.to_vec());
+			for header in json_path(part, &["headers"])?
+				.as_array()
+				.context("presigned part headers is not an array")?
+			{
+				let name = json_path(header, &["name"])?
+					.as_str()
+					.context("presigned header name is not a string")?
+					.parse::<reqwest::header::HeaderName>()?;
+				let value = json_path(header, &["value"])?
+					.as_str()
+					.context("presigned header value is not a string")?
+					.parse::<reqwest::header::HeaderValue>()?;
+				request = request.header(name, value);
+			}
+			let response = request.send().await?;
+			let status = response.status();
+			assert!(status.is_success(), "part upload failed with {status}");
+			let e_tag = response
+				.headers()
+				.get(reqwest::header::ETAG)
+				.with_context(|| format!("part {part_number} upload did not return ETag"))?
+				.to_str()?
+				.to_string();
+			completed_parts.push(json!({
+				"partNumber": part_number,
+				"eTag": e_tag,
+			}));
 		}
 
-		self.request(request.body(Body::from(multipart))?).await
+		let complete =
+			self.complete_object_upload(cookie, &object_id, completed_parts.clone()).await?;
+		assert_eq!(complete.status, StatusCode::OK);
+		let complete = complete.json()?;
+		assert_graphql_success(&complete)?;
+		let object = json_path(&complete, &["data", "completeObjectUpload"])?.clone();
+		Ok(DirectUploadResult {
+			object,
+			object_id,
+			completed_parts,
+		})
+	}
+
+	async fn complete_object_upload(
+		&self,
+		cookie: &str,
+		object_id: &str,
+		completed_parts: Vec<Value>,
+	) -> anyhow::Result<TestResponse> {
+		self.graphql(
+			"mutation CompleteObjectUpload($objectId: ID!, $parts: [CompletedObjectUploadPartInput!]!) {
+				completeObjectUpload(objectId: $objectId, parts: $parts) {
+					id
+					name
+					location { latitude longitude }
+					contentType
+				}
+			}",
+			json!({
+				"objectId": object_id,
+				"parts": completed_parts,
+			}),
+			Some(cookie),
+		)
+		.await
 	}
 
 	async fn object_count(
@@ -265,6 +441,24 @@ impl TestApp {
 			.await?
 			.get(0);
 		Ok(content_type)
+	}
+
+	async fn upload_session_count(
+		&self,
+		object_name: &str,
+	) -> anyhow::Result<i64> {
+		let client = self.state.pool.get().await?;
+		let count = client
+			.query_one(
+				"SELECT COUNT(*)
+				FROM object_upload_sessions session
+				JOIN objects object ON object.id = session.object_id
+				WHERE object.name = $1",
+				&[&object_name],
+			)
+			.await?
+			.get(0);
+		Ok(count)
 	}
 
 	async fn storage_deletion_outbox_count_for_key(
@@ -346,21 +540,17 @@ async fn unauthenticated_upload_is_rejected() -> anyhow::Result<()> {
 		return Ok(());
 	};
 	let object_name = format!("unauthenticated-upload-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg(
+		&object_name,
+		12.5,
+		-45.25,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	);
 
-	let response = app
-		.upload_location(
-			None,
-			UploadLocationRequest::svg(
-				&object_name,
-				"12.5",
-				"-45.25",
-				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
-			),
-		)
-		.await?;
+	let response = app.create_object_upload_session(None, &upload).await?;
 
-	assert_eq!(response.status, StatusCode::UNAUTHORIZED);
-	assert_eq!(response.text()?, "Unauthorized");
+	assert_eq!(response.status, StatusCode::OK);
+	assert_graphql_error_contains(&response.json()?, "Unauthorized")?;
 	assert_eq!(app.object_count(&object_name).await?, 0);
 
 	Ok(())
@@ -418,21 +608,30 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	let user = register_and_login(&app).await?;
 	let object_name = format!("authenticated-upload-{}.svg", unique_suffix()?);
 	let body = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\" /></svg>";
+	let upload = DirectUploadRequest::svg(&object_name, 12.5, -45.25, body);
 
-	let upload = app
-		.upload_location(
-			Some(&user.cookie),
-			UploadLocationRequest::svg(&object_name, "12.5", "-45.25", body),
-		)
-		.await?;
-	assert_eq!(upload.status, StatusCode::OK);
-	let upload = upload.json()?;
-	let upload_objects = upload.as_array().context("upload response is not an array")?;
-	let uploaded_object = upload_objects.first().context("upload response is empty")?;
-	let object_id = json_path(uploaded_object, &["id"])?
+	let upload_result = app.direct_upload_object_with_result(&user.cookie, &upload).await?;
+	let uploaded_object = upload_result.object;
+	let object_id = json_path(&uploaded_object, &["id"])?
 		.as_str()
 		.context("upload response is missing object id")?;
-	assert_eq!(json_path(uploaded_object, &["name"])?.as_str(), Some(object_name.as_str()));
+	assert_eq!(json_path(&uploaded_object, &["name"])?.as_str(), Some(object_name.as_str()));
+
+	let retry_complete = app
+		.complete_object_upload(
+			&user.cookie,
+			&upload_result.object_id,
+			upload_result.completed_parts.clone(),
+		)
+		.await?;
+	assert_eq!(retry_complete.status, StatusCode::OK);
+	let retry_complete = retry_complete.json()?;
+	assert_graphql_success(&retry_complete)?;
+	assert_eq!(
+		json_path(&retry_complete, &["data", "completeObjectUpload", "id"])?.as_str(),
+		Some(object_id)
+	);
+
 	assert_eq!(app.object_count(&object_name).await?, 1);
 	assert_eq!(app.object_content_type(&object_name).await?, "image/svg+xml");
 	let storage_key = app.object_storage_key(&object_name).await?;
@@ -521,6 +720,29 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 
 #[tokio::test]
 #[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn direct_upload_accepts_multiple_parts() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("multipart-upload-{}.svg", unique_suffix()?);
+	let part_size = app.state.config.object_lifecycle.upload_part_size_bytes as usize;
+	let body = vec![b'x'; part_size + 17];
+	let upload = DirectUploadRequest::svg(&object_name, 12.5, -45.25, &body);
+
+	let uploaded_object = app.direct_upload_object(&user.cookie, &upload).await?;
+	assert_eq!(json_path(&uploaded_object, &["name"])?.as_str(), Some(object_name.as_str()));
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	let storage_key = app.object_storage_key(&object_name).await?;
+	let metadata = app.state.storage.head_object(&storage_key).await?;
+	assert_eq!(metadata.content_length, body.len() as i64);
+	assert_eq!(metadata.content_type, "image/svg+xml");
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
 async fn invalid_upload_coordinates_do_not_leave_side_effects() -> anyhow::Result<()> {
 	let Some(app) = TestApp::new().await? else {
 		return Ok(());
@@ -528,25 +750,21 @@ async fn invalid_upload_coordinates_do_not_leave_side_effects() -> anyhow::Resul
 	let user = register_and_login(&app).await?;
 
 	for (label, latitude, longitude, expected_error) in [
-		("latitude", "90.1", "-45.25", "not a valid latitude value"),
-		("longitude", "12.5", "-180.1", "not a valid longitude value"),
+		("latitude", 90.1, -45.25, "not a valid latitude value"),
+		("longitude", 12.5, -180.1, "not a valid longitude value"),
 	] {
 		let object_name = format!("invalid-{label}-upload-{}.svg", unique_suffix()?);
+		let upload = DirectUploadRequest::svg(
+			&object_name,
+			latitude,
+			longitude,
+			b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+		);
 
-		let response = app
-			.upload_location(
-				Some(&user.cookie),
-				UploadLocationRequest::svg(
-					&object_name,
-					latitude,
-					longitude,
-					b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
-				),
-			)
-			.await?;
+		let response = app.create_object_upload_session(Some(&user.cookie), &upload).await?;
 
-		assert_eq!(response.status, StatusCode::BAD_REQUEST);
-		assert!(response.text()?.contains(expected_error));
+		assert_eq!(response.status, StatusCode::OK);
+		assert_graphql_error_contains(&response.json()?, expected_error)?;
 		assert_eq!(app.object_count(&object_name).await?, 0);
 	}
 
@@ -561,24 +779,13 @@ async fn upload_without_coordinates_stores_no_location() -> anyhow::Result<()> {
 	};
 	let user = register_and_login(&app).await?;
 	let object_name = format!("no-location-upload-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg_without_location(
+		&object_name,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	);
 
-	let response = app
-		.upload_location(
-			Some(&user.cookie),
-			UploadLocationRequest::svg(
-				&object_name,
-				"",
-				"",
-				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
-			),
-		)
-		.await?;
-
-	assert_eq!(response.status, StatusCode::OK);
-	let response = response.json()?;
-	let upload_objects = response.as_array().context("upload response is not an array")?;
-	let uploaded_object = upload_objects.first().context("upload response is empty")?;
-	assert!(json_path(uploaded_object, &["location"])?.is_null());
+	let uploaded_object = app.direct_upload_object(&user.cookie, &upload).await?;
+	assert!(json_path(&uploaded_object, &["location"])?.is_null());
 	assert_eq!(app.object_count(&object_name).await?, 1);
 
 	Ok(())
@@ -592,25 +799,21 @@ async fn partial_upload_coordinates_do_not_leave_side_effects() -> anyhow::Resul
 	};
 	let user = register_and_login(&app).await?;
 
-	for (label, latitude, longitude) in
-		[("latitude-only", "12.5", ""), ("longitude-only", "", "-45.25")]
-	{
+	for (label, location, expected_error) in [
+		("latitude-only", json!({ "latitude": 12.5 }), "longitude"),
+		("longitude-only", json!({ "longitude": -45.25 }), "latitude"),
+	] {
 		let object_name = format!("partial-{label}-upload-{}.svg", unique_suffix()?);
+		let upload = DirectUploadRequest::svg_without_location(
+			&object_name,
+			b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+		)
+		.with_location(Some(location));
 
-		let response = app
-			.upload_location(
-				Some(&user.cookie),
-				UploadLocationRequest::svg(
-					&object_name,
-					latitude,
-					longitude,
-					b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
-				),
-			)
-			.await?;
+		let response = app.create_object_upload_session(Some(&user.cookie), &upload).await?;
 
-		assert_eq!(response.status, StatusCode::BAD_REQUEST);
-		assert!(response.text()?.contains("must both be provided or both omitted"));
+		assert_eq!(response.status, StatusCode::OK);
+		assert_graphql_error_contains(&response.json()?, expected_error)?;
 		assert_eq!(app.object_count(&object_name).await?, 0);
 	}
 
@@ -625,22 +828,18 @@ async fn invalid_upload_timestamp_does_not_leave_side_effects() -> anyhow::Resul
 	};
 	let user = register_and_login(&app).await?;
 	let object_name = format!("invalid-timestamp-upload-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg(
+		&object_name,
+		12.5,
+		-45.25,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	)
+	.with_made_on("not-a-timestamp");
 
-	let response = app
-		.upload_location(
-			Some(&user.cookie),
-			UploadLocationRequest::svg(
-				&object_name,
-				"12.5",
-				"-45.25",
-				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
-			)
-			.with_made_on("not-a-timestamp"),
-		)
-		.await?;
+	let response = app.create_object_upload_session(Some(&user.cookie), &upload).await?;
 
-	assert_eq!(response.status, StatusCode::BAD_REQUEST);
-	assert!(response.text()?.contains("Invalid timestamp format"));
+	assert_eq!(response.status, StatusCode::OK);
+	assert_graphql_error_contains(&response.json()?, "Invalid timestamp format")?;
 	assert_eq!(app.object_count(&object_name).await?, 0);
 
 	Ok(())
@@ -654,34 +853,25 @@ async fn duplicate_upload_name_does_not_overwrite_existing_object() -> anyhow::R
 	};
 	let user = register_and_login(&app).await?;
 	let object_name = format!("duplicate-upload-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg(
+		&object_name,
+		12.5,
+		-45.25,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	);
 
-	let first_upload = app
-		.upload_location(
-			Some(&user.cookie),
-			UploadLocationRequest::svg(
-				&object_name,
-				"12.5",
-				"-45.25",
-				b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
-			),
-		)
-		.await?;
-	assert_eq!(first_upload.status, StatusCode::OK);
+	app.direct_upload_object(&user.cookie, &upload).await?;
 	assert_eq!(app.object_count(&object_name).await?, 1);
 	assert_eq!(app.object_content_type(&object_name).await?, "image/svg+xml");
 	let storage_key = app.object_storage_key(&object_name).await?;
 	assert_eq!(app.state.storage.object_content_type(&storage_key).await?, "image/svg+xml");
 
-	let duplicate_upload = app
-		.upload_location(
-			Some(&user.cookie),
-			UploadLocationRequest::svg(&object_name, "12.5", "-45.25", b"not really a jpeg")
-				.with_content_type("image/jpeg"),
-		)
-		.await?;
+	let duplicate = DirectUploadRequest::svg(&object_name, 12.5, -45.25, b"not really a jpeg")
+		.with_content_type("image/jpeg");
+	let duplicate_upload = app.create_object_upload_session(Some(&user.cookie), &duplicate).await?;
 
-	assert_eq!(duplicate_upload.status, StatusCode::BAD_REQUEST);
-	assert!(duplicate_upload.text()?.contains("already exists"));
+	assert_eq!(duplicate_upload.status, StatusCode::OK);
+	assert_graphql_error_contains(&duplicate_upload.json()?, "already exists")?;
 	assert_eq!(app.object_count(&object_name).await?, 1);
 	assert_eq!(app.object_storage_key(&object_name).await?, storage_key);
 	assert_eq!(app.object_content_type(&object_name).await?, "image/svg+xml");
@@ -742,14 +932,64 @@ async fn stale_pending_upload_cleanup_removes_blob_metadata_and_releases_name() 
 	assert_eq!(app.object_count(&object_name).await?, 0);
 	assert!(app.state.storage.object_content_type(&storage_key).await.is_err());
 
-	let upload = app
-		.upload_location(
-			Some(&user.cookie),
-			UploadLocationRequest::svg(&object_name, "12.5", "-45.25", body),
+	let upload = DirectUploadRequest::svg(&object_name, 12.5, -45.25, body);
+	app.direct_upload_object(&user.cookie, &upload).await?;
+	assert_eq!(app.object_count(&object_name).await?, 1);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn expired_incomplete_upload_session_cleanup_removes_metadata() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("expired-upload-session-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg(
+		&object_name,
+		12.5,
+		-45.25,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	);
+
+	let create = app.create_object_upload_session(Some(&user.cookie), &upload).await?;
+	assert_eq!(create.status, StatusCode::OK);
+	let create = create.json()?;
+	assert_graphql_success(&create)?;
+	let object_id = json_path(&create, &["data", "createObjectUploadSession", "objectId"])?
+		.as_str()
+		.context("createObjectUploadSession.objectId is not a string")?
+		.parse::<i64>()?;
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	assert_eq!(app.upload_session_count(&object_name).await?, 1);
+
+	let client = app.state.pool.get().await?;
+	client
+		.execute(
+			"UPDATE object_upload_sessions
+			SET created_at = now() - interval '2 seconds',
+				expires_at = now() - interval '1 second',
+				cleanup_next_attempt_at = now() - interval '1 second'
+			WHERE object_id = $1",
+			&[&object_id],
 		)
 		.await?;
-	assert_eq!(upload.status, StatusCode::OK);
-	assert_eq!(app.object_count(&object_name).await?, 1);
+	drop(client);
+
+	let lifecycle_config = ObjectLifecycleConfig {
+		upload_session_cleanup_retry_seconds: 1,
+		upload_session_cleanup_lease_seconds: 30,
+		upload_session_cleanup_max_attempts: 10,
+		upload_session_cleanup_batch_size: 100,
+		..ObjectLifecycleConfig::default()
+	}
+	.validated()?;
+	app.run_object_lifecycle_maintenance(lifecycle_config).await?;
+
+	assert_eq!(app.object_count(&object_name).await?, 0);
+	assert_eq!(app.upload_session_count(&object_name).await?, 0);
 
 	Ok(())
 }
@@ -923,41 +1163,6 @@ async fn storage_endpoint_is_reachable(endpoint_url: &str) -> anyhow::Result<boo
 		.port_or_known_default()
 		.ok_or_else(|| anyhow::anyhow!("S3 endpoint URL is missing a port"))?;
 	Ok(matches!(timeout(Duration::from_secs(2), TcpStream::connect((host, port))).await, Ok(Ok(_))))
-}
-
-fn multipart_body(
-	boundary: &str,
-	upload: UploadLocationRequest<'_>,
-) -> Vec<u8> {
-	let mut multipart = Vec::new();
-	append_field(&mut multipart, boundary, "latitude", upload.latitude.as_bytes());
-	append_field(&mut multipart, boundary, "longitude", upload.longitude.as_bytes());
-	append_field(&mut multipart, boundary, "made_on", upload.made_on.as_bytes());
-	multipart.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-	multipart.extend_from_slice(
-		format!(
-			"Content-Disposition: form-data; name=\"files\"; filename=\"{}\"\r\nContent-Type: {}\r\n\r\n",
-			upload.object_name, upload.content_type
-		)
-		.as_bytes(),
-	);
-	multipart.extend_from_slice(upload.body);
-	multipart.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-	multipart
-}
-
-fn append_field(
-	multipart: &mut Vec<u8>,
-	boundary: &str,
-	name: &str,
-	value: &[u8],
-) {
-	multipart.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-	multipart.extend_from_slice(
-		format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
-	);
-	multipart.extend_from_slice(value);
-	multipart.extend_from_slice(b"\r\n");
 }
 
 fn auth_cookie(headers: &HeaderMap) -> anyhow::Result<String> {

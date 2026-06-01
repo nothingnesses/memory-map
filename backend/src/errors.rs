@@ -166,7 +166,6 @@ macro_rules! impl_into_internal {
 }
 
 impl_into_internal!(
-	axum::extract::multipart::MultipartError,
 	casbin::Error,
 	config::ConfigError,
 	deadpool_postgres::CreatePoolError,
