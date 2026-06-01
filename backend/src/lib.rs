@@ -51,76 +51,114 @@ pub mod storage;
 
 use {
 	object_lifecycle::ObjectLifecycleConfig,
+	serde::Deserialize,
 	storage::{
 		StorageClient,
 		StorageConfig,
 	},
 };
 
-#[derive(serde::Deserialize, Clone)]
-struct AppConfig {
-	pub pg: deadpool_postgres::Config,
-	pub enable_registration: bool,
-	pub smtp_host: String,
-	pub smtp_user: String,
-	pub smtp_pass: String,
-	pub smtp_from: String,
-	pub cookie_secret: String,
-	pub frontend_url: String,
-	pub server_host: String,
-	pub server_port: u16,
-	pub cors_allowed_origins: String,
+#[derive(Clone, Debug, Deserialize)]
+pub struct ServerConfig {
+	pub host: String,
+	pub port: u16,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
+pub struct SmtpConfig {
+	pub host: String,
+	pub user: String,
+	pub pass: String,
+	pub from: String,
+}
+
+impl fmt::Debug for SmtpConfig {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		f.debug_struct("SmtpConfig")
+			.field("host", &self.host)
+			.field("user", &self.user)
+			.field("pass", &"<redacted>")
+			.field("from", &self.from)
+			.finish()
+	}
+}
+
+#[derive(Clone, Deserialize)]
+pub struct AuthConfig {
+	pub cookie_secret: String,
+	pub enable_registration: bool,
+}
+
+impl fmt::Debug for AuthConfig {
+	fn fmt(
+		&self,
+		f: &mut fmt::Formatter<'_>,
+	) -> fmt::Result {
+		f.debug_struct("AuthConfig")
+			.field("cookie_secret", &"<redacted>")
+			.field("enable_registration", &self.enable_registration)
+			.finish()
+	}
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct FrontendConfig {
+	pub url: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct CorsConfig {
+	pub allowed_origins: String,
+}
+
+#[derive(Clone, Deserialize)]
 pub struct Config {
 	pub pg: deadpool_postgres::Config,
-	pub enable_registration: bool,
-	pub smtp_host: String,
-	pub smtp_user: String,
-	pub smtp_pass: String,
-	pub smtp_from: String,
-	pub cookie_secret: String,
-	pub frontend_url: String,
+	pub server: ServerConfig,
+	pub smtp: SmtpConfig,
+	pub auth: AuthConfig,
+	pub frontend: FrontendConfig,
+	pub cors: CorsConfig,
 	pub storage: StorageConfig,
 	pub object_lifecycle: ObjectLifecycleConfig,
-	pub server_host: String,
-	pub server_port: u16,
-	pub cors_allowed_origins: String,
 }
 
 impl Config {
 	/// Whether auth cookies should carry the `Secure` attribute.
 	///
-	/// Derived from `frontend_url` so login and logout agree on the cookie shape;
+	/// Derived from the frontend URL so login and logout agree on the cookie shape;
 	/// without that the browser may refuse the logout overwrite.
 	pub fn cookie_secure(&self) -> bool {
-		self.frontend_url.starts_with("https")
+		self.frontend.url.starts_with("https")
 	}
 
+	/// Loads, deserializes, and validates the configuration from environment variables.
+	///
+	/// All env vars share the `MEMORY_MAP__` prefix with `__` as both the prefix and
+	/// the nested-path separator, so `MEMORY_MAP__STORAGE__ENDPOINT_URL` maps to
+	/// `config.storage.endpoint_url`. One source of truth, one deserialization path,
+	/// one validation pass.
 	pub fn from_env() -> Result<Self, errors::AppError> {
-		let cfg = config::Config::builder()
-			.add_source(config::Environment::default().separator("__"))
+		let raw = config::Config::builder()
+			.add_source(
+				config::Environment::with_prefix("MEMORY_MAP")
+					.prefix_separator("__")
+					.separator("__"),
+			)
 			.build()
 			.map_err(errors::AppError::from)?;
-		let config: AppConfig = cfg.try_deserialize().map_err(errors::AppError::from)?;
-		let storage = StorageConfig::from_env().map_err(errors::AppError::from)?;
-		let object_lifecycle = ObjectLifecycleConfig::from_env().map_err(errors::AppError::from)?;
-		Ok(Self {
-			pg: config.pg,
-			enable_registration: config.enable_registration,
-			smtp_host: config.smtp_host,
-			smtp_user: config.smtp_user,
-			smtp_pass: config.smtp_pass,
-			smtp_from: config.smtp_from,
-			cookie_secret: config.cookie_secret,
-			frontend_url: config.frontend_url,
-			storage,
-			object_lifecycle,
-			server_host: config.server_host,
-			server_port: config.server_port,
-			cors_allowed_origins: config.cors_allowed_origins,
-		})
+		let config: Config = raw.try_deserialize().map_err(errors::AppError::from)?;
+		config.validated().map_err(errors::AppError::from)
+	}
+
+	/// Runs sub-config validation. Call after deserialization or struct construction.
+	pub fn validated(self) -> anyhow::Result<Self> {
+		self.storage.validate()?;
+		self.object_lifecycle.validate()?;
+		Ok(self)
 	}
 }
 
@@ -131,18 +169,13 @@ impl fmt::Debug for Config {
 	) -> fmt::Result {
 		f.debug_struct("Config")
 			.field("pg", &"<redacted>")
-			.field("enable_registration", &self.enable_registration)
-			.field("smtp_host", &self.smtp_host)
-			.field("smtp_user", &self.smtp_user)
-			.field("smtp_pass", &"<redacted>")
-			.field("smtp_from", &self.smtp_from)
-			.field("cookie_secret", &"<redacted>")
-			.field("frontend_url", &self.frontend_url)
+			.field("server", &self.server)
+			.field("smtp", &self.smtp)
+			.field("auth", &self.auth)
+			.field("frontend", &self.frontend)
+			.field("cors", &self.cors)
 			.field("storage", &self.storage)
 			.field("object_lifecycle", &self.object_lifecycle)
-			.field("server_host", &self.server_host)
-			.field("server_port", &self.server_port)
-			.field("cors_allowed_origins", &self.cors_allowed_origins)
 			.finish()
 	}
 }
@@ -291,7 +324,12 @@ pub struct CasbinObject {
 mod tests {
 	use {
 		super::{
+			AuthConfig,
 			Config,
+			CorsConfig,
+			FrontendConfig,
+			ServerConfig,
+			SmtpConfig,
 			errors::AppError,
 			object_lifecycle::ObjectLifecycleConfig,
 			parse_latitude,
@@ -331,13 +369,26 @@ mod tests {
 	fn app_config_debug_redacts_secrets() {
 		let config = Config {
 			pg: PostgresConfig::new(),
-			enable_registration: true,
-			smtp_host: "smtp.example.test".to_string(),
-			smtp_user: "debug-smtp-user".to_string(),
-			smtp_pass: "debug-smtp-pass-secret".to_string(),
-			smtp_from: "noreply@example.test".to_string(),
-			cookie_secret: "debug-cookie-secret".to_string(),
-			frontend_url: "https://memory-map.example.test".to_string(),
+			server: ServerConfig {
+				host: "127.0.0.1".to_string(),
+				port: 8000,
+			},
+			smtp: SmtpConfig {
+				host: "smtp.example.test".to_string(),
+				user: "debug-smtp-user".to_string(),
+				pass: "debug-smtp-pass-secret".to_string(),
+				from: "noreply@example.test".to_string(),
+			},
+			auth: AuthConfig {
+				cookie_secret: "debug-cookie-secret".to_string(),
+				enable_registration: true,
+			},
+			frontend: FrontendConfig {
+				url: "https://memory-map.example.test".to_string(),
+			},
+			cors: CorsConfig {
+				allowed_origins: "https://memory-map.example.test".to_string(),
+			},
 			storage: StorageConfig {
 				endpoint_url: "https://s3.example.test".to_string(),
 				access_key: "debug-storage-access-secret".to_string(),
@@ -348,9 +399,6 @@ mod tests {
 				presigned_url_ttl_seconds: 60,
 			},
 			object_lifecycle: ObjectLifecycleConfig::default(),
-			server_host: "127.0.0.1".to_string(),
-			server_port: 8000,
-			cors_allowed_origins: "https://memory-map.example.test".to_string(),
 		};
 
 		let debug = format!("{config:?}");

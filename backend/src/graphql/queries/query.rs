@@ -35,7 +35,7 @@ impl Query {
 			.data::<Arc<SharedState<Manager, Client>>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
 		Ok(PublicConfig {
-			enable_registration: state.config.enable_registration,
+			enable_registration: state.config.auth.enable_registration,
 		})
 	}
 

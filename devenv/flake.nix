@@ -244,13 +244,13 @@
               text = ''
                 set -euo pipefail
 
-                export S3_ENDPOINT_URL="${localS3.endpointUrl}"
-                export S3_ACCESS_KEY="${localS3.accessKey}"
-                export S3_SECRET_KEY="${localS3.secretKey}"
-                export S3_BUCKET_NAME="${localS3.bucketName}"
-                export S3_REGION="${localS3.region}"
-                export S3_FORCE_PATH_STYLE=${lib.boolToString localS3.forcePathStyle}
-                export S3_PRESIGNED_URL_TTL_SECONDS=${toString localS3.presignedUrlTtlSeconds}
+                export MEMORY_MAP__STORAGE__ENDPOINT_URL="${localS3.endpointUrl}"
+                export MEMORY_MAP__STORAGE__ACCESS_KEY="${localS3.accessKey}"
+                export MEMORY_MAP__STORAGE__SECRET_KEY="${localS3.secretKey}"
+                export MEMORY_MAP__STORAGE__BUCKET_NAME="${localS3.bucketName}"
+                export MEMORY_MAP__STORAGE__REGION="${localS3.region}"
+                export MEMORY_MAP__STORAGE__FORCE_PATH_STYLE=${lib.boolToString localS3.forcePathStyle}
+                export MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS=${toString localS3.presignedUrlTtlSeconds}
 
                 exec memory-map-storage-bootstrap
               '';

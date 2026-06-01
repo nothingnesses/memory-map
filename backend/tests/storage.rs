@@ -59,14 +59,17 @@ async fn storage_roundtrip_against_configured_service() -> anyhow::Result<()> {
 
 fn storage_config_from_env() -> anyhow::Result<StorageConfig> {
 	let config = StorageConfig {
-		endpoint_url: env_or_default("S3_ENDPOINT_URL", "http://127.0.0.1:9000/"),
-		access_key: env_or_default("S3_ACCESS_KEY", "memorymapdev"),
-		secret_key: env_or_default("S3_SECRET_KEY", "memorymapdevsecret"),
-		bucket_name: env_or_default("S3_BUCKET_NAME", "memory-map"),
-		region: env_or_default("S3_REGION", "us-east-1"),
-		force_path_style: parse_bool_env("S3_FORCE_PATH_STYLE", true)?,
-		presigned_url_ttl_seconds: env_or_default("S3_PRESIGNED_URL_TTL_SECONDS", "604800")
-			.parse()?,
+		endpoint_url: env_or_default("MEMORY_MAP__STORAGE__ENDPOINT_URL", "http://127.0.0.1:9000/"),
+		access_key: env_or_default("MEMORY_MAP__STORAGE__ACCESS_KEY", "memorymapdev"),
+		secret_key: env_or_default("MEMORY_MAP__STORAGE__SECRET_KEY", "memorymapdevsecret"),
+		bucket_name: env_or_default("MEMORY_MAP__STORAGE__BUCKET_NAME", "memory-map"),
+		region: env_or_default("MEMORY_MAP__STORAGE__REGION", "us-east-1"),
+		force_path_style: parse_bool_env("MEMORY_MAP__STORAGE__FORCE_PATH_STYLE", true)?,
+		presigned_url_ttl_seconds: env_or_default(
+			"MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS",
+			"604800",
+		)
+		.parse()?,
 	};
 	config.validate()?;
 	Ok(config)

@@ -699,7 +699,15 @@ async fn stale_pending_upload_cleanup_removes_blob_metadata_and_releases_name() 
 		.await?;
 	drop(client);
 
-	let lifecycle_config = ObjectLifecycleConfig::new(1, 1, 30, 1, 1000, 10)?;
+	let lifecycle_config = ObjectLifecycleConfig {
+		pending_upload_timeout_seconds: 1,
+		storage_deletion_retry_seconds: 1,
+		storage_deletion_lease_seconds: 30,
+		storage_deletion_worker_interval_seconds: 1,
+		storage_deletion_batch_size: 1000,
+		storage_deletion_max_attempts: 10,
+	}
+	.validated()?;
 	app.run_object_lifecycle_maintenance(lifecycle_config).await?;
 
 	assert_eq!(app.object_count(&object_name).await?, 0);
@@ -799,46 +807,62 @@ async fn claim_keys(
 }
 
 fn test_config() -> anyhow::Result<Config> {
-	let mut pg = deadpool_postgres::Config::new();
-	pg.dbname = Some(env_or_default("PG__DBNAME", "db"));
-	pg.host = Some(env_or_default("PG__HOST", "127.0.0.1"));
-	pg.port = Some(env_or_default("PG__PORT", "5432").parse()?);
+	let pg = deadpool_postgres::Config {
+		dbname: Some(env_or_default("MEMORY_MAP__PG__DBNAME", "db")),
+		host: Some(env_or_default("MEMORY_MAP__PG__HOST", "127.0.0.1")),
+		port: Some(env_or_default("MEMORY_MAP__PG__PORT", "5432").parse()?),
+		..Default::default()
+	};
+
+	let frontend_url = env_or_default("MEMORY_MAP__FRONTEND__URL", "http://127.0.0.1:3000");
 
 	let config = Config {
 		pg,
-		enable_registration: true,
-		smtp_host: "smtp.example.test".to_string(),
-		smtp_user: "memory-map-test".to_string(),
-		smtp_pass: "memory-map-test-password".to_string(),
-		smtp_from: "noreply@example.test".to_string(),
-		cookie_secret: env_or_default(
-			"COOKIE_SECRET",
-			"memory-map-local-test-cookie-secret-at-least-64-bytes-long-0001-extra",
-		),
-		frontend_url: env_or_default("FRONTEND_URL", "http://127.0.0.1:3000"),
+		server: backend::ServerConfig {
+			host: "127.0.0.1".to_string(),
+			port: 8000,
+		},
+		smtp: backend::SmtpConfig {
+			host: "smtp.example.test".to_string(),
+			user: "memory-map-test".to_string(),
+			pass: "memory-map-test-password".to_string(),
+			from: "noreply@example.test".to_string(),
+		},
+		auth: backend::AuthConfig {
+			cookie_secret: env_or_default(
+				"MEMORY_MAP__AUTH__COOKIE_SECRET",
+				"memory-map-local-test-cookie-secret-at-least-64-bytes-long-0001-extra",
+			),
+			enable_registration: true,
+		},
+		frontend: backend::FrontendConfig {
+			url: frontend_url.clone(),
+		},
+		cors: backend::CorsConfig {
+			allowed_origins: env_or_default("MEMORY_MAP__CORS__ALLOWED_ORIGINS", &frontend_url),
+		},
 		storage: StorageConfig {
-			endpoint_url: env_or_default("S3_ENDPOINT_URL", "http://127.0.0.1:9000/"),
-			access_key: env_or_default("S3_ACCESS_KEY", "memorymapdev"),
-			secret_key: env_or_default("S3_SECRET_KEY", "memorymapdevsecret"),
-			bucket_name: env_or_default("S3_BUCKET_NAME", "memory-map"),
-			region: env_or_default("S3_REGION", StorageConfig::DEFAULT_REGION),
+			endpoint_url: env_or_default(
+				"MEMORY_MAP__STORAGE__ENDPOINT_URL",
+				"http://127.0.0.1:9000/",
+			),
+			access_key: env_or_default("MEMORY_MAP__STORAGE__ACCESS_KEY", "memorymapdev"),
+			secret_key: env_or_default("MEMORY_MAP__STORAGE__SECRET_KEY", "memorymapdevsecret"),
+			bucket_name: env_or_default("MEMORY_MAP__STORAGE__BUCKET_NAME", "memory-map"),
+			region: env_or_default("MEMORY_MAP__STORAGE__REGION", &StorageConfig::default_region()),
 			force_path_style: parse_bool_env(
-				"S3_FORCE_PATH_STYLE",
-				StorageConfig::DEFAULT_FORCE_PATH_STYLE,
+				"MEMORY_MAP__STORAGE__FORCE_PATH_STYLE",
+				StorageConfig::default_force_path_style(),
 			)?,
 			presigned_url_ttl_seconds: env_or_default(
-				"S3_PRESIGNED_URL_TTL_SECONDS",
-				&StorageConfig::DEFAULT_PRESIGNED_URL_TTL_SECONDS.to_string(),
+				"MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS",
+				&StorageConfig::default_presigned_url_ttl_seconds().to_string(),
 			)
 			.parse()?,
 		},
 		object_lifecycle: ObjectLifecycleConfig::default(),
-		server_host: "127.0.0.1".to_string(),
-		server_port: 8000,
-		cors_allowed_origins: env_or_default("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:3000"),
 	};
-	config.storage.validate()?;
-	Ok(config)
+	config.validated()
 }
 
 async fn run_migrations(pool: &Pool<Manager>) -> anyhow::Result<()> {

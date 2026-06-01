@@ -19,56 +19,77 @@ and CI only. Their deterministic credentials are not production secrets.
 
 ## Backend Environment
 
-The backend reads configuration from environment variables.
+The backend reads configuration from environment variables. All variables share
+the `MEMORY_MAP__` prefix; `__` is both the prefix separator and the path
+separator, so `MEMORY_MAP__STORAGE__ENDPOINT_URL` maps to
+`config.storage.endpoint_url`.
 
 Required database settings:
 
-- `PG__DBNAME`
-- `PG__HOST`
-- `PG__PORT`
+- `MEMORY_MAP__PG__DBNAME`
+- `MEMORY_MAP__PG__HOST`
+- `MEMORY_MAP__PG__PORT`
+
+Required server settings:
+
+- `MEMORY_MAP__SERVER__HOST`
+- `MEMORY_MAP__SERVER__PORT`
 
 Required SMTP settings:
 
-- `SMTP_HOST`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `SMTP_FROM`
+- `MEMORY_MAP__SMTP__HOST`
+- `MEMORY_MAP__SMTP__USER`
+- `MEMORY_MAP__SMTP__PASS`
+- `MEMORY_MAP__SMTP__FROM`
 
-Required app settings:
+Required auth settings:
 
-- `COOKIE_SECRET`
-- `FRONTEND_URL`
-- `SERVER_HOST`
-- `SERVER_PORT`
-- `CORS_ALLOWED_ORIGINS`
+- `MEMORY_MAP__AUTH__COOKIE_SECRET`
+- `MEMORY_MAP__AUTH__ENABLE_REGISTRATION`
+
+Required frontend / CORS settings:
+
+- `MEMORY_MAP__FRONTEND__URL`
+- `MEMORY_MAP__CORS__ALLOWED_ORIGINS`
 
 Required S3-compatible storage settings:
 
-- `S3_ENDPOINT_URL`
-- `S3_ACCESS_KEY`
-- `S3_SECRET_KEY`
-- `S3_BUCKET_NAME`
-- `S3_REGION`
-- `S3_FORCE_PATH_STYLE`
-- `S3_PRESIGNED_URL_TTL_SECONDS`
+- `MEMORY_MAP__STORAGE__ENDPOINT_URL`
+- `MEMORY_MAP__STORAGE__ACCESS_KEY`
+- `MEMORY_MAP__STORAGE__SECRET_KEY`
+- `MEMORY_MAP__STORAGE__BUCKET_NAME`
 
-Optional object lifecycle settings:
+Optional S3 settings (defaults shown):
 
-- `OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS`
-- `OBJECT_STORAGE_DELETION_RETRY_SECONDS`
-- `OBJECT_STORAGE_DELETION_LEASE_SECONDS`
-- `OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS`
-- `OBJECT_STORAGE_DELETION_BATCH_SIZE`
+- `MEMORY_MAP__STORAGE__REGION` (default `us-east-1`)
+- `MEMORY_MAP__STORAGE__FORCE_PATH_STYLE` (default `true`)
+- `MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS` (default `604800`)
 
-`COOKIE_SECRET`, `SMTP_PASS`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` must come
-from production secret management. Do not copy values from `.env.example` or
-`devenv/flake.nix` into production.
+Optional object lifecycle settings (defaults shown):
 
-`S3_PRESIGNED_URL_TTL_SECONDS` must be between `1` and `604800`.
+- `MEMORY_MAP__OBJECT_LIFECYCLE__PENDING_UPLOAD_TIMEOUT_SECONDS` (default `3600`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_RETRY_SECONDS` (default `60`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_LEASE_SECONDS` (default `300`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_WORKER_INTERVAL_SECONDS` (default `30`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_BATCH_SIZE` (default `1000`)
+- `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_MAX_ATTEMPTS` (default `10`)
 
-`OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS` controls when an unfinalized upload is
-treated as failed and moved into cleanup. It should be comfortably longer than
-the longest expected object upload. The default is `3600`.
+`MEMORY_MAP__AUTH__COOKIE_SECRET`, `MEMORY_MAP__SMTP__PASS`,
+`MEMORY_MAP__STORAGE__ACCESS_KEY`, and `MEMORY_MAP__STORAGE__SECRET_KEY` must
+come from production secret management. Do not copy values from `.env.example`
+or `devenv/flake.nix` into production.
+
+`MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS` must be between `1` and
+`604800`.
+
+`MEMORY_MAP__OBJECT_LIFECYCLE__PENDING_UPLOAD_TIMEOUT_SECONDS` controls when an
+unfinalized upload is treated as failed and moved into cleanup. It should be
+comfortably longer than the longest expected object upload.
+
+`MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_MAX_ATTEMPTS` bounds how many
+times a failing storage deletion is retried before it is parked. Rows past the
+cap remain in `object_storage_deletions` with their `last_error` populated for
+operator triage, but are no longer reclaimed by the worker.
 
 ## Frontend Runtime Config
 
@@ -116,8 +137,8 @@ endpoint. The app needs:
 
 Path-style guidance:
 
-- Local RustFS uses `S3_FORCE_PATH_STYLE=true`.
-- AWS S3 normally uses `S3_FORCE_PATH_STYLE=false`.
+- Local RustFS uses `MEMORY_MAP__STORAGE__FORCE_PATH_STYLE=true`.
+- AWS S3 normally uses `MEMORY_MAP__STORAGE__FORCE_PATH_STYLE=false`.
 - Other S3-compatible services should follow the provider's requirements.
 
 The configured bucket must be usable by the configured credentials. The backend
@@ -140,12 +161,12 @@ Serve the frontend over HTTPS in production.
 Route backend GraphQL and upload traffic to the backend service. The backend
 serves GraphQL at `/` and uploads at `/api/locations/`.
 
-Set `FRONTEND_URL` and `CORS_ALLOWED_ORIGINS` to the public frontend origin.
-For example:
+Set `MEMORY_MAP__FRONTEND__URL` and `MEMORY_MAP__CORS__ALLOWED_ORIGINS` to the
+public frontend origin. For example:
 
 ```sh
-FRONTEND_URL=https://memory-map.example.com
-CORS_ALLOWED_ORIGINS=https://memory-map.example.com
+MEMORY_MAP__FRONTEND__URL=https://memory-map.example.com
+MEMORY_MAP__CORS__ALLOWED_ORIGINS=https://memory-map.example.com
 ```
 
 Keep browser traffic on HTTPS so authenticated cookies and presigned media URL

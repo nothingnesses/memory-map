@@ -67,17 +67,23 @@ You can optionally configure the build mode and other settings by editing `.env`
 - `BUILD_MODE="debug"` (default): Faster compilation, includes debug info.
 - `BUILD_MODE="release"`: Optimised build, smaller binaries, slower compilation.
 - Database, SMTP, and S3 storage configurations.
-- Local storage uses `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
-  `S3_BUCKET_NAME`, `S3_REGION`, `S3_FORCE_PATH_STYLE`, and
-  `S3_PRESIGNED_URL_TTL_SECONDS`.
+- All backend environment variables share the `MEMORY_MAP__` prefix, with `__`
+  as the nested-path separator (e.g.
+  `MEMORY_MAP__STORAGE__ENDPOINT_URL`). See `docs/deployment.md` for the full
+  list.
+- Local storage settings are `MEMORY_MAP__STORAGE__ENDPOINT_URL`,
+  `MEMORY_MAP__STORAGE__ACCESS_KEY`, `MEMORY_MAP__STORAGE__SECRET_KEY`,
+  `MEMORY_MAP__STORAGE__BUCKET_NAME`, `MEMORY_MAP__STORAGE__REGION`,
+  `MEMORY_MAP__STORAGE__FORCE_PATH_STYLE`, and
+  `MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS`.
 - The default local S3 API endpoint is `http://127.0.0.1:9000/`, with region
   `us-east-1`, bucket `memory-map`, and path-style addressing enabled for
   RustFS. Presigned media URLs default to a seven-day lifetime.
-- Object storage cleanup uses `OBJECT_UPLOAD_PENDING_TIMEOUT_SECONDS`,
-  `OBJECT_STORAGE_DELETION_RETRY_SECONDS`,
-  `OBJECT_STORAGE_DELETION_LEASE_SECONDS`,
-  `OBJECT_STORAGE_DELETION_WORKER_INTERVAL_SECONDS`, and
-  `OBJECT_STORAGE_DELETION_BATCH_SIZE`.
+- Object storage cleanup settings live under
+  `MEMORY_MAP__OBJECT_LIFECYCLE__*`, including
+  `PENDING_UPLOAD_TIMEOUT_SECONDS`, `STORAGE_DELETION_RETRY_SECONDS`,
+  `STORAGE_DELETION_LEASE_SECONDS`, `STORAGE_DELETION_WORKER_INTERVAL_SECONDS`,
+  `STORAGE_DELETION_BATCH_SIZE`, and `STORAGE_DELETION_MAX_ATTEMPTS`.
 
 ### 4. Start database & storage
 

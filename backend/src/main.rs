@@ -73,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
 	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await?;
 	let enforcer = Arc::new(RwLock::new(enforcer));
 
-	let bind_addr = format!("{}:{}", cfg.server_host, cfg.server_port);
+	let bind_addr = format!("{}:{}", cfg.server.host, cfg.server.port);
 	let shared_state = build_shared_state(cfg, pool, storage, enforcer)?;
 	let app = build_app(shared_state);
 

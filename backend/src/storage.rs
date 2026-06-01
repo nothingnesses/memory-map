@@ -23,21 +23,24 @@ use {
 			ObjectIdentifier,
 		},
 	},
+	serde::Deserialize,
 	std::{
-		env,
 		fmt,
 		time::Duration,
 	},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 pub struct StorageConfig {
 	pub endpoint_url: String,
 	pub access_key: String,
 	pub secret_key: String,
 	pub bucket_name: String,
+	#[serde(default = "StorageConfig::default_region")]
 	pub region: String,
+	#[serde(default = "StorageConfig::default_force_path_style")]
 	pub force_path_style: bool,
+	#[serde(default = "StorageConfig::default_presigned_url_ttl_seconds")]
 	pub presigned_url_ttl_seconds: u64,
 }
 
@@ -59,29 +62,35 @@ impl fmt::Debug for StorageConfig {
 }
 
 impl StorageConfig {
-	pub const DEFAULT_FORCE_PATH_STYLE: bool = true;
-	pub const DEFAULT_PRESIGNED_URL_TTL_SECONDS: u64 = 604_800;
-	pub const DEFAULT_REGION: &'static str = "us-east-1";
 	pub const MAX_PRESIGNED_URL_TTL_SECONDS: u64 = 604_800;
 
+	pub fn default_region() -> String {
+		"us-east-1".to_string()
+	}
+
+	pub const fn default_force_path_style() -> bool {
+		true
+	}
+
+	pub const fn default_presigned_url_ttl_seconds() -> u64 {
+		604_800
+	}
+
+	/// Loads just the storage section from the environment for binaries that don't
+	/// need the rest of the config (e.g. the storage bootstrap binary). Uses the same
+	/// `MEMORY_MAP__STORAGE__*` keys as the main config.
 	pub fn from_env() -> anyhow::Result<Self> {
-		let config = Self {
-			endpoint_url: required_env("S3_ENDPOINT_URL")?,
-			access_key: required_env("S3_ACCESS_KEY")?,
-			secret_key: required_env("S3_SECRET_KEY")?,
-			bucket_name: required_env("S3_BUCKET_NAME")?,
-			region: env_or_default("S3_REGION", Self::DEFAULT_REGION),
-			force_path_style: parse_bool_env(
-				"S3_FORCE_PATH_STYLE",
-				Self::DEFAULT_FORCE_PATH_STYLE,
-			)?,
-			presigned_url_ttl_seconds: env_or_default(
-				"S3_PRESIGNED_URL_TTL_SECONDS",
-				&Self::DEFAULT_PRESIGNED_URL_TTL_SECONDS.to_string(),
+		let raw = config::Config::builder()
+			.add_source(
+				config::Environment::with_prefix("MEMORY_MAP__STORAGE")
+					.prefix_separator("__")
+					.separator("__"),
 			)
-			.parse()
-			.context("S3_PRESIGNED_URL_TTL_SECONDS must be an unsigned integer")?,
-		};
+			.build()
+			.context("Failed to read storage config from environment")?;
+		let config: StorageConfig = raw
+			.try_deserialize()
+			.context("Failed to deserialize storage config from environment")?;
 		config.validate()?;
 		Ok(config)
 	}
@@ -310,29 +319,6 @@ fn create_bucket_error_means_existing_bucket(error: &SdkError<CreateBucketError>
 
 fn storage_key_delete_batches(storage_keys: &[String]) -> impl Iterator<Item = &[String]> {
 	storage_keys.chunks(StorageClient::MAX_DELETE_OBJECTS_PER_REQUEST)
-}
-
-fn required_env(name: &str) -> anyhow::Result<String> {
-	env::var(name).with_context(|| format!("{name} must be set"))
-}
-
-fn env_or_default(
-	name: &str,
-	default: &str,
-) -> String {
-	env::var(name).unwrap_or_else(|_| default.to_string())
-}
-
-fn parse_bool_env(
-	name: &str,
-	default: bool,
-) -> anyhow::Result<bool> {
-	let value = env_or_default(name, if default { "true" } else { "false" });
-	match value.to_ascii_lowercase().as_str() {
-		"1" | "true" | "yes" | "on" => Ok(true),
-		"0" | "false" | "no" | "off" => Ok(false),
-		_ => anyhow::bail!("{name} must be a boolean"),
-	}
 }
 
 #[cfg(test)]

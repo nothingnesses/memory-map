@@ -281,7 +281,7 @@ impl Mutation {
 		let client = wrapper.get_db_client().await?;
 		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
 
-		if !state.config.enable_registration {
+		if !state.config.auth.enable_registration {
 			return Err(GraphQLError::new("Registration is disabled"));
 		}
 

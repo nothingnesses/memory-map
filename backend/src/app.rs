@@ -120,7 +120,7 @@ pub fn build_shared_state(
 		.time_to_live(Duration::from_secs(CACHE_TTL_SECONDS))
 		.build();
 
-	let key = Key::from(cfg.cookie_secret.as_bytes());
+	let key = Key::from(cfg.auth.cookie_secret.as_bytes());
 
 	Ok(Arc::new(SharedState {
 		pool,
@@ -168,8 +168,8 @@ fn build_schema(shared_state: Arc<BackendSharedState>) -> BackendSchema {
 }
 
 fn cors_layer(config: &Config) -> CorsLayer {
-	let frontend_url = config.frontend_url.clone();
-	let cors_allowed_origins = config.cors_allowed_origins.clone();
+	let frontend_url = config.frontend.url.clone();
+	let cors_allowed_origins = config.cors.allowed_origins.clone();
 
 	CorsLayer::new()
 		.allow_origin(AllowOrigin::predicate(
