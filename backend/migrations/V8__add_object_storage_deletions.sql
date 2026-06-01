@@ -43,6 +43,17 @@ CREATE TABLE object_storage_deletions (
 	created_at timestamptz NOT NULL DEFAULT now(),
 	attempts INTEGER NOT NULL DEFAULT 0,
 	last_attempt_at timestamptz,
+	next_attempt_at timestamptz NOT NULL DEFAULT now(),
 	processing_expires_at timestamptz,
 	last_error TEXT
 );
+
+CREATE INDEX object_storage_deletions_claim_idx
+	ON object_storage_deletions (next_attempt_at, created_at);
+
+CREATE INDEX objects_pending_upload_age_idx
+	ON objects (storage_state_updated_at)
+	WHERE storage_state = 'pending_upload';
+
+CREATE INDEX objects_user_state_idx
+	ON objects (user_id, storage_state);
