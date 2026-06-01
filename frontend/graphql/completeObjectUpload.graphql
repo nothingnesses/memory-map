@@ -1,0 +1,18 @@
+mutation CompleteObjectUploadMutation(
+	$objectId: ID!
+	$parts: [CompletedObjectUploadPartInput!]!
+) {
+	completeObjectUpload(objectId: $objectId, parts: $parts) {
+		id
+		name
+		madeOn
+		location {
+			latitude
+			longitude
+		}
+		url
+		contentType
+		publicity
+		allowedUsers
+	}
+}

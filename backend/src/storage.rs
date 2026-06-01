@@ -27,6 +27,8 @@ use {
 		types::{
 			CompletedMultipartUpload,
 			CompletedPart,
+			CorsConfiguration,
+			CorsRule,
 			Delete,
 			ObjectIdentifier,
 		},
@@ -461,6 +463,37 @@ impl StorageClient {
 		}
 
 		self.verify_bucket_ready().await.context("Failed to verify S3 bucket after creation")?;
+		Ok(())
+	}
+
+	pub async fn configure_upload_cors(
+		&self,
+		allowed_origins: &[String],
+	) -> anyhow::Result<()> {
+		if allowed_origins.is_empty() {
+			anyhow::bail!("At least one CORS allowed origin is required");
+		}
+
+		let upload_rule = CorsRule::builder()
+			.set_allowed_origins(Some(allowed_origins.to_vec()))
+			.set_allowed_methods(Some(vec!["PUT".to_string()]))
+			.set_allowed_headers(Some(vec!["*".to_string()]))
+			.set_expose_headers(Some(vec!["ETag".to_string()]))
+			.max_age_seconds(3000)
+			.build()
+			.context("Failed to build S3 upload CORS rule")?;
+		let cors = CorsConfiguration::builder()
+			.cors_rules(upload_rule)
+			.build()
+			.context("Failed to build S3 CORS configuration")?;
+
+		self.client
+			.put_bucket_cors()
+			.bucket(&self.bucket_name)
+			.cors_configuration(cors)
+			.send()
+			.await
+			.context("Failed to configure S3 bucket CORS")?;
 		Ok(())
 	}
 

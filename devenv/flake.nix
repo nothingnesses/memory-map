@@ -253,6 +253,8 @@
                 export MEMORY_MAP__STORAGE__REGION="${localS3.region}"
                 export MEMORY_MAP__STORAGE__FORCE_PATH_STYLE=${lib.boolToString localS3.forcePathStyle}
                 export MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS=${toString localS3.presignedUrlTtlSeconds}
+                export MEMORY_MAP__FRONTEND__URL="http://127.0.0.1:3000"
+                export MEMORY_MAP__CORS__ALLOWED_ORIGINS="http://127.0.0.1:3000"
 
                 exec memory-map-storage-bootstrap
               '';

@@ -123,14 +123,26 @@ test("authenticated object workflow covers upload preview gallery delete and log
 			buffer: fixtureBuffer,
 		});
 
-		const uploadResponsePromise = page.waitForResponse(
-			(response) =>
-				response.request().method() === "POST" &&
-				response.url().includes("/api/locations/"),
+		const createSessionPromise = waitForGraphqlOperation(
+			page,
+			"CreateObjectUploadSessionMutation",
+		);
+		const presignPartsPromise = waitForGraphqlOperation(
+			page,
+			"PresignObjectUploadPartsMutation",
+		);
+		const uploadPartPromise = page.waitForResponse(
+			(response) => response.request().method() === "PUT",
+		);
+		const completeUploadPromise = waitForGraphqlOperation(
+			page,
+			"CompleteObjectUploadMutation",
 		);
 		await page.getByRole("button", { name: "Submit" }).click();
-		const uploadResponse = await uploadResponsePromise;
-		expect(uploadResponse.ok()).toBe(true);
+		expect((await createSessionPromise).ok()).toBe(true);
+		expect((await presignPartsPromise).ok()).toBe(true);
+		expect((await uploadPartPromise).ok()).toBe(true);
+		expect((await completeUploadPromise).ok()).toBe(true);
 		expect(new URL(page.url()).search).toBe("");
 
 		const row = page.getByRole("row").filter({ hasText: objectName });

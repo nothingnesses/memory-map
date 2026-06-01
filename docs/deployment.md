@@ -177,6 +177,13 @@ The configured bucket must be usable by the configured credentials. The backend
 verifies bucket access on startup but does not create buckets at runtime. The
 local and CI bootstrap helper can create or verify a bucket for RustFS, but
 production bucket lifecycle should be managed intentionally by the deployment.
+Buckets used by the browser direct-upload flow must allow CORS `PUT` requests
+from the public frontend origin, allow the signed request headers used by
+presigned upload-part URLs, and expose the `ETag` response header so the
+frontend can complete multipart uploads. The local RustFS bootstrap applies
+this policy from `MEMORY_MAP__FRONTEND__URL` and
+`MEMORY_MAP__CORS__ALLOWED_ORIGINS`; production bucket CORS should be managed
+with the bucket infrastructure.
 
 Database object deletes first mark metadata rows as delete-pending and enqueue
 cleanup by the immutable storage key, not the user-visible object name. A

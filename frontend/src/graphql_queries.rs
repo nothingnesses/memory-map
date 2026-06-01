@@ -1,11 +1,15 @@
+pub mod abort_object_upload;
 pub mod admin_update_user;
 pub mod change_email;
 pub mod change_password;
+pub mod complete_object_upload;
 pub mod config;
+pub mod create_object_upload_session;
 pub mod delete_s3_objects;
 pub mod login;
 pub mod logout;
 pub mod me;
+pub mod presign_object_upload_parts;
 pub mod register;
 pub mod request_password_reset;
 pub mod reset_password;
