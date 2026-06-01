@@ -762,33 +762,33 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 		)
 		.await?;
 
-	let first_claim = claim_keys(&client, 1, 600, 60, 10).await?;
+	let first_claim = claim_keys(&client, 1, 600, 10).await?;
 	assert_eq!(first_claim.len(), 1);
 	let first_claimed_key =
 		first_claim.into_iter().next().context("first object storage deletion claim was empty")?;
 	let remaining_key =
 		if first_claimed_key == first_key { second_key.clone() } else { first_key.clone() };
 
-	assert_eq!(claim_keys(&client, 10, 600, 60, 10).await?, vec![remaining_key.clone()]);
-	assert!(claim_keys(&client, 10, 600, 60, 10).await?.is_empty());
+	assert_eq!(claim_keys(&client, 10, 600, 10).await?, vec![remaining_key.clone()]);
+	assert!(claim_keys(&client, 10, 600, 10).await?.is_empty());
 
 	client
 		.execute(
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
-			&[&vec![first_claimed_key.clone()], &"simulated storage failure"],
+			&[&vec![first_claimed_key.clone()], &"simulated storage failure", &60_i64],
 		)
 		.await?;
-	assert!(claim_keys(&client, 10, 600, 60, 10).await?.is_empty());
+	assert!(claim_keys(&client, 10, 600, 10).await?.is_empty());
 
 	client
 		.execute(
 			"UPDATE object_storage_deletions
-			SET last_attempt_at = now() - interval '2 minutes'
+			SET next_attempt_at = now() - interval '1 second'
 			WHERE storage_key = $1",
 			&[&first_claimed_key],
 		)
 		.await?;
-	assert_eq!(claim_keys(&client, 10, 600, 60, 10).await?, vec![first_claimed_key.clone()]);
+	assert_eq!(claim_keys(&client, 10, 600, 10).await?, vec![first_claimed_key.clone()]);
 
 	let first_attempts: i32 = client
 		.query_one(
@@ -813,14 +813,10 @@ async fn claim_keys(
 	client: &deadpool_postgres::Client,
 	limit: i64,
 	lease_seconds: i64,
-	retry_after_seconds: i64,
 	max_attempts: i32,
 ) -> Result<Vec<String>, tokio_postgres::Error> {
 	client
-		.query(
-			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
-			&[&limit, &lease_seconds, &retry_after_seconds, &max_attempts],
-		)
+		.query(CLAIM_OBJECT_STORAGE_DELETIONS_QUERY, &[&limit, &lease_seconds, &max_attempts])
 		.await
 		.map(|rows| {
 			rows.into_iter().map(|row| row.get::<_, String>("storage_key")).collect::<Vec<_>>()

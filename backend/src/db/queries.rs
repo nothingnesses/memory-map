@@ -109,22 +109,22 @@ pub const INSERT_OBJECT_STORAGE_DELETIONS_QUERY: &str =
 SELECT UNNEST($1::TEXT[]), UNNEST($2::BIGINT[])
 ON CONFLICT (storage_key) DO NOTHING";
 
-/// Claims up to `$1` deletion rows whose lease has expired and which still have
-/// retry budget left. Rows past `$4::INTEGER` attempts are parked: they remain
+/// Claims up to `$1` deletion rows whose scheduled retry/lease time has arrived
+/// and which still have retry budget left. Rows past `$3::INTEGER` attempts are parked: they remain
 /// in the table with `last_error` populated for operator triage, but are never
 /// reclaimed by the worker.
 pub const CLAIM_OBJECT_STORAGE_DELETIONS_QUERY: &str = "UPDATE object_storage_deletions
 SET attempts = attempts + 1,
 	last_attempt_at = now(),
 	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
+	next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
 	last_error = NULL
 WHERE storage_key IN (
 	SELECT storage_key
 	FROM object_storage_deletions
-	WHERE attempts < $4::INTEGER
-		AND (processing_expires_at IS NULL OR processing_expires_at <= now())
-		AND (last_attempt_at IS NULL OR last_attempt_at <= now() - ($3::BIGINT * interval '1 second'))
-	ORDER BY created_at
+	WHERE attempts < $3::INTEGER
+		AND next_attempt_at <= now()
+	ORDER BY next_attempt_at, created_at
 	LIMIT $1
 	FOR UPDATE SKIP LOCKED
 )
@@ -137,7 +137,9 @@ pub const DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY: &str =
 	"DELETE FROM objects WHERE storage_key = ANY($1) AND storage_state = 'delete_pending'";
 
 pub const MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY: &str = "UPDATE object_storage_deletions
-SET processing_expires_at = NULL, last_error = $2
+SET processing_expires_at = NULL,
+	next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
+	last_error = $2
 WHERE storage_key = ANY($1)";
 
 pub const SELECT_USER_COUNT_BY_EMAIL_QUERY: &str = "SELECT COUNT(*) FROM users WHERE email = $1";

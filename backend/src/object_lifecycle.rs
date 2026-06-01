@@ -450,7 +450,6 @@ trait StorageDeletionOutbox {
 		&mut self,
 		limit: i64,
 		lease_seconds: i64,
-		retry_after_seconds: i64,
 		max_attempts: i32,
 	) -> Result<Vec<String>, AppError>;
 
@@ -463,6 +462,7 @@ trait StorageDeletionOutbox {
 		&mut self,
 		storage_keys: &[String],
 		error_message: &str,
+		retry_after_seconds: i64,
 	) -> Result<(), AppError>;
 }
 
@@ -471,14 +471,10 @@ impl StorageDeletionOutbox for Client {
 		&mut self,
 		limit: i64,
 		lease_seconds: i64,
-		retry_after_seconds: i64,
 		max_attempts: i32,
 	) -> Result<Vec<String>, AppError> {
 		let rows = self
-			.query(
-				CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
-				&[&limit, &lease_seconds, &retry_after_seconds, &max_attempts],
-			)
+			.query(CLAIM_OBJECT_STORAGE_DELETIONS_QUERY, &[&limit, &lease_seconds, &max_attempts])
 			.await
 			.context("Failed to claim pending object storage deletions")?;
 		rows.into_iter()
@@ -509,10 +505,14 @@ impl StorageDeletionOutbox for Client {
 		&mut self,
 		storage_keys: &[String],
 		error_message: &str,
+		retry_after_seconds: i64,
 	) -> Result<(), AppError> {
-		self.execute(MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY, &[&storage_keys, &error_message])
-			.await
-			.context("Failed to record object storage deletion failure")?;
+		self.execute(
+			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
+			&[&storage_keys, &error_message, &retry_after_seconds],
+		)
+		.await
+		.context("Failed to record object storage deletion failure")?;
 		Ok(())
 	}
 }
@@ -536,7 +536,6 @@ async fn drain_storage_deletion_outbox(
 			.claim_storage_deletions(
 				config.storage_deletion_batch_size,
 				config.storage_deletion_lease_seconds,
-				config.storage_deletion_retry_seconds,
 				config.storage_deletion_max_attempts,
 			)
 			.await?;
@@ -547,7 +546,13 @@ async fn drain_storage_deletion_outbox(
 
 		if let Err(error) = storage.delete_objects(&storage_keys).await {
 			let error_message = error.to_string();
-			outbox.mark_storage_deletions_failed(&storage_keys, &error_message).await?;
+			outbox
+				.mark_storage_deletions_failed(
+					&storage_keys,
+					&error_message,
+					config.storage_deletion_retry_seconds,
+				)
+				.await?;
 			if first_error.is_none() {
 				first_error = Some(AppError::Internal(error));
 			}
@@ -681,10 +686,9 @@ mod tests {
 		pending_batches: VecDeque<Vec<String>>,
 		requested_limits: Vec<i64>,
 		requested_leases: Vec<i64>,
-		requested_retries: Vec<i64>,
 		requested_max_attempts: Vec<i32>,
 		cleared_batches: Vec<Vec<String>>,
-		failed_batches: Vec<(Vec<String>, String)>,
+		failed_batches: Vec<(Vec<String>, String, i64)>,
 	}
 
 	impl FakeStorageDeletionOutbox {
@@ -701,12 +705,10 @@ mod tests {
 			&mut self,
 			limit: i64,
 			lease_seconds: i64,
-			retry_after_seconds: i64,
 			max_attempts: i32,
 		) -> Result<Vec<String>, AppError> {
 			self.requested_limits.push(limit);
 			self.requested_leases.push(lease_seconds);
-			self.requested_retries.push(retry_after_seconds);
 			self.requested_max_attempts.push(max_attempts);
 			Ok(self.pending_batches.pop_front().unwrap_or_default())
 		}
@@ -723,8 +725,13 @@ mod tests {
 			&mut self,
 			storage_keys: &[String],
 			error_message: &str,
+			retry_after_seconds: i64,
 		) -> Result<(), AppError> {
-			self.failed_batches.push((storage_keys.to_vec(), error_message.to_string()));
+			self.failed_batches.push((
+				storage_keys.to_vec(),
+				error_message.to_string(),
+				retry_after_seconds,
+			));
 			Ok(())
 		}
 	}
@@ -799,14 +806,6 @@ mod tests {
 				config.storage_deletion_lease_seconds,
 			]
 		);
-		assert_eq!(
-			outbox.requested_retries,
-			vec![
-				config.storage_deletion_retry_seconds,
-				config.storage_deletion_retry_seconds,
-				config.storage_deletion_retry_seconds,
-			]
-		);
 		assert_eq!(storage.deleted_batches()?, vec![first_batch.clone(), second_batch.clone()]);
 		assert_eq!(outbox.cleared_batches, vec![first_batch, second_batch]);
 		assert!(outbox.failed_batches.is_empty());
@@ -839,7 +838,11 @@ mod tests {
 		assert!(outbox.cleared_batches.is_empty());
 		assert_eq!(
 			outbox.failed_batches,
-			vec![(pending_batch, "storage delete failed".to_string())]
+			vec![(
+				pending_batch,
+				"storage delete failed".to_string(),
+				config.storage_deletion_retry_seconds
+			)]
 		);
 		// Two claims: one returning the failing batch, then one returning empty after
 		// the batch is marked failed. Drain continues past failures rather than aborting
