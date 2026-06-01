@@ -113,13 +113,7 @@ ON CONFLICT (storage_key) DO NOTHING";
 /// and which still have retry budget left. Rows past `$3::INTEGER` attempts are parked: they remain
 /// in the table with `last_error` populated for operator triage, but are never
 /// reclaimed by the worker.
-pub const CLAIM_OBJECT_STORAGE_DELETIONS_QUERY: &str = "UPDATE object_storage_deletions
-SET attempts = attempts + 1,
-	last_attempt_at = now(),
-	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
-	next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
-	last_error = NULL
-WHERE storage_key IN (
+pub const CLAIM_OBJECT_STORAGE_DELETIONS_QUERY: &str = "WITH claimed AS MATERIALIZED (
 	SELECT storage_key
 	FROM object_storage_deletions
 	WHERE attempts < $3::INTEGER
@@ -128,7 +122,15 @@ WHERE storage_key IN (
 	LIMIT $1
 	FOR UPDATE SKIP LOCKED
 )
-RETURNING storage_key";
+UPDATE object_storage_deletions deletion
+SET attempts = attempts + 1,
+	last_attempt_at = now(),
+	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
+	next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
+	last_error = NULL
+FROM claimed
+WHERE deletion.storage_key = claimed.storage_key
+RETURNING deletion.storage_key";
 
 pub const DELETE_OBJECT_STORAGE_DELETIONS_QUERY: &str =
 	"DELETE FROM object_storage_deletions WHERE storage_key = ANY($1)";

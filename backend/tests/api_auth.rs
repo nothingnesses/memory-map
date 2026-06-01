@@ -267,10 +267,18 @@ impl TestApp {
 		Ok(content_type)
 	}
 
-	async fn storage_deletion_outbox_count(&self) -> anyhow::Result<i64> {
+	async fn storage_deletion_outbox_count_for_key(
+		&self,
+		storage_key: &str,
+	) -> anyhow::Result<i64> {
 		let client = self.state.pool.get().await?;
-		let count =
-			client.query_one("SELECT COUNT(*) FROM object_storage_deletions", &[]).await?.get(0);
+		let count = client
+			.query_one(
+				"SELECT COUNT(*) FROM object_storage_deletions WHERE storage_key = $1",
+				&[&storage_key],
+			)
+			.await?
+			.get(0);
 		Ok(count)
 	}
 
@@ -480,7 +488,7 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	assert_eq!(delete.status, StatusCode::OK);
 	assert_graphql_success(&delete.json()?)?;
 	assert_eq!(app.object_count(&object_name).await?, 1);
-	assert_eq!(app.storage_deletion_outbox_count().await?, 1);
+	assert_eq!(app.storage_deletion_outbox_count_for_key(&storage_key).await?, 1);
 
 	let visible_objects = app
 		.graphql(
@@ -506,7 +514,7 @@ async fn authenticated_upload_preserves_content_type_and_delete_cleans_up() -> a
 	app.run_object_lifecycle_maintenance(ObjectLifecycleConfig::default()).await?;
 	assert_eq!(app.object_count(&object_name).await?, 0);
 	assert!(app.state.storage.object_content_type(&storage_key).await.is_err());
-	assert_eq!(app.storage_deletion_outbox_count().await?, 0);
+	assert_eq!(app.storage_deletion_outbox_count_for_key(&storage_key).await?, 0);
 
 	Ok(())
 }
@@ -754,33 +762,41 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 	let first_key = format!("objects/claim-lease-first-{}", unique_suffix()?);
 	let second_key = format!("objects/claim-lease-second-{}", unique_suffix()?);
 
-	let client = app.state.pool.get().await?;
-	client
+	let mut client = app.state.pool.get().await?;
+	let transaction = client.transaction().await?;
+	transaction
+		.execute(
+			"UPDATE object_storage_deletions
+			SET next_attempt_at = now() + interval '1 hour'",
+			&[],
+		)
+		.await?;
+	transaction
 		.execute(
 			"INSERT INTO object_storage_deletions (storage_key) VALUES ($1), ($2)",
 			&[&first_key, &second_key],
 		)
 		.await?;
 
-	let first_claim = claim_keys(&client, 1, 600, 10).await?;
+	let first_claim = claim_keys(&transaction, 1, 600, 10).await?;
 	assert_eq!(first_claim.len(), 1);
 	let first_claimed_key =
 		first_claim.into_iter().next().context("first object storage deletion claim was empty")?;
 	let remaining_key =
 		if first_claimed_key == first_key { second_key.clone() } else { first_key.clone() };
 
-	assert_eq!(claim_keys(&client, 10, 600, 10).await?, vec![remaining_key.clone()]);
-	assert!(claim_keys(&client, 10, 600, 10).await?.is_empty());
+	assert_eq!(claim_keys(&transaction, 10, 600, 10).await?, vec![remaining_key.clone()]);
+	assert!(claim_keys(&transaction, 10, 600, 10).await?.is_empty());
 
-	client
+	transaction
 		.execute(
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
 			&[&vec![first_claimed_key.clone()], &"simulated storage failure", &60_i64],
 		)
 		.await?;
-	assert!(claim_keys(&client, 10, 600, 10).await?.is_empty());
+	assert!(claim_keys(&transaction, 10, 600, 10).await?.is_empty());
 
-	client
+	transaction
 		.execute(
 			"UPDATE object_storage_deletions
 			SET next_attempt_at = now() - interval '1 second'
@@ -788,9 +804,9 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 			&[&first_claimed_key],
 		)
 		.await?;
-	assert_eq!(claim_keys(&client, 10, 600, 10).await?, vec![first_claimed_key.clone()]);
+	assert_eq!(claim_keys(&transaction, 10, 600, 10).await?, vec![first_claimed_key.clone()]);
 
-	let first_attempts: i32 = client
+	let first_attempts: i32 = transaction
 		.query_one(
 			"SELECT attempts FROM object_storage_deletions WHERE storage_key = $1",
 			&[&first_claimed_key],
@@ -799,18 +815,13 @@ async fn object_storage_deletion_claims_respect_lease_and_retry() -> anyhow::Res
 		.get(0);
 	assert_eq!(first_attempts, 2);
 
-	client
-		.execute(
-			"DELETE FROM object_storage_deletions WHERE storage_key = ANY($1)",
-			&[&vec![first_key, second_key]],
-		)
-		.await?;
+	transaction.rollback().await?;
 
 	Ok(())
 }
 
 async fn claim_keys(
-	client: &deadpool_postgres::Client,
+	client: &(impl deadpool_postgres::GenericClient + Sync),
 	limit: i64,
 	lease_seconds: i64,
 	max_attempts: i32,
