@@ -32,6 +32,8 @@ use {
 			ObjectLifecycleWorker,
 		},
 		storage::{
+			CompletedUploadPart,
+			MultipartUploadCompleteOutcome,
 			StorageClient,
 			StorageConfig,
 		},
@@ -91,6 +93,16 @@ struct DirectUploadResult {
 	object: Value,
 	object_id: String,
 	completed_parts: Vec<Value>,
+}
+
+struct PreparedDirectUpload {
+	object_id: String,
+	completed_parts: Vec<Value>,
+}
+
+struct UploadSessionStorage {
+	storage_key: String,
+	upload_id: String,
 }
 
 struct DirectUploadRequest<'a> {
@@ -278,6 +290,26 @@ impl TestApp {
 		cookie: &str,
 		upload: &DirectUploadRequest<'_>,
 	) -> anyhow::Result<DirectUploadResult> {
+		let prepared = self.prepare_direct_upload(cookie, upload).await?;
+		let complete = self
+			.complete_object_upload(cookie, &prepared.object_id, prepared.completed_parts.clone())
+			.await?;
+		assert_eq!(complete.status, StatusCode::OK);
+		let complete = complete.json()?;
+		assert_graphql_success(&complete)?;
+		let object = json_path(&complete, &["data", "completeObjectUpload"])?.clone();
+		Ok(DirectUploadResult {
+			object,
+			object_id: prepared.object_id,
+			completed_parts: prepared.completed_parts,
+		})
+	}
+
+	async fn prepare_direct_upload(
+		&self,
+		cookie: &str,
+		upload: &DirectUploadRequest<'_>,
+	) -> anyhow::Result<PreparedDirectUpload> {
 		let create = self.create_object_upload_session(Some(cookie), upload).await?;
 		assert_eq!(create.status, StatusCode::OK);
 		let create = create.json()?;
@@ -370,14 +402,7 @@ impl TestApp {
 			}));
 		}
 
-		let complete =
-			self.complete_object_upload(cookie, &object_id, completed_parts.clone()).await?;
-		assert_eq!(complete.status, StatusCode::OK);
-		let complete = complete.json()?;
-		assert_graphql_success(&complete)?;
-		let object = json_path(&complete, &["data", "completeObjectUpload"])?.clone();
-		Ok(DirectUploadResult {
-			object,
+		Ok(PreparedDirectUpload {
 			object_id,
 			completed_parts,
 		})
@@ -441,6 +466,43 @@ impl TestApp {
 			.await?
 			.get(0);
 		Ok(content_type)
+	}
+
+	async fn upload_session_storage(
+		&self,
+		object_id: &str,
+	) -> anyhow::Result<UploadSessionStorage> {
+		let object_id = object_id.parse::<i64>()?;
+		let client = self.state.pool.get().await?;
+		let row = client
+			.query_one(
+				"SELECT storage_key, upload_id FROM object_upload_sessions WHERE object_id = $1",
+				&[&object_id],
+			)
+			.await?;
+		Ok(UploadSessionStorage {
+			storage_key: row.get("storage_key"),
+			upload_id: row.get("upload_id"),
+		})
+	}
+
+	async fn expire_upload_session(
+		&self,
+		object_id: &str,
+	) -> anyhow::Result<()> {
+		let object_id = object_id.parse::<i64>()?;
+		let client = self.state.pool.get().await?;
+		client
+			.execute(
+				"UPDATE object_upload_sessions
+				SET created_at = now() - interval '2 seconds',
+					expires_at = now() - interval '1 second',
+					cleanup_next_attempt_at = now() - interval '1 second'
+				WHERE object_id = $1",
+				&[&object_id],
+			)
+			.await?;
+		Ok(())
 	}
 
 	async fn upload_session_count(
@@ -961,22 +1023,11 @@ async fn expired_incomplete_upload_session_cleanup_removes_metadata() -> anyhow:
 	let object_id = json_path(&create, &["data", "createObjectUploadSession", "objectId"])?
 		.as_str()
 		.context("createObjectUploadSession.objectId is not a string")?
-		.parse::<i64>()?;
+		.to_string();
 	assert_eq!(app.object_count(&object_name).await?, 1);
 	assert_eq!(app.upload_session_count(&object_name).await?, 1);
 
-	let client = app.state.pool.get().await?;
-	client
-		.execute(
-			"UPDATE object_upload_sessions
-			SET created_at = now() - interval '2 seconds',
-				expires_at = now() - interval '1 second',
-				cleanup_next_attempt_at = now() - interval '1 second'
-			WHERE object_id = $1",
-			&[&object_id],
-		)
-		.await?;
-	drop(client);
+	app.expire_upload_session(&object_id).await?;
 
 	let lifecycle_config = ObjectLifecycleConfig {
 		upload_session_cleanup_retry_seconds: 1,
@@ -990,6 +1041,104 @@ async fn expired_incomplete_upload_session_cleanup_removes_metadata() -> anyhow:
 
 	assert_eq!(app.object_count(&object_name).await?, 0);
 	assert_eq!(app.upload_session_count(&object_name).await?, 0);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn expired_completed_upload_session_cleanup_removes_completed_orphan() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("expired-completed-upload-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg(
+		&object_name,
+		12.5,
+		-45.25,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	);
+	let prepared = app.prepare_direct_upload(&user.cookie, &upload).await?;
+	let session = app.upload_session_storage(&prepared.object_id).await?;
+	let completed_parts = completed_upload_parts(&prepared.completed_parts)?;
+
+	assert_eq!(
+		app.state
+			.storage
+			.complete_multipart_upload(&session.storage_key, &session.upload_id, &completed_parts)
+			.await?,
+		MultipartUploadCompleteOutcome::Completed
+	);
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	assert_eq!(app.upload_session_count(&object_name).await?, 1);
+
+	app.expire_upload_session(&prepared.object_id).await?;
+	app.run_object_lifecycle_maintenance(ObjectLifecycleConfig::default()).await?;
+
+	assert_eq!(app.object_count(&object_name).await?, 0);
+	assert_eq!(app.upload_session_count(&object_name).await?, 0);
+	assert!(app.state.storage.object_content_type(&session.storage_key).await.is_err());
+	assert_eq!(app.storage_deletion_outbox_count_for_key(&session.storage_key).await?, 0);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn completed_upload_metadata_mismatch_queues_completed_object_cleanup() -> anyhow::Result<()>
+{
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+	let object_name = format!("metadata-mismatch-upload-{}.svg", unique_suffix()?);
+	let upload = DirectUploadRequest::svg(
+		&object_name,
+		12.5,
+		-45.25,
+		b"<svg xmlns=\"http://www.w3.org/2000/svg\" />",
+	);
+
+	let create = app.create_object_upload_session(Some(&user.cookie), &upload).await?;
+	assert_eq!(create.status, StatusCode::OK);
+	let create = create.json()?;
+	assert_graphql_success(&create)?;
+	let object_id = json_path(&create, &["data", "createObjectUploadSession", "objectId"])?
+		.as_str()
+		.context("createObjectUploadSession.objectId is not a string")?
+		.to_string();
+	let session = app.upload_session_storage(&object_id).await?;
+	app.state.storage.abort_multipart_upload(&session.storage_key, &session.upload_id).await?;
+	app.state
+		.storage
+		.upload_object(&session.storage_key, ByteStream::from_static(b"wrong-size"), "image/jpeg")
+		.await?;
+
+	let complete = app
+		.complete_object_upload(
+			&user.cookie,
+			&object_id,
+			vec![json!({
+				"partNumber": 1,
+				"eTag": "orphan-etag",
+			})],
+		)
+		.await?;
+	assert_eq!(complete.status, StatusCode::OK);
+	assert_graphql_error_contains(
+		&complete.json()?,
+		"Completed upload size did not match declared file size",
+	)?;
+	assert_eq!(app.object_count(&object_name).await?, 1);
+	assert_eq!(app.upload_session_count(&object_name).await?, 0);
+	assert_eq!(app.storage_deletion_outbox_count_for_key(&session.storage_key).await?, 1);
+
+	app.run_object_lifecycle_maintenance(ObjectLifecycleConfig::default()).await?;
+
+	assert_eq!(app.object_count(&object_name).await?, 0);
+	assert!(app.state.storage.object_content_type(&session.storage_key).await.is_err());
+	assert_eq!(app.storage_deletion_outbox_count_for_key(&session.storage_key).await?, 0);
 
 	Ok(())
 }
@@ -1073,6 +1222,28 @@ async fn claim_keys(
 		.map(|rows| {
 			rows.into_iter().map(|row| row.get::<_, String>("storage_key")).collect::<Vec<_>>()
 		})
+}
+
+fn completed_upload_parts(parts: &[Value]) -> anyhow::Result<Vec<CompletedUploadPart>> {
+	parts
+		.iter()
+		.map(|part| {
+			let part_number = json_path(part, &["partNumber"])?
+				.as_i64()
+				.context("completed part number is not an integer")
+				.and_then(|part_number| {
+					i32::try_from(part_number).context("completed part number exceeds i32 range")
+				})?;
+			let e_tag = json_path(part, &["eTag"])?
+				.as_str()
+				.context("completed part ETag is not a string")?
+				.to_string();
+			Ok(CompletedUploadPart {
+				part_number,
+				e_tag,
+			})
+		})
+		.collect()
 }
 
 fn test_config() -> anyhow::Result<Config> {
