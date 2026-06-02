@@ -226,8 +226,20 @@ WHERE
 pub const DELETE_OBJECT_ALLOWED_USERS_QUERY: &str =
 	"DELETE FROM object_allowed_users WHERE object_id = $1";
 
-pub const INSERT_OBJECT_ALLOWED_USER_QUERY: &str =
-	"INSERT INTO object_allowed_users (object_id, user_id) VALUES ($1, $2)";
+pub const REPLACE_OBJECT_ALLOWED_USERS_QUERY: &str = "WITH valid AS (
+	SELECT id, email
+	FROM users
+	WHERE email = ANY($2)
+),
+inserted AS (
+	INSERT INTO object_allowed_users (object_id, user_id)
+	SELECT $1, id
+	FROM valid
+	RETURNING user_id
+)
+SELECT valid.email
+FROM valid
+JOIN inserted ON inserted.user_id = valid.id";
 
 pub const SELECT_ALL_USERS_QUERY: &str =
 	"SELECT id, email, role, created_at, updated_at, default_publicity FROM users";
@@ -242,8 +254,6 @@ pub const SELECT_USER_ID_BY_EMAIL_FOR_UPDATE_QUERY: &str =
 	"SELECT id FROM users WHERE email = $1 FOR UPDATE";
 
 pub const SELECT_USER_EXISTS_QUERY: &str = "SELECT 1 FROM users WHERE id = $1";
-
-pub const SELECT_USERS_BY_EMAILS_QUERY: &str = "SELECT id, email FROM users WHERE email = ANY($1)";
 
 pub const INSERT_OBJECT_STORAGE_DELETIONS_QUERY: &str =
 	"INSERT INTO object_storage_deletions (storage_key, object_id)

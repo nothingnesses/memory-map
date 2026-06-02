@@ -10,7 +10,6 @@ use {
 			DELETE_PENDING_OBJECT_UPLOAD_BY_SESSION_QUERY,
 			DELETE_PENDING_OBJECT_UPLOAD_QUERY,
 			FINALIZE_OBJECT_UPLOAD_QUERY,
-			INSERT_OBJECT_ALLOWED_USER_QUERY,
 			INSERT_OBJECT_QUERY,
 			INSERT_OBJECT_STORAGE_DELETIONS_QUERY,
 			INSERT_OBJECT_UPLOAD_SESSION_QUERY,
@@ -19,10 +18,10 @@ use {
 			MARK_OBJECTS_DELETE_PENDING_QUERY,
 			MARK_STALE_UPLOADS_DELETE_PENDING_QUERY,
 			MARK_UPLOAD_DELETE_PENDING_QUERY,
+			REPLACE_OBJECT_ALLOWED_USERS_QUERY,
 			SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY,
 			SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY,
 			SELECT_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY,
-			SELECT_USERS_BY_EMAILS_QUERY,
 			UPDATE_OBJECT_QUERY,
 		},
 		errors::AppError,
@@ -1323,25 +1322,18 @@ async fn replace_allowed_users(
 		.await
 		.context("Failed to delete object allowed users from database")?;
 
-	let mut valid_allowed_users = Vec::new();
-
-	if !allowed_users.is_empty() {
-		let rows = transaction.query(SELECT_USERS_BY_EMAILS_QUERY, &[&allowed_users]).await?;
-
-		for row in rows {
-			let user_id: i64 =
-				row.try_get("id").context("Failed to get user ID from database row")?;
-			let email: String =
-				row.try_get("email").context("Failed to get email from database row")?;
-			transaction
-				.execute(INSERT_OBJECT_ALLOWED_USER_QUERY, &[&object_id, &user_id])
-				.await
-				.context("Failed to insert object allowed user into database")?;
-			valid_allowed_users.push(email);
-		}
+	if allowed_users.is_empty() {
+		return Ok(Vec::new());
 	}
 
-	Ok(valid_allowed_users)
+	transaction
+		.query(REPLACE_OBJECT_ALLOWED_USERS_QUERY, &[&object_id, &allowed_users])
+		.await
+		.context("Failed to replace object allowed users in database")?
+		.into_iter()
+		.map(|row| row.try_get("email").context("Failed to get email from database row"))
+		.collect::<Result<Vec<_>, _>>()
+		.map_err(AppError::from)
 }
 
 /// Generates an unguessable storage key used directly in presigned S3 URLs.
