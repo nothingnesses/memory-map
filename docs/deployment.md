@@ -47,6 +47,11 @@ Required auth settings:
 - `MEMORY_MAP__AUTH__COOKIE_SECRET`
 - `MEMORY_MAP__AUTH__ENABLE_REGISTRATION`
 
+Optional auth settings:
+
+- `MEMORY_MAP__AUTH__COOKIE_SECURE` (default: infer from
+  `MEMORY_MAP__FRONTEND__URL`)
+
 Required frontend / CORS settings:
 
 - `MEMORY_MAP__FRONTEND__URL`
@@ -104,6 +109,11 @@ or `devenv/flake.nix` into production.
 
 `MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS` must be between `1` and
 `604800`.
+
+`MEMORY_MAP__AUTH__COOKIE_SECURE` overrides whether login/logout cookies use
+the `Secure` attribute. Leave it unset to infer from
+`MEMORY_MAP__FRONTEND__URL`; set it to `true` when TLS is terminated by a
+proxy but the configured frontend URL is not `https`.
 
 `MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL` signs browser-facing object URLs
 when the backend reaches storage through a private endpoint but browsers need a

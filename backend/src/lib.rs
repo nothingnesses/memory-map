@@ -91,6 +91,8 @@ impl fmt::Debug for SmtpConfig {
 pub struct AuthConfig {
 	pub cookie_secret: String,
 	pub enable_registration: bool,
+	#[serde(default)]
+	pub cookie_secure: Option<bool>,
 }
 
 impl AuthConfig {
@@ -115,6 +117,7 @@ impl fmt::Debug for AuthConfig {
 		f.debug_struct("AuthConfig")
 			.field("cookie_secret", &"<redacted>")
 			.field("enable_registration", &self.enable_registration)
+			.field("cookie_secure", &self.cookie_secure)
 			.finish()
 	}
 }
@@ -147,10 +150,11 @@ pub struct Config {
 impl Config {
 	/// Whether auth cookies should carry the `Secure` attribute.
 	///
-	/// Derived from the frontend URL so login and logout agree on the cookie shape;
-	/// without that the browser may refuse the logout overwrite.
+	/// Explicit config wins; otherwise derive from the frontend URL so login and
+	/// logout agree on the cookie shape. Without that the browser may refuse the
+	/// logout overwrite.
 	pub fn cookie_secure(&self) -> bool {
-		self.frontend.url.starts_with("https")
+		self.auth.cookie_secure.unwrap_or_else(|| self.frontend.url.starts_with("https"))
 	}
 
 	/// Loads, deserializes, and validates the configuration from environment variables.
@@ -518,6 +522,7 @@ mod tests {
 			auth: AuthConfig {
 				cookie_secret: "debug-cookie-secret".to_string(),
 				enable_registration: true,
+				cookie_secure: None,
 			},
 			frontend: FrontendConfig {
 				url: "https://memory-map.example.test".to_string(),
@@ -557,6 +562,7 @@ mod tests {
 		let config = AuthConfig {
 			cookie_secret: "a".repeat(64),
 			enable_registration: true,
+			cookie_secure: None,
 		};
 
 		assert!(config.validate().is_ok());
@@ -567,6 +573,7 @@ mod tests {
 		let config = AuthConfig {
 			cookie_secret: "a".repeat(63),
 			enable_registration: true,
+			cookie_secure: None,
 		};
 
 		let error = config.validate().err();
@@ -624,5 +631,64 @@ mod tests {
 			EmailOutboxConfig::default().worker_interval_seconds
 		);
 		Ok(())
+	}
+
+	#[test]
+	fn config_cookie_secure_defaults_from_frontend_url() {
+		let mut config = test_config_with_frontend_url("https://memory-map.example.test");
+		assert!(config.cookie_secure());
+
+		config.frontend.url = "http://memory-map.example.test".to_string();
+		assert!(!config.cookie_secure());
+	}
+
+	#[test]
+	fn config_cookie_secure_uses_explicit_auth_override() {
+		let mut config = test_config_with_frontend_url("http://memory-map.example.test");
+		config.auth.cookie_secure = Some(true);
+		assert!(config.cookie_secure());
+
+		config.frontend.url = "https://memory-map.example.test".to_string();
+		config.auth.cookie_secure = Some(false);
+		assert!(!config.cookie_secure());
+	}
+
+	fn test_config_with_frontend_url(frontend_url: &str) -> Config {
+		Config {
+			pg: PostgresConfig::new(),
+			server: ServerConfig {
+				host: "127.0.0.1".to_string(),
+				port: 8000,
+			},
+			smtp: SmtpConfig {
+				host: "smtp.example.test".to_string(),
+				user: "smtp-user".to_string(),
+				pass: "smtp-pass".to_string(),
+				from: "noreply@example.test".to_string(),
+			},
+			auth: AuthConfig {
+				cookie_secret: "a".repeat(64),
+				enable_registration: true,
+				cookie_secure: None,
+			},
+			frontend: FrontendConfig {
+				url: frontend_url.to_string(),
+			},
+			cors: CorsConfig {
+				allowed_origins: frontend_url.to_string(),
+			},
+			storage: StorageConfig {
+				endpoint_url: "http://127.0.0.1:9000/".to_string(),
+				public_endpoint_url: None,
+				access_key: "storage-access".to_string(),
+				secret_key: "storage-secret".to_string(),
+				bucket_name: "memory-map".to_string(),
+				region: "us-east-1".to_string(),
+				force_path_style: true,
+				presigned_url_ttl_seconds: 60,
+			},
+			object_lifecycle: ObjectLifecycleConfig::default(),
+			email_outbox: EmailOutboxConfig::default(),
+		}
 	}
 }

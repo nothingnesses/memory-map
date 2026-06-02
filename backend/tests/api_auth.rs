@@ -1344,6 +1344,7 @@ fn test_config() -> anyhow::Result<Config> {
 				"memory-map-local-test-cookie-secret-at-least-64-bytes-long-0001-extra",
 			),
 			enable_registration: true,
+			cookie_secure: None,
 		},
 		frontend: backend::FrontendConfig {
 			url: frontend_url.clone(),
