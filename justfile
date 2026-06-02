@@ -170,19 +170,8 @@ storage-ci:
 
 	log_file="${PROCESS_COMPOSE_LOG:-process-compose.log}"
 	port="${PROCESS_COMPOSE_PORT:-8080}"
-	process_compose_started=false
 
-	cleanup() {
-		if [[ "$process_compose_started" == "true" ]]; then
-			memory_map_process_compose --port "$port" down || true
-		fi
-	}
-	trap cleanup EXIT
-
-	memory_map_start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
-	process_compose_started=true
-	memory_map_process_compose --port "$port" project is-ready --wait
-	BACKEND_TEST_REQUIRE_SERVICE=true just storage-test
+	memory_map_with_process_compose "$port" "$log_file" -- env BACKEND_TEST_REQUIRE_SERVICE=true just storage-test
 
 # Run backend API/auth integration tests against configured local services.
 [positional-arguments]
@@ -205,25 +194,13 @@ backend-integration:
 	log_dir="${BACKEND_INTEGRATION_LOG_DIR:-backend-integration-logs}"
 	log_file="${BACKEND_INTEGRATION_PROCESS_COMPOSE_LOG:-$log_dir/process-compose.log}"
 	port="${BACKEND_INTEGRATION_PROCESS_COMPOSE_PORT:-$PROCESS_COMPOSE_PORT}"
-	mkdir -p "$log_dir"
-	process_compose_started=false
-
-	cleanup() {
-		if [[ "$process_compose_started" == "true" ]]; then
-			memory_map_process_compose --port "$port" down >> "$log_dir/process-compose-down.log" 2>&1 || true
-		fi
-	}
-	trap cleanup EXIT
 
 	memory_map_require_port_free "$E2E_PG_PORT" "PostgreSQL"
 	memory_map_require_port_free "$E2E_STORAGE_API_PORT" "RustFS API"
 	memory_map_require_port_free "$E2E_STORAGE_CONSOLE_PORT" "RustFS console"
 	memory_map_require_port_free "$port" "process-compose"
 
-	memory_map_start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
-	process_compose_started=true
-	memory_map_process_compose --port "$port" project is-ready --wait
-	just backend-integration-test
+	memory_map_with_process_compose "$port" "$log_file" -- just backend-integration-test
 
 # Run Playwright E2E tests against the headless local service graph.
 e2e: frontend-config frontend-e2e-typecheck
@@ -233,53 +210,39 @@ e2e: frontend-config frontend-e2e-typecheck
 	source scripts/e2e-env.sh
 	source scripts/service-graph.sh
 	mkdir -p "$E2E_LOG_DIR"
-	process_compose_started=false
 
-	wait_for_backend() {
-		local response
-		local query='{"query":"query ConfigQuery { config { enableRegistration } }"}'
+	run_e2e() {
+		local backend_pid=""
+		local frontend_pid=""
 
-		for _ in $(seq 1 120); do
-			if response=$(curl --fail --silent --show-error --max-time 2 \
-				-H 'Content-Type: application/json' \
-				--data "$query" \
-				"$E2E_BACKEND_URL/" 2>/dev/null) \
-				&& [[ "$response" == *'"enableRegistration"'* ]]; then
-				return 0
-			fi
-			sleep 1
-		done
+		cleanup_app_servers() {
+			local status=$?
 
-		echo "ERROR: backend did not become ready; see $E2E_LOG_DIR/backend.log." >&2
-		tail -n 80 "$E2E_LOG_DIR/backend.log" >&2 || true
-		exit 1
-	}
+			trap - EXIT INT TERM
+			memory_map_stop_pid "${frontend_pid:-}"
+			memory_map_stop_pid "${backend_pid:-}"
+			exit "$status"
+		}
+		trap cleanup_app_servers EXIT INT TERM
 
-	wait_for_frontend() {
-		for _ in $(seq 1 120); do
-			if curl --fail --silent --show-error --max-time 2 "$E2E_FRONTEND_URL/" >/dev/null 2>&1; then
-				return 0
-			fi
-			sleep 1
-		done
-
-		echo "ERROR: frontend did not become ready; see $E2E_LOG_DIR/frontend.log." >&2
-		tail -n 80 "$E2E_LOG_DIR/frontend.log" >&2 || true
-		exit 1
-	}
-
-	cleanup() {
-		local status=$?
-
-		trap - EXIT INT TERM
-		memory_map_stop_pid "${frontend_pid:-}"
-		memory_map_stop_pid "${backend_pid:-}"
-		if [[ "$process_compose_started" == "true" ]]; then
-			memory_map_process_compose --port "$PROCESS_COMPOSE_PORT" down >> "$E2E_LOG_DIR/process-compose-down.log" 2>&1 || true
+		{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
+		backend_pid=$!
+		if ! memory_map_wait_for_http "$E2E_BACKEND_URL/" 120 "GraphiQL"; then
+			echo "ERROR: backend did not become ready; see $E2E_LOG_DIR/backend.log." >&2
+			tail -n 80 "$E2E_LOG_DIR/backend.log" >&2 || true
+			return 1
 		fi
-		exit "$status"
+
+		{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address "$E2E_FRONTEND_HOST" --port "$E2E_FRONTEND_PORT" --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
+		frontend_pid=$!
+		if ! memory_map_wait_for_http "$E2E_FRONTEND_URL/" 120; then
+			echo "ERROR: frontend did not become ready; see $E2E_LOG_DIR/frontend.log." >&2
+			tail -n 80 "$E2E_LOG_DIR/frontend.log" >&2 || true
+			return 1
+		fi
+
+		{{ direnv_prefix }} bash -c 'cd frontend && exec pnpm exec playwright test'
 	}
-	trap cleanup EXIT INT TERM
 
 	memory_map_require_port_free "$E2E_PG_PORT" "PostgreSQL"
 	memory_map_require_port_free "$E2E_STORAGE_API_PORT" "RustFS API"
@@ -291,19 +254,7 @@ e2e: frontend-config frontend-e2e-typecheck
 	{{ direnv_prefix }} cargo build --bin backend
 	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build --skip-version-check --offline'
 
-	memory_map_start_process_compose --port "$PROCESS_COMPOSE_PORT" --log-file "$PROCESS_COMPOSE_LOG" --detached -t=false --logs-truncate
-	process_compose_started=true
-	memory_map_process_compose --port "$PROCESS_COMPOSE_PORT" project is-ready --wait
-
-	{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
-	backend_pid=$!
-	wait_for_backend
-
-	{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address "$E2E_FRONTEND_HOST" --port "$E2E_FRONTEND_PORT" --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
-	frontend_pid=$!
-	wait_for_frontend
-
-	{{ direnv_prefix }} bash -c 'cd frontend && exec pnpm exec playwright test'
+	memory_map_with_process_compose "$PROCESS_COMPOSE_PORT" "$PROCESS_COMPOSE_LOG" -- run_e2e
 
 # Remove build artifacts.
 clean:
