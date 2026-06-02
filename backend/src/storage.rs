@@ -1,8 +1,5 @@
 use {
-	crate::{
-		Config,
-		constants::ERR_UPLOAD_STORAGE,
-	},
+	crate::Config,
 	anyhow::Context,
 	aws_credential_types::Credentials,
 	aws_sdk_s3::{
@@ -212,7 +209,7 @@ impl StorageClient {
 			.content_type(content_type.into())
 			.send()
 			.await
-			.context(ERR_UPLOAD_STORAGE)?;
+			.context("Failed to upload object to S3 storage")?;
 		Ok(())
 	}
 

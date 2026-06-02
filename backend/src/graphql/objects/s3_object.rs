@@ -92,8 +92,7 @@ where
 /// Emits a 64-bit id as a JSON string.
 ///
 /// Matches the GraphQL `ID` wire format and protects JavaScript clients from the
-/// `Number` precision ceiling at 2^53; both endpoints (REST upload, GraphQL) now
-/// agree that ids are strings.
+/// `Number` precision ceiling at 2^53.
 fn serialize_i64_as_string<S>(
 	value: &i64,
 	serializer: S,
