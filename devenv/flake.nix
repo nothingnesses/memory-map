@@ -269,6 +269,12 @@
                   enable = true;
                   package = rustToolchain;
                 };
+                shfmt = {
+                  enable = true;
+                  indent_size = 0;
+                  simplify = false;
+                  includes = [ "scripts/*.sh" ];
+                };
                 prettier = {
                   enable = true;
                   includes = [
@@ -312,6 +318,13 @@
                   always_run = true;
                   stages = [ "pre-push" ];
                 };
+                shellcheck = {
+                  enable = true;
+                  package = pkgs.shellcheck;
+                  stages = [ "pre-push" ];
+                  files = "^scripts/.*\\.sh$";
+                  entry = "${pkgs.shellcheck}/bin/shellcheck --enable=all";
+                };
               };
             };
           in
@@ -326,7 +339,7 @@
             formatter = treefmtEval.config.build.wrapper;
 
             checks = {
-              formatting = treefmtEval.config.build.check self'.self;
+              formatting = treefmtEval.config.build.check ./..;
               inherit pre-commit-check;
             };
 
@@ -465,6 +478,9 @@
                 pkgs.ast-grep
                 # For ASCII-only lint check in `just doc`
                 pkgs.ripgrep
+                # For shell script linting and formatting.
+                pkgs.shellcheck
+                pkgs.shfmt
               ];
 
               env = {

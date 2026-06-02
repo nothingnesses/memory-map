@@ -319,7 +319,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|frontend-e2e-typecheck|storage-ci|storage-test|test|verify) ;;
+		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|frontend-e2e-typecheck|shellcheck|storage-ci|storage-test|test|verify) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2
@@ -356,13 +356,18 @@ filtered recipe filter *args:
 
 	exit "$recipe_status"
 
+# Check shell scripts with ShellCheck.
+shellcheck:
+	{{ direnv_prefix }} shellcheck --enable=all scripts/*.sh
+
 # Scan for hardcoded values.
 scan-hardcoded:
 	./scripts/scan_hardcoded.sh
 
-# Verify: fmt, check, clippy, deny, doc, test, frontend build.
+# Verify: fmt, shell scripts, check, clippy, deny, doc, test, frontend build.
 verify:
 	just fmt
+	just shellcheck
 	just check
 	just clippy
 	just deny
