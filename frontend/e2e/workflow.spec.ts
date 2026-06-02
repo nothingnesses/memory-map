@@ -116,6 +116,24 @@ function waitForGraphqlOperation(
 	});
 }
 
+async function expectBackendGraphqlUsedAuthCookie(
+	response: PlaywrightResponse,
+): Promise<void> {
+	const headers = await response.request().allHeaders();
+	expect(headers.cookie ?? "").toContain("auth_token=");
+}
+
+async function expectStoragePutUsedPresignedUrlWithoutAppCookie(
+	response: PlaywrightResponse,
+): Promise<void> {
+	const request = response.request();
+	const headers = await request.allHeaders();
+
+	expect(request.method()).toBe("PUT");
+	expect(response.url().startsWith(storageUrl)).toBe(true);
+	expect(headers.cookie).toBeUndefined();
+}
+
 test("authenticated object workflow covers upload preview gallery delete and logout", async ({
 	page,
 }) => {
@@ -152,17 +170,27 @@ test("authenticated object workflow covers upload preview gallery delete and log
 			"PresignObjectUploadPartsMutation",
 		);
 		const uploadPartPromise = page.waitForResponse(
-			(response) => response.request().method() === "PUT",
+			(response) =>
+				response.request().method() === "PUT" &&
+				response.url().startsWith(storageUrl),
 		);
 		const completeUploadPromise = waitForGraphqlOperation(
 			page,
 			"CompleteObjectUploadMutation",
 		);
 		await page.getByRole("button", { name: "Submit" }).click();
-		expect((await createSessionPromise).ok()).toBe(true);
-		expect((await presignPartsPromise).ok()).toBe(true);
-		expect((await uploadPartPromise).ok()).toBe(true);
-		expect((await completeUploadPromise).ok()).toBe(true);
+		const createSessionResponse = await createSessionPromise;
+		const presignPartsResponse = await presignPartsPromise;
+		const uploadPartResponse = await uploadPartPromise;
+		const completeUploadResponse = await completeUploadPromise;
+		expect(createSessionResponse.ok()).toBe(true);
+		expect(presignPartsResponse.ok()).toBe(true);
+		expect(uploadPartResponse.ok()).toBe(true);
+		expect(completeUploadResponse.ok()).toBe(true);
+		await expectBackendGraphqlUsedAuthCookie(createSessionResponse);
+		await expectBackendGraphqlUsedAuthCookie(presignPartsResponse);
+		await expectBackendGraphqlUsedAuthCookie(completeUploadResponse);
+		await expectStoragePutUsedPresignedUrlWithoutAppCookie(uploadPartResponse);
 		expect(new URL(page.url()).search).toBe("");
 
 		const row = page.getByRole("row").filter({ hasText: objectName });
@@ -267,10 +295,18 @@ test.describe("direct upload failure handling", () => {
 
 		await page.getByRole("button", { name: "Submit" }).click();
 
-		expect((await createSessionPromise).ok()).toBe(true);
-		expect((await presignPartsPromise).ok()).toBe(true);
-		expect((await failedUploadPartPromise).status()).toBe(503);
-		expect((await abortUploadPromise).ok()).toBe(true);
+		const createSessionResponse = await createSessionPromise;
+		const presignPartsResponse = await presignPartsPromise;
+		const failedUploadPartResponse = await failedUploadPartPromise;
+		const abortUploadResponse = await abortUploadPromise;
+		expect(createSessionResponse.ok()).toBe(true);
+		expect(presignPartsResponse.ok()).toBe(true);
+		expect(failedUploadPartResponse.status()).toBe(503);
+		expect(abortUploadResponse.ok()).toBe(true);
+		await expectBackendGraphqlUsedAuthCookie(createSessionResponse);
+		await expectBackendGraphqlUsedAuthCookie(presignPartsResponse);
+		await expectBackendGraphqlUsedAuthCookie(abortUploadResponse);
+		await expectStoragePutUsedPresignedUrlWithoutAppCookie(failedUploadPartResponse);
 		await expect(page.getByText(/Failed to upload files\. Status: 503/)).toBeVisible();
 		await expect(page.getByRole("heading", { name: "Add Object", exact: true }))
 			.toBeVisible();
