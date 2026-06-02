@@ -33,6 +33,25 @@ just frontend-build  # Build the Trunk frontend
 just verify          # Run the full verification suite
 ```
 
+### Filtered Command Output
+
+When a `just` recipe is expected to produce a large amount of output, use
+`just filtered` instead of writing an ad-hoc shell pipeline. The first argument
+is the `just` recipe to run, the second argument is a ripgrep regex used to
+select output lines, and the remaining arguments are forwarded to the selected
+recipe.
+
+```sh
+just filtered check '^(error|warning|[[:space:]]*-->)'
+just filtered test '^(test .* \.\.\. FAILED|failures:|error)'
+just filtered verify '^(Recipe|error|warning|failures:|FAILED|test result:)'
+```
+
+`just filtered` preserves the selected recipe's exit status, rejects unsupported
+recipes and unsafe forwarded arguments, limits filtered matches so accidental
+broad filters do not dump full logs, and prints the last captured lines when a
+failing command has no filter matches.
+
 ## Documentation And Text
 
 Source and Markdown documentation are kept ASCII-only. Use plain ASCII
