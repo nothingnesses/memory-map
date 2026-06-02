@@ -1,11 +1,5 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		post_graphql_with_auth,
-	},
+	crate::graphql_queries::GraphqlOp,
 	graphql_client::GraphQLQuery,
 };
 
@@ -17,24 +11,12 @@ use {
 )]
 pub struct DeleteS3ObjectsMutation;
 
-use self::delete_s3_objects_mutation::{
-	DeleteS3ObjectsMutationDeleteS3Objects as DeletedS3Object,
-	Variables,
-};
+use self::delete_s3_objects_mutation::DeleteS3ObjectsMutationDeleteS3Objects as DeletedS3Object;
 
-impl DeleteS3ObjectsMutation {
-	pub async fn run(
-		api_url: String,
-		ids: Vec<String>,
-	) -> Result<Vec<DeletedS3Object>, AppError> {
-		let response = post_graphql_with_auth::<DeleteS3ObjectsMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			Variables {
-				ids,
-			},
-		)
-		.await?;
-		Ok(graphql_data(response)?.delete_s3_objects)
+impl GraphqlOp for DeleteS3ObjectsMutation {
+	type Output = Vec<DeletedS3Object>;
+
+	fn extract(data: delete_s3_objects_mutation::ResponseData) -> Self::Output {
+		data.delete_s3_objects
 	}
 }

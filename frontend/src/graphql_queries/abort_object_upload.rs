@@ -1,11 +1,5 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		post_graphql_with_auth,
-	},
+	crate::graphql_queries::GraphqlOp,
 	graphql_client::GraphQLQuery,
 };
 
@@ -17,24 +11,12 @@ use {
 )]
 pub struct AbortObjectUploadMutation;
 
-use self::abort_object_upload_mutation::{
-	AbortObjectUploadMutationAbortObjectUpload as AbortedObjectUpload,
-	Variables,
-};
+use self::abort_object_upload_mutation::AbortObjectUploadMutationAbortObjectUpload as AbortedObjectUpload;
 
-impl AbortObjectUploadMutation {
-	pub async fn run(
-		api_url: String,
-		object_id: String,
-	) -> Result<AbortedObjectUpload, AppError> {
-		let response = post_graphql_with_auth::<AbortObjectUploadMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			Variables {
-				object_id,
-			},
-		)
-		.await?;
-		Ok(graphql_data(response)?.abort_object_upload)
+impl GraphqlOp for AbortObjectUploadMutation {
+	type Output = AbortedObjectUpload;
+
+	fn extract(data: abort_object_upload_mutation::ResponseData) -> Self::Output {
+		data.abort_object_upload
 	}
 }

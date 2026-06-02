@@ -1,14 +1,7 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		graphql_queries::me::me_query::{
-			MeQueryMe as User,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		me::me_query::MeQueryMe as User,
 	},
 	graphql_client::GraphQLQuery,
 };
@@ -27,11 +20,10 @@ pub use crate::graphql_queries::types::{
 	UserRole,
 };
 
-impl MeQuery {
-	pub async fn run(api_url: String) -> Result<Option<User>, AppError> {
-		let response =
-			post_graphql_with_auth::<MeQuery, _>(&reqwest::Client::new(), api_url, Variables {})
-				.await?;
-		Ok(graphql_data(response)?.me)
+impl GraphqlOp for MeQuery {
+	type Output = Option<User>;
+
+	fn extract(data: me_query::ResponseData) -> Self::Output {
+		data.me
 	}
 }

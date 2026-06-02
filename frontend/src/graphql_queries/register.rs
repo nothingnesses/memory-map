@@ -1,14 +1,7 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		graphql_queries::register::register_mutation::{
-			RegisterMutationRegister as User,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		register::register_mutation::RegisterMutationRegister as User,
 	},
 	graphql_client::GraphQLQuery,
 };
@@ -21,17 +14,10 @@ use {
 )]
 pub struct RegisterMutation;
 
-impl RegisterMutation {
-	pub async fn run(
-		api_url: String,
-		variables: Variables,
-	) -> Result<User, AppError> {
-		let response = post_graphql_with_auth::<RegisterMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			variables,
-		)
-		.await?;
-		Ok(graphql_data(response)?.register)
+impl GraphqlOp for RegisterMutation {
+	type Output = User;
+
+	fn extract(data: register_mutation::ResponseData) -> Self::Output {
+		data.register
 	}
 }

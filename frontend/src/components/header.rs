@@ -63,7 +63,11 @@ pub fn Header(#[prop(into)] menu_open: RwSignal<bool>) -> impl IntoView {
 		let navigate = navigate.clone();
 		let api_url = config.api_url.clone();
 		spawn_local(async move {
-			let _ = LogoutMutation::run(api_url).await;
+			let _ = crate::graphql_queries::run::<LogoutMutation>(
+				api_url,
+				crate::graphql_queries::logout::logout_mutation::Variables {},
+			)
+			.await;
 			if let Some(ctx) = user_ctx {
 				ctx.refetch.run(());
 			}

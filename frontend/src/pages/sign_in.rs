@@ -57,7 +57,14 @@ pub fn SignIn() -> impl IntoView {
 	let api_url = config.api_url.clone();
 	let config_resource = LocalResource::new(move || {
 		let api_url = api_url.clone();
-		async move { ConfigQuery::run(api_url).await.ok() }
+		async move {
+			crate::graphql_queries::run_unauthenticated::<ConfigQuery>(
+				api_url,
+				crate::graphql_queries::config::config_query::Variables {},
+			)
+			.await
+			.ok()
+		}
 	});
 
 	let on_sign_in = move |_| {
@@ -78,7 +85,7 @@ pub fn SignIn() -> impl IntoView {
 				password: password_val,
 			};
 
-			match LoginMutation::run(api_url, variables).await {
+			match crate::graphql_queries::run::<LoginMutation>(api_url, variables).await {
 				Ok(_) => {
 					let _ = window().location().set_href("/");
 				}
@@ -110,7 +117,11 @@ pub fn SignIn() -> impl IntoView {
 				email: email_val,
 			};
 
-			match RequestPasswordResetMutation::run(api_url, variables).await {
+			match crate::graphql_queries::run_unauthenticated::<RequestPasswordResetMutation>(
+				api_url, variables,
+			)
+			.await
+			{
 				Ok(_) => {
 					success_message.set(Some(MSG_RESET_EMAIL_SENT.to_string()));
 					error_message.set(None);

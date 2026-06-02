@@ -31,7 +31,10 @@ use {
 		dump_errors,
 		errors::use_context_safe,
 		graphql_queries::{
-			s3_object_by_id::S3ObjectByIdQuery,
+			s3_object_by_id::{
+				S3ObjectByIdQuery,
+				s3_object_by_id_query,
+			},
 			s3_objects::s3_objects_query::S3ObjectsQueryS3Objects,
 			types::PublicityOverride,
 			update_s3_object::{
@@ -96,7 +99,14 @@ pub fn EditS3ObjectForm(
 				return Err("Invalid ID".to_string());
 			}
 			// Fetch the S3 object data by ID
-			S3ObjectByIdQuery::run(api_url, id).await.map_err(|e| e.to_string())
+			crate::graphql_queries::run::<S3ObjectByIdQuery>(
+				api_url,
+				s3_object_by_id_query::Variables {
+					id,
+				},
+			)
+			.await
+			.map_err(|e| e.to_string())
 		}
 	});
 
@@ -216,7 +226,7 @@ pub fn EditS3ObjectForm(
 				},
 			};
 
-			match UpdateS3ObjectMutation::run(api_url, variables).await {
+			match crate::graphql_queries::run::<UpdateS3ObjectMutation>(api_url, variables).await {
 				Ok(updated_obj) => {
 					if let Some(toaster) = toaster {
 						toaster.dispatch_toast(

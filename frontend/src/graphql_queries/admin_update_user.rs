@@ -1,14 +1,7 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		graphql_queries::admin_update_user::admin_update_user_mutation::{
-			AdminUpdateUserMutationAdminUpdateUser as User,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		admin_update_user::admin_update_user_mutation::AdminUpdateUserMutationAdminUpdateUser as User,
 	},
 	graphql_client::GraphQLQuery,
 };
@@ -21,17 +14,10 @@ use {
 )]
 pub struct AdminUpdateUserMutation;
 
-impl AdminUpdateUserMutation {
-	pub async fn run(
-		api_url: String,
-		variables: Variables,
-	) -> Result<User, AppError> {
-		let response = post_graphql_with_auth::<AdminUpdateUserMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			variables,
-		)
-		.await?;
-		Ok(graphql_data(response)?.admin_update_user)
+impl GraphqlOp for AdminUpdateUserMutation {
+	type Output = User;
+
+	fn extract(data: admin_update_user_mutation::ResponseData) -> Self::Output {
+		data.admin_update_user
 	}
 }

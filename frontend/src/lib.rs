@@ -226,7 +226,12 @@ pub fn App() -> impl IntoView {
 	let user_resource = LocalResource::new(move || {
 		trigger.get();
 		let api_url = api_url.clone();
-		async move { MeQuery::run(api_url).await.ok().flatten() }
+		async move {
+			graphql_queries::run::<MeQuery>(api_url, graphql_queries::me::me_query::Variables {})
+				.await
+				.ok()
+				.flatten()
+		}
 	});
 
 	provide_context(UserContext {

@@ -57,8 +57,12 @@ pub fn LocationMarkers() -> impl IntoView {
 		Some(c) => c,
 		None => return view! { <p>{ERR_SYSTEM_CONFIG_MISSING}</p> }.into_any(),
 	};
-	let s3_objects_resource =
-		LocalResource::new(move || S3ObjectsQuery::run(config.api_url.clone()));
+	let s3_objects_resource = LocalResource::new(move || {
+		crate::graphql_queries::run::<S3ObjectsQuery>(
+			config.api_url.clone(),
+			crate::graphql_queries::s3_objects::s3_objects_query::Variables {},
+		)
+	});
 	view! {
 		<ErrorBoundary fallback=|errors| {
 			debug_error!("Failed to load markers: {:?}", errors.get());

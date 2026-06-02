@@ -113,7 +113,7 @@ pub fn S3ObjectTableRow(
 				},
 			};
 
-			match UpdateS3ObjectMutation::run(api_url, variables).await {
+			match crate::graphql_queries::run::<UpdateS3ObjectMutation>(api_url, variables).await {
 				Ok(updated_obj) => {
 					if let Some(toaster) = toaster {
 						toaster.dispatch_toast(

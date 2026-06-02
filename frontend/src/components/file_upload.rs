@@ -26,20 +26,26 @@ use {
 			use_error_context,
 		},
 		graphql_queries::{
-			abort_object_upload::AbortObjectUploadMutation,
+			abort_object_upload::{
+				AbortObjectUploadMutation,
+				abort_object_upload_mutation,
+			},
 			complete_object_upload::{
 				CompleteObjectUploadMutation,
 				CompletedUploadPartInput,
+				complete_object_upload_mutation,
 			},
 			create_object_upload_session::{
-				CreateObjectUploadSessionInputVariables,
+				CreateObjectUploadSessionInput,
 				CreateObjectUploadSessionMutation,
 				PublicityOverride,
 				UploadLocationInput,
+				create_object_upload_session_mutation,
 			},
 			presign_object_upload_parts::{
 				PresignObjectUploadPartsMutation,
 				PresignedUploadPart,
+				presign_object_upload_parts_mutation,
 			},
 		},
 		js_date_value_to_iso,
@@ -316,16 +322,18 @@ async fn upload_file(
 ) -> Result<(), AppError> {
 	let content_type = file.type_();
 	let file_size_bytes = file_size_bytes(&file)?;
-	let session = CreateObjectUploadSessionMutation::run(
+	let session = crate::graphql_queries::run::<CreateObjectUploadSessionMutation>(
 		api_url.clone(),
-		CreateObjectUploadSessionInputVariables {
-			name: file.name(),
-			content_type,
-			file_size_bytes,
-			made_on: metadata.made_on.clone(),
-			location: metadata.location_input(),
-			publicity: PublicityOverride::Default,
-			allowed_users: Some(Vec::new()),
+		create_object_upload_session_mutation::Variables {
+			input: CreateObjectUploadSessionInput {
+				name: file.name(),
+				content_type,
+				file_size_bytes,
+				made_on: metadata.made_on.clone(),
+				location: metadata.location_input(),
+				publicity: PublicityOverride::Default,
+				allowed_users: Some(Vec::new()),
+			},
 		},
 	)
 	.await?;
@@ -341,12 +349,25 @@ async fn upload_file(
 	{
 		Ok(completed_parts) => completed_parts,
 		Err(error) => {
-			let _ = AbortObjectUploadMutation::run(api_url, session.object_id).await;
+			let _ = crate::graphql_queries::run::<AbortObjectUploadMutation>(
+				api_url,
+				abort_object_upload_mutation::Variables {
+					object_id: session.object_id,
+				},
+			)
+			.await;
 			return Err(error);
 		}
 	};
 
-	CompleteObjectUploadMutation::run(api_url, session.object_id, completed_parts).await?;
+	crate::graphql_queries::run::<CompleteObjectUploadMutation>(
+		api_url,
+		complete_object_upload_mutation::Variables {
+			object_id: session.object_id,
+			parts: completed_parts,
+		},
+	)
+	.await?;
 	Ok(())
 }
 
@@ -371,10 +392,12 @@ async fn upload_file_parts(
 		let last_part_number =
 			(next_part_number + MAX_PRESIGN_PARTS_PER_REQUEST - 1).min(total_parts);
 		let part_numbers = (next_part_number ..= last_part_number).collect::<Vec<_>>();
-		let mut presigned_parts = PresignObjectUploadPartsMutation::run(
+		let mut presigned_parts = crate::graphql_queries::run::<PresignObjectUploadPartsMutation>(
 			api_url.clone(),
-			object_id.to_string(),
-			part_numbers,
+			presign_object_upload_parts_mutation::Variables {
+				object_id: object_id.to_string(),
+				part_numbers,
+			},
 		)
 		.await?;
 		presigned_parts.sort_by_key(|part| part.part_number);

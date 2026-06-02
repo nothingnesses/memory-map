@@ -1,14 +1,7 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		graphql_queries::config::config_query::{
-			ConfigQueryConfig as PublicConfig,
-			Variables,
-		},
-		post_graphql,
+	crate::graphql_queries::{
+		GraphqlOp,
+		config::config_query::ConfigQueryConfig as PublicConfig,
 	},
 	graphql_client::GraphQLQuery,
 };
@@ -21,10 +14,10 @@ use {
 )]
 pub struct ConfigQuery;
 
-impl ConfigQuery {
-	pub async fn run(api_url: String) -> Result<PublicConfig, AppError> {
-		let response =
-			post_graphql::<ConfigQuery, _>(&reqwest::Client::new(), api_url, Variables {}).await?;
-		Ok(graphql_data(response)?.config)
+impl GraphqlOp for ConfigQuery {
+	type Output = PublicConfig;
+
+	fn extract(data: config_query::ResponseData) -> Self::Output {
+		data.config
 	}
 }

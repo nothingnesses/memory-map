@@ -1,14 +1,7 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		graphql_queries::s3_object_by_id::s3_object_by_id_query::{
-			S3ObjectByIdQueryS3ObjectById as S3Object,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		s3_object_by_id::s3_object_by_id_query::S3ObjectByIdQueryS3ObjectById as S3Object,
 	},
 	graphql_client::GraphQLQuery,
 };
@@ -24,19 +17,10 @@ pub struct S3ObjectByIdQuery;
 
 pub use crate::graphql_queries::types::PublicityOverride;
 
-impl S3ObjectByIdQuery {
-	pub async fn run(
-		api_url: String,
-		id: i64,
-	) -> Result<S3Object, AppError> {
-		let response = post_graphql_with_auth::<S3ObjectByIdQuery, _>(
-			&reqwest::Client::new(),
-			api_url,
-			Variables {
-				id,
-			},
-		)
-		.await?;
-		Ok(graphql_data(response)?.s3_object_by_id)
+impl GraphqlOp for S3ObjectByIdQuery {
+	type Output = S3Object;
+
+	fn extract(data: s3_object_by_id_query::ResponseData) -> Self::Output {
+		data.s3_object_by_id
 	}
 }

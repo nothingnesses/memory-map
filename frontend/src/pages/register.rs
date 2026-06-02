@@ -45,7 +45,14 @@ pub fn Register() -> impl IntoView {
 	let api_url = config.api_url.clone();
 	let config_resource = LocalResource::new(move || {
 		let api_url = api_url.clone();
-		async move { ConfigQuery::run(api_url).await.ok() }
+		async move {
+			crate::graphql_queries::run_unauthenticated::<ConfigQuery>(
+				api_url,
+				crate::graphql_queries::config::config_query::Variables {},
+			)
+			.await
+			.ok()
+		}
 	});
 
 	let navigate_effect = navigate.clone();
@@ -82,7 +89,7 @@ pub fn Register() -> impl IntoView {
 				password: password_val,
 			};
 
-			match RegisterMutation::run(api_url, variables).await {
+			match crate::graphql_queries::run::<RegisterMutation>(api_url, variables).await {
 				Ok(_) => {
 					navigate("/sign-in", Default::default());
 				}

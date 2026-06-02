@@ -1,11 +1,5 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		post_graphql_with_auth,
-	},
+	crate::graphql_queries::GraphqlOp,
 	graphql_client::GraphQLQuery,
 };
 
@@ -17,27 +11,13 @@ use {
 )]
 pub struct PresignObjectUploadPartsMutation;
 
-use self::presign_object_upload_parts_mutation::{
-	PresignObjectUploadPartsMutationPresignObjectUploadParts as PresignedObjectUploadPart,
-	Variables,
-};
+use self::presign_object_upload_parts_mutation::PresignObjectUploadPartsMutationPresignObjectUploadParts as PresignedObjectUploadPart;
 
-impl PresignObjectUploadPartsMutation {
-	pub async fn run(
-		api_url: String,
-		object_id: String,
-		part_numbers: Vec<i64>,
-	) -> Result<Vec<PresignedObjectUploadPart>, AppError> {
-		let response = post_graphql_with_auth::<PresignObjectUploadPartsMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			Variables {
-				object_id,
-				part_numbers,
-			},
-		)
-		.await?;
-		Ok(graphql_data(response)?.presign_object_upload_parts)
+impl GraphqlOp for PresignObjectUploadPartsMutation {
+	type Output = Vec<PresignedObjectUploadPart>;
+
+	fn extract(data: presign_object_upload_parts_mutation::ResponseData) -> Self::Output {
+		data.presign_object_upload_parts
 	}
 }
 

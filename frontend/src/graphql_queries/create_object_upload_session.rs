@@ -1,11 +1,5 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		post_graphql_with_auth,
-	},
+	crate::graphql_queries::GraphqlOp,
 	graphql_client::GraphQLQuery,
 };
 
@@ -18,30 +12,20 @@ use {
 )]
 pub struct CreateObjectUploadSessionMutation;
 
-use self::create_object_upload_session_mutation::{
-	CreateObjectUploadSessionInput,
-	CreateObjectUploadSessionMutationCreateObjectUploadSession as CreatedObjectUploadSession,
-	LocationInput,
-	Variables,
+pub use {
+	self::create_object_upload_session_mutation::{
+		CreateObjectUploadSessionInput,
+		LocationInput as UploadLocationInput,
+	},
+	crate::graphql_queries::types::PublicityOverride,
 };
-pub use crate::graphql_queries::types::PublicityOverride;
 
-impl CreateObjectUploadSessionMutation {
-	pub async fn run(
-		api_url: String,
-		input: CreateObjectUploadSessionInput,
-	) -> Result<CreatedObjectUploadSession, AppError> {
-		let response = post_graphql_with_auth::<CreateObjectUploadSessionMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			Variables {
-				input,
-			},
-		)
-		.await?;
-		Ok(graphql_data(response)?.create_object_upload_session)
+use self::create_object_upload_session_mutation::CreateObjectUploadSessionMutationCreateObjectUploadSession as CreatedObjectUploadSession;
+
+impl GraphqlOp for CreateObjectUploadSessionMutation {
+	type Output = CreatedObjectUploadSession;
+
+	fn extract(data: create_object_upload_session_mutation::ResponseData) -> Self::Output {
+		data.create_object_upload_session
 	}
 }
-
-pub type CreateObjectUploadSessionInputVariables = CreateObjectUploadSessionInput;
-pub type UploadLocationInput = LocationInput;

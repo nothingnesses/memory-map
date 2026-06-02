@@ -1,11 +1,5 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		post_graphql_with_auth,
-	},
+	crate::graphql_queries::GraphqlOp,
 	graphql_client::GraphQLQuery,
 };
 
@@ -18,30 +12,17 @@ use {
 )]
 pub struct CompleteObjectUploadMutation;
 
-use self::complete_object_upload_mutation::{
-	CompleteObjectUploadMutationCompleteObjectUpload as CompletedObjectUpload,
-	CompletedObjectUploadPartInput,
-	Variables,
+pub use {
+	self::complete_object_upload_mutation::CompletedObjectUploadPartInput as CompletedUploadPartInput,
+	crate::graphql_queries::types::PublicityOverride,
 };
-pub use crate::graphql_queries::types::PublicityOverride;
 
-impl CompleteObjectUploadMutation {
-	pub async fn run(
-		api_url: String,
-		object_id: String,
-		parts: Vec<CompletedObjectUploadPartInput>,
-	) -> Result<CompletedObjectUpload, AppError> {
-		let response = post_graphql_with_auth::<CompleteObjectUploadMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			Variables {
-				object_id,
-				parts,
-			},
-		)
-		.await?;
-		Ok(graphql_data(response)?.complete_object_upload)
+use self::complete_object_upload_mutation::CompleteObjectUploadMutationCompleteObjectUpload as CompletedObjectUpload;
+
+impl GraphqlOp for CompleteObjectUploadMutation {
+	type Output = CompletedObjectUpload;
+
+	fn extract(data: complete_object_upload_mutation::ResponseData) -> Self::Output {
+		data.complete_object_upload
 	}
 }
-
-pub type CompletedUploadPartInput = CompletedObjectUploadPartInput;

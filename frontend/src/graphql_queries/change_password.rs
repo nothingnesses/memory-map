@@ -1,12 +1,5 @@
 use {
-	crate::{
-		errors::{
-			AppError,
-			graphql_data,
-		},
-		graphql_queries::change_password::change_password_mutation::Variables,
-		post_graphql_with_auth,
-	},
+	crate::graphql_queries::GraphqlOp,
 	graphql_client::GraphQLQuery,
 };
 
@@ -18,17 +11,10 @@ use {
 )]
 pub struct ChangePasswordMutation;
 
-impl ChangePasswordMutation {
-	pub async fn run(
-		api_url: String,
-		variables: Variables,
-	) -> Result<bool, AppError> {
-		let response = post_graphql_with_auth::<ChangePasswordMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			variables,
-		)
-		.await?;
-		Ok(graphql_data(response)?.change_password)
+impl GraphqlOp for ChangePasswordMutation {
+	type Output = bool;
+
+	fn extract(data: change_password_mutation::ResponseData) -> Self::Output {
+		data.change_password
 	}
 }

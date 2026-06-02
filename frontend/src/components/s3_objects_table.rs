@@ -24,7 +24,10 @@ use {
 		dump_errors,
 		errors::AppError,
 		graphql_queries::{
-			delete_s3_objects::DeleteS3ObjectsMutation,
+			delete_s3_objects::{
+				DeleteS3ObjectsMutation,
+				delete_s3_objects_mutation,
+			},
 			s3_objects::s3_objects_query::S3ObjectsQueryS3Objects as S3Object,
 		},
 	},
@@ -67,8 +70,11 @@ pub fn S3ObjectsTable(
 		let api_url = config.api_url.clone();
 		spawn_local(async move {
 			let ids: Vec<String> = objects.iter().map(|o| o.id.clone()).collect();
+			let variables = delete_s3_objects_mutation::Variables {
+				ids,
+			};
 
-			match DeleteS3ObjectsMutation::run(api_url, ids).await {
+			match crate::graphql_queries::run::<DeleteS3ObjectsMutation>(api_url, variables).await {
 				Ok(_) => {
 					debug_log!("{}", MSG_DELETE_SUCCESS);
 					on_change.run(());
