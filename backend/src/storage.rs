@@ -35,6 +35,10 @@ use {
 		fmt,
 		time::Duration,
 	},
+	tokio::time::{
+		Instant,
+		sleep,
+	},
 };
 
 #[derive(Clone, Deserialize)]
@@ -444,6 +448,32 @@ impl StorageClient {
 			.await
 			.context("Failed to verify S3 bucket readiness")?;
 		Ok(())
+	}
+
+	pub async fn wait_until_ready(
+		&self,
+		timeout: Duration,
+	) -> anyhow::Result<()> {
+		let started_at = Instant::now();
+		let mut retry_delay = Duration::from_millis(250);
+
+		let error = loop {
+			match self.head_bucket().await {
+				Ok(_) => return Ok(()),
+				Err(error) => {
+					let elapsed = started_at.elapsed();
+					if elapsed >= timeout {
+						break error;
+					}
+
+					let remaining = timeout.saturating_sub(elapsed);
+					sleep(retry_delay.min(remaining)).await;
+					retry_delay = retry_delay.saturating_mul(2).min(Duration::from_secs(5));
+				}
+			}
+		};
+
+		Err(error).with_context(|| format!("S3 storage did not become ready within {timeout:?}"))
 	}
 
 	pub async fn ensure_bucket_exists(&self) -> anyhow::Result<()> {
