@@ -8,10 +8,10 @@ use {
 		},
 		errors::AppError,
 	},
+	anyhow::Context as AnyhowContext,
 	async_graphql::{
 		Context,
 		Enum,
-		Error as GraphQLError,
 		ID,
 		Object,
 	},
@@ -100,24 +100,29 @@ pub struct User {
 	pub updated_at: Timestamp,
 }
 
-impl User {
-	pub fn try_from(row: Row) -> Result<Self, GraphQLError> {
-		let role_str: String = row.try_get("role")?;
+impl TryFrom<Row> for User {
+	type Error = AppError;
+
+	fn try_from(row: Row) -> Result<Self, Self::Error> {
+		let role_str: String = row.try_get("role").context("Failed to read user role")?;
 		let role = role_str
 			.parse()
-			.map_err(|_| AppError::Validation("Invalid role".to_string()).extend_graphql())?;
-		let default_publicity: PublicityDefault = row.try_get("default_publicity")?;
+			.map_err(|_| AppError::Internal(anyhow::anyhow!("Invalid role in user row")))?;
+		let default_publicity: PublicityDefault =
+			row.try_get("default_publicity").context("Failed to read user default_publicity")?;
 		Ok(User {
-			id: Row::try_get::<_, i64>(&row, "id")?.into(),
-			email: row.try_get("email")?,
+			id: Row::try_get::<_, i64>(&row, "id").context("Failed to read user id")?.into(),
+			email: row.try_get("email").context("Failed to read user email")?,
 			role,
 			default_publicity,
-			created_at: row.try_get("created_at")?,
-			updated_at: row.try_get("updated_at")?,
+			created_at: row.try_get("created_at").context("Failed to read user created_at")?,
+			updated_at: row.try_get("updated_at").context("Failed to read user updated_at")?,
 		})
 	}
+}
 
-	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
+impl User {
+	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_ALL_USERS_QUERY).await?;
 		client.query(&statement, &[]).await?.into_iter().map(Self::try_from).collect()
@@ -126,7 +131,7 @@ impl User {
 	pub async fn by_id(
 		ctx: &Context<'_>,
 		id: i64,
-	) -> Result<Option<Self>, GraphQLError> {
+	) -> Result<Option<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_USER_BY_ID_QUERY).await?;
 		match client.query_opt(&statement, &[&id]).await? {
@@ -138,7 +143,7 @@ impl User {
 	pub async fn by_email(
 		ctx: &Context<'_>,
 		email: &str,
-	) -> Result<Option<Self>, GraphQLError> {
+	) -> Result<Option<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_USER_BY_EMAIL_QUERY).await?;
 		match client.query_opt(&statement, &[&email]).await? {

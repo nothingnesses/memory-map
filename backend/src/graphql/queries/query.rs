@@ -2,6 +2,7 @@ use {
 	crate::{
 		CasbinObject,
 		ContextWrapper,
+		errors::AppError,
 		graphql::objects::{
 			config::PublicConfig,
 			s3_object::S3Object,
@@ -36,7 +37,7 @@ impl Query {
 	) -> Result<Option<User>, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
 		if let Some(user_id) = wrapper.user_id_opt() {
-			User::by_id(ctx, user_id).await
+			User::by_id(ctx, user_id).await.map_err(AppError::graphql)
 		} else {
 			Ok(None)
 		}
@@ -55,7 +56,7 @@ impl Query {
 				},
 			)
 			.await?;
-		User::all(ctx).await
+		User::all(ctx).await.map_err(AppError::graphql)
 	}
 
 	async fn s3_object_by_id(
@@ -64,7 +65,7 @@ impl Query {
 		id: i64,
 	) -> Result<S3Object, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
-		let object = S3Object::where_id(ctx, id).await?;
+		let object = S3Object::where_id(ctx, id).await.map_err(AppError::graphql)?;
 		wrapper
 			.require_permission(
 				"read",
@@ -82,7 +83,7 @@ impl Query {
 		name: String,
 	) -> Result<S3Object, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
-		let object = S3Object::where_name(ctx, name).await?;
+		let object = S3Object::where_name(ctx, name).await.map_err(AppError::graphql)?;
 		wrapper
 			.require_permission(
 				"read",
@@ -111,9 +112,9 @@ impl Query {
 				)
 				.await?
 		{
-			return S3Object::all(ctx).await;
+			return S3Object::all(ctx).await.map_err(AppError::graphql);
 		}
 
-		S3Object::visible_to_user(ctx, user_id_opt).await
+		S3Object::visible_to_user(ctx, user_id_opt).await.map_err(AppError::graphql)
 	}
 }

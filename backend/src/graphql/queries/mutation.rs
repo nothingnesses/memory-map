@@ -273,7 +273,7 @@ impl Mutation {
 			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql))
 			.collect::<Result<Vec<i64>, _>>()?;
 
-		let objects = S3Object::where_ids(ctx, &ids).await?;
+		let objects = S3Object::where_ids(ctx, &ids).await.map_err(AppError::graphql)?;
 		wrapper
 			.require_permission_on_each(
 				"delete",
@@ -310,7 +310,7 @@ impl Mutation {
 		let id_int =
 			input.id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
 
-		let obj = S3Object::where_id(ctx, id_int).await?;
+		let obj = S3Object::where_id(ctx, id_int).await.map_err(AppError::graphql)?;
 		wrapper
 			.require_permission(
 				"update",
@@ -363,9 +363,7 @@ impl Mutation {
 			.await
 			.context("Failed to update user publicity in database")?;
 
-		User::try_from(row)
-			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(AppError::graphql)
+		User::try_from(row).map_err(AppError::graphql)
 	}
 
 	async fn register(
@@ -414,9 +412,7 @@ impl Mutation {
 			.await
 			.context("Failed to insert user into database")?;
 
-		User::try_from(row)
-			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(AppError::graphql)
+		User::try_from(row).map_err(AppError::graphql)
 	}
 
 	async fn login(
@@ -439,9 +435,7 @@ impl Mutation {
 		let password_hash_str: String = row
 			.try_get("password_hash")
 			.context("Failed to get password hash from database row")?;
-		let user = User::try_from(row).map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to User: {}", e.message)
-		})?;
+		let user = User::try_from(row).map_err(AppError::graphql)?;
 
 		let parsed_hash = PasswordHash::new(&password_hash_str)
 			.map_err(|e| anyhow::anyhow!(e).context("Failed to parse password hash from database"))
@@ -568,9 +562,7 @@ impl Mutation {
 			.await
 			.context("Failed to update user email in database")?;
 
-		User::try_from(row)
-			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(AppError::graphql)
+		User::try_from(row).map_err(AppError::graphql)
 	}
 
 	async fn request_password_reset(
@@ -704,7 +696,8 @@ impl Mutation {
 			.await?;
 
 		let mut target_user = User::by_id(ctx, target_id)
-			.await?
+			.await
+			.map_err(AppError::graphql)?
 			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
 
 		if let Some(new_email) = email {
@@ -744,8 +737,6 @@ impl Mutation {
 			.await
 			.context("Failed to update user in database")?;
 
-		User::try_from(row)
-			.map_err(|e| anyhow::anyhow!("Failed to convert database row to User: {}", e.message))
-			.map_err(AppError::graphql)
+		User::try_from(row).map_err(AppError::graphql)
 	}
 }

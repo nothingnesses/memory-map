@@ -12,6 +12,7 @@ use {
 		errors::AppError,
 		graphql::objects::location::Location,
 	},
+	anyhow::Context as AnyhowContext,
 	async_graphql::{
 		Context,
 		Enum,
@@ -118,24 +119,31 @@ pub struct S3Object {
 }
 
 impl TryFrom<Row> for S3Object {
-	type Error = GraphQLError;
+	type Error = AppError;
 
 	fn try_from(row: Row) -> Result<Self, Self::Error> {
-		let name: String = row.try_get("name")?;
-		let storage_key: String = row.try_get("storage_key")?;
-		let content_type: String = row.try_get("content_type")?;
-		let id: i64 = row.try_get("id")?;
-		let made_on: Option<Timestamp> = row.try_get("made_on")?;
-		let user_id: Option<i64> = row.try_get("user_id").ok();
-		let publicity: PublicityOverride = row.try_get("publicity")?;
-		// allowed_users might be null if no join, but we will ensure join
+		let name: String = row.try_get("name").context("Failed to read object name")?;
+		let storage_key: String =
+			row.try_get("storage_key").context("Failed to read object storage_key")?;
+		let content_type: String =
+			row.try_get("content_type").context("Failed to read object content_type")?;
+		let id: i64 = row.try_get("id").context("Failed to read object id")?;
+		let made_on: Option<Timestamp> =
+			row.try_get("made_on").context("Failed to read object made_on")?;
+		let user_id: Option<i64> =
+			row.try_get("user_id").context("Failed to read object user_id")?;
+		let publicity: PublicityOverride =
+			row.try_get("publicity").context("Failed to read object publicity")?;
+		// Some lifecycle queries return partial object rows and fill allowed users later.
 		let allowed_users: Vec<String> = row.try_get("allowed_users").unwrap_or_default();
 
 		// Distinguish "no location set" (both NULL) from a decode failure.
 		// ST_Y/ST_X return NULL only when `location` is NULL, so a single-NULL pair
 		// signals a query shape regression and must propagate rather than be hidden.
-		let latitude: Option<f64> = row.try_get("latitude")?;
-		let longitude: Option<f64> = row.try_get("longitude")?;
+		let latitude: Option<f64> =
+			row.try_get("latitude").context("Failed to read object latitude")?;
+		let longitude: Option<f64> =
+			row.try_get("longitude").context("Failed to read object longitude")?;
 		let location = match (latitude, longitude) {
 			(Some(latitude), Some(longitude)) => Some(
 				Location {
@@ -145,10 +153,11 @@ impl TryFrom<Row> for S3Object {
 				.validated()?,
 			),
 			(None, None) => None,
-			_ =>
-				return Err(GraphQLError::new(
-					"Object row has only one of (latitude, longitude) set",
-				)),
+			_ => {
+				return Err(AppError::Internal(anyhow::anyhow!(
+					"Object row has only one of (latitude, longitude) set"
+				)));
+			}
 		};
 
 		Ok(S3Object {
@@ -166,22 +175,16 @@ impl TryFrom<Row> for S3Object {
 }
 
 impl S3Object {
-	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
+	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_ALL_OBJECTS_QUERY).await?;
-		client
-			.query(&statement, &[])
-			.await
-			.map_err(AppError::graphql)?
-			.into_iter()
-			.map(Self::try_from)
-			.collect()
+		client.query(&statement, &[]).await?.into_iter().map(Self::try_from).collect()
 	}
 
 	pub async fn where_id(
 		ctx: &Context<'_>,
 		id: i64,
-	) -> Result<Self, GraphQLError> {
+	) -> Result<Self, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_ID_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&id]).await?)
@@ -190,7 +193,7 @@ impl S3Object {
 	pub async fn where_name(
 		ctx: &Context<'_>,
 		name: String,
-	) -> Result<Self, GraphQLError> {
+	) -> Result<Self, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&name]).await?)
@@ -199,46 +202,28 @@ impl S3Object {
 	pub async fn where_ids(
 		ctx: &Context<'_>,
 		ids: &[i64],
-	) -> Result<Vec<Self>, GraphQLError> {
+	) -> Result<Vec<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY).await?;
-		client
-			.query(&statement, &[&ids])
-			.await
-			.map_err(AppError::graphql)?
-			.into_iter()
-			.map(Self::try_from)
-			.collect()
+		client.query(&statement, &[&ids]).await?.into_iter().map(Self::try_from).collect()
 	}
 
 	pub async fn where_user_id(
 		ctx: &Context<'_>,
 		user_id: i64,
-	) -> Result<Vec<Self>, GraphQLError> {
+	) -> Result<Vec<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY).await?;
-		client
-			.query(&statement, &[&user_id])
-			.await
-			.map_err(AppError::graphql)?
-			.into_iter()
-			.map(Self::try_from)
-			.collect()
+		client.query(&statement, &[&user_id]).await?.into_iter().map(Self::try_from).collect()
 	}
 
 	pub async fn visible_to_user(
 		ctx: &Context<'_>,
 		user_id: Option<i64>,
-	) -> Result<Vec<Self>, GraphQLError> {
+	) -> Result<Vec<Self>, AppError> {
 		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY).await?;
-		client
-			.query(&statement, &[&user_id])
-			.await
-			.map_err(AppError::graphql)?
-			.into_iter()
-			.map(Self::try_from)
-			.collect()
+		client.query(&statement, &[&user_id]).await?.into_iter().map(Self::try_from).collect()
 	}
 }
 

@@ -743,10 +743,7 @@ impl<'a> ObjectLifecycleService<'a> {
 					&[&id, &name, &parsed_made_on, &location_geometry, &publicity],
 				)
 				.await?,
-		)
-		.map_err(|e| {
-			anyhow::anyhow!("Failed to convert database row to S3 object: {}", e.message)
-		})?;
+		)?;
 
 		s3_object.allowed_users = replace_allowed_users(&transaction, id, allowed_users).await?;
 		transaction.commit().await?;
@@ -1295,21 +1292,11 @@ async fn enqueue_storage_deletions(
 }
 
 fn collect_s3_objects(rows: Vec<Row>) -> Result<Vec<S3Object>, AppError> {
-	rows.into_iter().map(S3Object::try_from).collect::<Result<Vec<_>, _>>().map_err(|e| {
-		AppError::Internal(anyhow::anyhow!(
-			"Failed to convert database rows to S3 objects: {}",
-			e.message
-		))
-	})
+	rows.into_iter().map(S3Object::try_from).collect()
 }
 
 fn s3_object_from_row(row: Row) -> Result<S3Object, AppError> {
-	S3Object::try_from(row).map_err(|e| {
-		AppError::Internal(anyhow::anyhow!(
-			"Failed to convert database row to S3 object: {}",
-			e.message
-		))
-	})
+	S3Object::try_from(row)
 }
 
 async fn replace_allowed_users(
