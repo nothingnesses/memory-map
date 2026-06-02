@@ -8,8 +8,6 @@ use {
 	},
 	common::{
 		endpoint_is_reachable,
-		env_or_default,
-		parse_bool_env,
 		skip_or_fail,
 		unique_suffix,
 	},
@@ -18,7 +16,15 @@ use {
 #[tokio::test]
 #[ignore = "requires an S3-compatible storage service"]
 async fn storage_roundtrip_against_configured_service() -> anyhow::Result<()> {
-	let config = storage_config_from_env()?;
+	let config = match StorageConfig::from_env() {
+		Ok(config) => config,
+		Err(error) =>
+			return skip_or_fail(
+				"storage integration test",
+				format!("storage config is unavailable: {error:#}"),
+				(),
+			),
+	};
 	if !endpoint_is_reachable(&config.endpoint_url).await? {
 		return skip_or_fail(
 			"storage integration test",
@@ -56,25 +62,6 @@ async fn storage_roundtrip_against_configured_service() -> anyhow::Result<()> {
 	assert!(storage.object_content_type(&second_object).await.is_err());
 
 	Ok(())
-}
-
-fn storage_config_from_env() -> anyhow::Result<StorageConfig> {
-	let config = StorageConfig {
-		endpoint_url: env_or_default("MEMORY_MAP__STORAGE__ENDPOINT_URL", "http://127.0.0.1:9000/"),
-		public_endpoint_url: std::env::var("MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL").ok(),
-		access_key: env_or_default("MEMORY_MAP__STORAGE__ACCESS_KEY", "memorymapdev"),
-		secret_key: env_or_default("MEMORY_MAP__STORAGE__SECRET_KEY", "memorymapdevsecret"),
-		bucket_name: env_or_default("MEMORY_MAP__STORAGE__BUCKET_NAME", "memory-map"),
-		region: env_or_default("MEMORY_MAP__STORAGE__REGION", "us-east-1"),
-		force_path_style: parse_bool_env("MEMORY_MAP__STORAGE__FORCE_PATH_STYLE", true)?,
-		presigned_url_ttl_seconds: env_or_default(
-			"MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS",
-			"604800",
-		)
-		.parse()?,
-	};
-	config.validate()?;
-	Ok(config)
 }
 
 fn unique_prefix() -> anyhow::Result<String> {

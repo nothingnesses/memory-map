@@ -165,6 +165,7 @@ storage-test *args:
 storage-ci:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	source scripts/e2e-env.sh
 	source scripts/service-graph.sh
 
 	log_file="${PROCESS_COMPOSE_LOG:-process-compose.log}"
