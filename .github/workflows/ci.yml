@@ -110,12 +110,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
-      - name: Free runner disk space
-        run: |
-          df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          docker system prune --all --force || true
-          df -h
+      - uses: ./.github/actions/free-runner-space
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -136,12 +131,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
-      - name: Free runner disk space
-        run: |
-          df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          docker system prune --all --force || true
-          df -h
+      - uses: ./.github/actions/free-runner-space
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
         with:
@@ -162,12 +152,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
-      - name: Free runner disk space
-        run: |
-          df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          docker system prune --all --force || true
-          df -h
+      - uses: ./.github/actions/free-runner-space
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
         with:

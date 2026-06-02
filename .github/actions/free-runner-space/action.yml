@@ -1,0 +1,12 @@
+name: Free runner disk space
+description: Remove unused hosted-runner tool caches before disk-heavy CI jobs.
+runs:
+  using: composite
+  steps:
+    - name: Free runner disk space
+      shell: bash
+      run: |
+        df -h
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        docker system prune --all --force || true
+        df -h
