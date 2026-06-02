@@ -89,6 +89,14 @@ Optional object lifecycle settings (defaults shown):
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_BATCH_SIZE` (default `1000`)
 - `MEMORY_MAP__OBJECT_LIFECYCLE__STORAGE_DELETION_MAX_ATTEMPTS` (default `10`)
 
+Optional email outbox settings (defaults shown):
+
+- `MEMORY_MAP__EMAIL_OUTBOX__RETRY_SECONDS` (default `60`)
+- `MEMORY_MAP__EMAIL_OUTBOX__LEASE_SECONDS` (default `300`)
+- `MEMORY_MAP__EMAIL_OUTBOX__WORKER_INTERVAL_SECONDS` (default `30`)
+- `MEMORY_MAP__EMAIL_OUTBOX__BATCH_SIZE` (default `100`)
+- `MEMORY_MAP__EMAIL_OUTBOX__MAX_ATTEMPTS` (default `10`)
+
 `MEMORY_MAP__AUTH__COOKIE_SECRET`, `MEMORY_MAP__SMTP__PASS`,
 `MEMORY_MAP__STORAGE__ACCESS_KEY`, and `MEMORY_MAP__STORAGE__SECRET_KEY` must
 come from production secret management. Do not copy values from `.env.example`
@@ -120,6 +128,12 @@ and moves completed-object orphans into the storage-deletion outbox.
 times a failing storage deletion is retried before it is parked. Rows past the
 cap remain in `object_storage_deletions` with their `last_error` populated for
 operator triage, but are no longer reclaimed by the worker.
+
+Password-reset emails are sent by a backend email outbox worker. Requests insert
+reset tokens and email rows in one database transaction; SMTP delivery happens
+after commit. `MEMORY_MAP__EMAIL_OUTBOX__MAX_ATTEMPTS` bounds delivery retries.
+Rows past the cap remain in `email_outbox` with their `last_error` populated
+for operator triage, but are no longer reclaimed by the worker.
 
 ## Frontend Runtime Config
 

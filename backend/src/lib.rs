@@ -43,12 +43,14 @@ pub mod app;
 pub mod constants;
 pub mod db;
 pub mod email;
+pub mod email_worker;
 pub mod errors;
 pub mod graphql;
 pub mod object_lifecycle;
 pub mod storage;
 
 use {
+	email_worker::EmailOutboxConfig,
 	object_lifecycle::ObjectLifecycleConfig,
 	serde::Deserialize,
 	storage::{
@@ -138,6 +140,8 @@ pub struct Config {
 	pub storage: StorageConfig,
 	#[serde(default)]
 	pub object_lifecycle: ObjectLifecycleConfig,
+	#[serde(default)]
+	pub email_outbox: EmailOutboxConfig,
 }
 
 impl Config {
@@ -173,6 +177,7 @@ impl Config {
 		self.auth.validate()?;
 		self.storage.validate()?;
 		self.object_lifecycle.validate()?;
+		self.email_outbox.validate()?;
 		Ok(self)
 	}
 }
@@ -191,6 +196,7 @@ impl fmt::Debug for Config {
 			.field("cors", &self.cors)
 			.field("storage", &self.storage)
 			.field("object_lifecycle", &self.object_lifecycle)
+			.field("email_outbox", &self.email_outbox)
 			.finish()
 	}
 }
@@ -411,6 +417,7 @@ mod tests {
 			FrontendConfig,
 			ServerConfig,
 			SmtpConfig,
+			email_worker::EmailOutboxConfig,
 			errors::AppError,
 			object_lifecycle::ObjectLifecycleConfig,
 			parse_latitude,
@@ -481,6 +488,7 @@ mod tests {
 				presigned_url_ttl_seconds: 60,
 			},
 			object_lifecycle: ObjectLifecycleConfig::default(),
+			email_outbox: EmailOutboxConfig::default(),
 		};
 
 		let debug = format!("{config:?}");
@@ -562,6 +570,10 @@ mod tests {
 		assert_eq!(
 			config.object_lifecycle.storage_deletion_max_attempts,
 			default.storage_deletion_max_attempts
+		);
+		assert_eq!(
+			config.email_outbox.worker_interval_seconds,
+			EmailOutboxConfig::default().worker_interval_seconds
 		);
 		Ok(())
 	}

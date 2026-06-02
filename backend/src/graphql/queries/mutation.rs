@@ -16,13 +16,14 @@ use {
 			SELECT_PASSWORD_RESET_TOKEN_QUERY,
 			SELECT_USER_COUNT_BY_EMAIL_EXCLUDING_ID_QUERY,
 			SELECT_USER_COUNT_BY_EMAIL_QUERY,
+			SELECT_USER_ID_BY_EMAIL_FOR_UPDATE_QUERY,
 			SELECT_USER_PASSWORD_HASH_BY_ID_QUERY,
 			SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY,
 			UPDATE_USER_EMAIL_QUERY,
 			UPDATE_USER_PASSWORD_QUERY,
 			UPDATE_USER_PUBLICITY_QUERY,
 		},
-		email::send_password_reset_email,
+		email_worker::enqueue_password_reset_email,
 		errors::AppError,
 		graphql::objects::{
 			location::Location,
@@ -629,19 +630,23 @@ impl Mutation {
 	) -> Result<bool, GraphQLError> {
 		let wrapper = ContextWrapper(ctx);
 		let mut client = wrapper.get_db_client().await?;
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
-
-		let Some(user) = User::by_email(ctx, &email).await? else {
+		let transaction = client.transaction().await?;
+		let user_id_int: Option<i64> = transaction
+			.query_opt(SELECT_USER_ID_BY_EMAIL_FOR_UPDATE_QUERY, &[&email])
+			.await
+			.context("Failed to lock password reset target user")?
+			.map(|row| row.try_get::<_, i64>("id"))
+			.transpose()
+			.context("Failed to read password reset target user id")?;
+		let Some(user_id_int) = user_id_int else {
 			// Always succeed to avoid user enumeration.
+			transaction.commit().await?;
 			return Ok(true);
 		};
 
-		let user_id_int =
-			user.id.parse::<i64>().context("Failed to parse user ID").map_err(AppError::graphql)?;
-
-		// Rate limit: skip silently if a recent token already exists.
-		// The throttle is per user, so an attacker cannot use timing to enumerate accounts.
-		let recent: bool = client
+		// Rate limit: skip silently if a recent token already exists. This check is
+		// inside the user-row lock so concurrent requests cannot enqueue duplicates.
+		let recent: bool = transaction
 			.query_one(
 				RECENT_PASSWORD_RESET_TOKEN_EXISTS_QUERY,
 				&[&user_id_int, &PASSWORD_RESET_RATE_LIMIT_SECONDS],
@@ -651,6 +656,7 @@ impl Mutation {
 			.try_get(0)
 			.context("Failed to read recent-token existence")?;
 		if recent {
+			transaction.commit().await?;
 			return Ok(true);
 		}
 
@@ -658,10 +664,8 @@ impl Mutation {
 			rand::rng().sample_iter(Alphanumeric).take(32).map(char::from).collect();
 		let token_hash = blake3::hash(token.as_bytes()).to_string();
 
-		// Invalidate sibling tokens, then insert the new one, then send the email.
-		// The transaction commits only after the email succeeds, so an SMTP failure
-		// rolls back the new token and leaves the old sibling state intact.
-		let transaction = client.transaction().await?;
+		// Invalidate sibling tokens, insert the new token, and enqueue the email in
+		// one DB transaction. SMTP happens later in the worker, outside request locks.
 		transaction
 			.execute(DELETE_PASSWORD_RESET_TOKENS_BY_USER_QUERY, &[&user_id_int])
 			.await
@@ -670,11 +674,9 @@ impl Mutation {
 			.execute(INSERT_PASSWORD_RESET_TOKEN_QUERY, &[&token_hash, &user_id_int])
 			.await
 			.context("Failed to insert password reset token into database")?;
-
-		send_password_reset_email(&state.config, &email, &token)
+		enqueue_password_reset_email(&transaction, &email, &token)
 			.await
-			.context("Failed to send password reset email")
-			.map_err(|e| AppError::from(e).extend_graphql())?;
+			.map_err(AppError::graphql)?;
 
 		transaction.commit().await?;
 

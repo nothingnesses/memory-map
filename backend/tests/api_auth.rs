@@ -26,6 +26,7 @@ use {
 			CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
 			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
 		},
+		email_worker::EmailOutboxConfig,
 		migrations,
 		object_lifecycle::{
 			ObjectLifecycleConfig,
@@ -468,6 +469,43 @@ impl TestApp {
 		Ok(content_type)
 	}
 
+	async fn password_reset_token_count(
+		&self,
+		email: &str,
+	) -> anyhow::Result<i64> {
+		let client = self.state.pool.get().await?;
+		let count = client
+			.query_one(
+				"SELECT COUNT(*)
+				FROM password_reset_tokens token
+				JOIN users user_account ON user_account.id = token.user_id
+				WHERE user_account.email = $1
+					AND token.expires_at > now()",
+				&[&email],
+			)
+			.await?
+			.get(0);
+		Ok(count)
+	}
+
+	async fn password_reset_email_outbox_count(
+		&self,
+		email: &str,
+	) -> anyhow::Result<i64> {
+		let client = self.state.pool.get().await?;
+		let count = client
+			.query_one(
+				"SELECT COUNT(*)
+				FROM email_outbox
+				WHERE kind = 'password_reset'
+					AND payload->>'email' = $1",
+				&[&email],
+			)
+			.await?
+			.get(0);
+		Ok(count)
+	}
+
 	async fn upload_session_storage(
 		&self,
 		object_id: &str,
@@ -657,6 +695,38 @@ async fn authenticated_query_auth_db_error_returns_500_without_cache_write() -> 
 
 	assert_eq!(response.status, StatusCode::INTERNAL_SERVER_ERROR);
 	assert_eq!(app.state.graphql_response_cache.entry_count(), 0);
+
+	Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the local PostgreSQL and RustFS service graph"]
+async fn password_reset_request_enqueues_one_email_inside_rate_limit() -> anyhow::Result<()> {
+	let Some(app) = TestApp::new().await? else {
+		return Ok(());
+	};
+	let user = register_and_login(&app).await?;
+
+	for _ in 0 .. 2 {
+		let response = app
+			.graphql(
+				"mutation RequestPasswordReset($email: String!) {
+					requestPasswordReset(email: $email)
+				}",
+				json!({
+					"email": user.email.clone(),
+				}),
+				None,
+			)
+			.await?;
+		assert_eq!(response.status, StatusCode::OK);
+		let response = response.json()?;
+		assert_graphql_success(&response)?;
+		assert_eq!(json_path(&response, &["data", "requestPasswordReset"])?.as_bool(), Some(true));
+	}
+
+	assert_eq!(app.password_reset_token_count(&user.email).await?, 1);
+	assert_eq!(app.password_reset_email_outbox_count(&user.email).await?, 1);
 
 	Ok(())
 }
@@ -1302,6 +1372,7 @@ fn test_config() -> anyhow::Result<Config> {
 			.parse()?,
 		},
 		object_lifecycle: ObjectLifecycleConfig::default(),
+		email_outbox: EmailOutboxConfig::default(),
 	};
 	config.validated()
 }

@@ -6,6 +6,7 @@ use {
 			build_app,
 			build_shared_state,
 		},
+		email_worker::EmailWorker,
 		migrations,
 		object_lifecycle::ObjectLifecycleWorker,
 		storage::StorageClient,
@@ -68,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
 	let _object_lifecycle_worker =
 		ObjectLifecycleWorker::new(pool.clone(), storage.clone(), cfg.object_lifecycle.clone())
 			.spawn();
+	let _email_worker = EmailWorker::new(pool.clone(), cfg.clone()).spawn();
 
 	// Initialise Casbin Enforcer
 	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await?;

@@ -238,6 +238,9 @@ pub const SELECT_USER_BY_ID_QUERY: &str =
 pub const SELECT_USER_BY_EMAIL_QUERY: &str =
 	"SELECT id, email, role, created_at, updated_at, default_publicity FROM users WHERE email = $1";
 
+pub const SELECT_USER_ID_BY_EMAIL_FOR_UPDATE_QUERY: &str =
+	"SELECT id FROM users WHERE email = $1 FOR UPDATE";
+
 pub const SELECT_USER_EXISTS_QUERY: &str = "SELECT 1 FROM users WHERE id = $1";
 
 pub const SELECT_USERS_BY_EMAILS_QUERY: &str = "SELECT id, email FROM users WHERE email = ANY($1)";
@@ -324,3 +327,36 @@ pub const RECENT_PASSWORD_RESET_TOKEN_EXISTS_QUERY: &str = "SELECT EXISTS (
 /// (after a successful reset, kill any other outstanding tokens so the user has none).
 pub const DELETE_PASSWORD_RESET_TOKENS_BY_USER_QUERY: &str =
 	"DELETE FROM password_reset_tokens WHERE user_id = $1";
+
+pub const INSERT_EMAIL_OUTBOX_QUERY: &str =
+	"INSERT INTO email_outbox (kind, payload) VALUES ($1, $2::TEXT::jsonb)";
+
+/// Claims up to `$1` email rows whose scheduled retry/lease time has arrived
+/// and which still have retry budget left. Rows past `$3::INTEGER` attempts are
+/// parked with their last error for operator triage.
+pub const CLAIM_EMAIL_OUTBOX_QUERY: &str = "WITH claimed AS MATERIALIZED (
+	SELECT id
+	FROM email_outbox
+	WHERE attempts < $3::INTEGER
+		AND next_attempt_at <= now()
+	ORDER BY next_attempt_at, created_at
+	LIMIT $1
+	FOR UPDATE SKIP LOCKED
+)
+UPDATE email_outbox outbox
+SET attempts = attempts + 1,
+	last_attempt_at = now(),
+	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
+	next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
+	last_error = NULL
+FROM claimed
+WHERE outbox.id = claimed.id
+RETURNING outbox.id, outbox.kind, outbox.payload::TEXT AS payload";
+
+pub const DELETE_EMAIL_OUTBOX_QUERY: &str = "DELETE FROM email_outbox WHERE id = ANY($1)";
+
+pub const MARK_EMAIL_OUTBOX_FAILED_QUERY: &str = "UPDATE email_outbox
+SET processing_expires_at = NULL,
+	next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
+	last_error = $2
+WHERE id = ANY($1)";
