@@ -2,17 +2,18 @@ use {
 	crate::{
 		AppState,
 		CachedGraphqlResponse,
+		CallerIdentity,
+		CasbinUser,
 		Config,
 		GraphqlMutationCacheEffect,
 		GraphqlResponseCacheKey,
 		SharedState,
-		UserId,
 		constants::{
 			GRAPHQL_BODY_LIMIT_BYTES,
 			GRAPHQL_RESPONSE_CACHE_MAX_CAPACITY_BYTES,
 			GRAPHQL_RESPONSE_CACHE_TTL_SECONDS,
 		},
-		db::queries::SELECT_USER_EXISTS_QUERY,
+		db::queries::SELECT_USER_BY_ID_QUERY,
 		errors::AppError,
 		graphiql,
 		graphql::queries::{
@@ -169,17 +170,27 @@ fn cors_layer(config: &Config) -> CorsLayer {
 		.allow_credentials(true)
 }
 
-async fn authenticated_user_id(
+async fn authenticated_caller_identity(
 	state: &BackendState,
 	jar: &PrivateCookieJar,
-) -> Result<Option<i64>, AppError> {
+) -> Result<Option<CallerIdentity>, AppError> {
 	let Some(user_id) = jar.get("auth_token").and_then(|cookie| cookie.value().parse::<i64>().ok())
 	else {
 		return Ok(None);
 	};
 	let client = state.inner.pool.get().await?;
-	let statement = client.prepare_cached(SELECT_USER_EXISTS_QUERY).await?;
-	Ok(client.query_opt(&statement, &[&user_id]).await?.map(|_| user_id))
+	let statement = client.prepare_cached(SELECT_USER_BY_ID_QUERY).await?;
+	let Some(row) = client.query_opt(&statement, &[&user_id]).await? else {
+		return Ok(None);
+	};
+	let role = row.try_get("role")?;
+	Ok(Some(CallerIdentity {
+		user_id,
+		casbin_user: CasbinUser {
+			id: user_id,
+			role,
+		},
+	}))
 }
 
 fn graphql_request_operation_details(
@@ -338,12 +349,13 @@ async fn graphql_handler(
 ) -> (PrivateCookieJar, Response) {
 	let mut req = req.into_inner();
 
-	let user_id = match authenticated_user_id(&state, &jar).await {
-		Ok(user_id) => user_id,
+	let caller_identity = match authenticated_caller_identity(&state, &jar).await {
+		Ok(caller_identity) => caller_identity,
 		Err(error) => return (jar, error.into_response()),
 	};
-	if let Some(user_id) = user_id {
-		req = req.data(UserId(user_id));
+	let user_id = caller_identity.as_ref().map(|identity| identity.user_id);
+	if let Some(caller_identity) = caller_identity {
+		req = req.data(caller_identity);
 	}
 
 	let operation_details = graphql_request_operation_details(&mut req);

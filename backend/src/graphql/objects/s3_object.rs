@@ -1,7 +1,6 @@
 use {
 	crate::{
 		ContextWrapper,
-		SharedState,
 		db::queries::{
 			SELECT_ALL_OBJECTS_QUERY,
 			SELECT_OBJECT_BY_ID_QUERY,
@@ -20,7 +19,6 @@ use {
 		ID,
 		Object,
 	},
-	deadpool_postgres::Manager,
 	jiff::Timestamp,
 	postgres_types::{
 		FromSql,
@@ -33,7 +31,6 @@ use {
 	std::{
 		fmt,
 		str::FromStr,
-		sync::Arc,
 	},
 	tokio_postgres::Row,
 };
@@ -170,7 +167,7 @@ impl TryFrom<Row> for S3Object {
 
 impl S3Object {
 	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_ALL_OBJECTS_QUERY).await?;
 		client
 			.query(&statement, &[])
@@ -185,7 +182,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<Self, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_ID_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&id]).await?)
 	}
@@ -194,7 +191,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 		name: String,
 	) -> Result<Self, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY).await?;
 		Self::try_from(client.query_one(&statement, &[&name]).await?)
 	}
@@ -203,7 +200,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 		ids: &[i64],
 	) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY).await?;
 		client
 			.query(&statement, &[&ids])
@@ -218,7 +215,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 		user_id: i64,
 	) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY).await?;
 		client
 			.query(&statement, &[&user_id])
@@ -233,7 +230,7 @@ impl S3Object {
 		ctx: &Context<'_>,
 		user_id: Option<i64>,
 	) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY).await?;
 		client
 			.query(&statement, &[&user_id])
@@ -275,8 +272,13 @@ impl S3Object {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.storage.presigned_get_url(&self.storage_key).await.map_err(AppError::graphql)
+		let wrapper = ContextWrapper::new(ctx)?;
+		wrapper
+			.shared_state()
+			.storage
+			.presigned_get_url(&self.storage_key)
+			.await
+			.map_err(AppError::graphql)
 	}
 
 	async fn content_type(&self) -> String {

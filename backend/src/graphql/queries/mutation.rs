@@ -1,11 +1,8 @@
 use {
 	crate::{
 		CasbinObject,
-		CasbinUser,
 		ContextWrapper,
 		GraphqlMutationCacheEffect,
-		SharedState,
-		UserId,
 		constants::PASSWORD_RESET_RATE_LIMIT_SECONDS,
 		db::queries::{
 			ADMIN_UPDATE_USER_QUERY,
@@ -68,11 +65,6 @@ use {
 	axum_extra::extract::cookie::{
 		Cookie,
 		SameSite,
-	},
-	casbin::CoreApi,
-	deadpool_postgres::{
-		Client,
-		Manager,
 	},
 	email_address::EmailAddress,
 	jiff::Timestamp,
@@ -157,12 +149,11 @@ impl Mutation {
 		ctx: &Context<'_>,
 		input: CreateObjectUploadSessionInput,
 	) -> Result<CreatedObjectUploadSession, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
-		let wrapper = ContextWrapper(ctx);
-		let storage = wrapper.get_storage_client()?;
-		let mut client = wrapper.get_db_client().await?;
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
+		let storage = wrapper.storage_client();
+		let mut client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 
 		let session = ObjectLifecycleService::new(
 			&mut client,
@@ -191,14 +182,13 @@ impl Mutation {
 		object_id: ID,
 		part_numbers: Vec<i32>,
 	) -> Result<Vec<PresignedObjectUploadPart>, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
 		let object_id =
 			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
-		let wrapper = ContextWrapper(ctx);
-		let storage = wrapper.get_storage_client()?;
-		let mut client = wrapper.get_db_client().await?;
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let storage = wrapper.storage_client();
+		let mut client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 		let url_expires_at = presigned_url_expires_at(&state.config)?;
 
 		let parts = ObjectLifecycleService::new(
@@ -227,14 +217,13 @@ impl Mutation {
 		object_id: ID,
 		parts: Vec<CompletedObjectUploadPartInput>,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
 		let object_id =
 			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
-		let wrapper = ContextWrapper(ctx);
-		let storage = wrapper.get_storage_client()?;
-		let mut client = wrapper.get_db_client().await?;
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let storage = wrapper.storage_client();
+		let mut client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 		let completed_parts = parts
 			.into_iter()
 			.map(|part| CompletedUploadPart {
@@ -254,14 +243,13 @@ impl Mutation {
 		ctx: &Context<'_>,
 		object_id: ID,
 	) -> Result<AbortedObjectUpload, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
 		let object_id =
 			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
-		let wrapper = ContextWrapper(ctx);
-		let storage = wrapper.get_storage_client()?;
-		let mut client = wrapper.get_db_client().await?;
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let storage = wrapper.storage_client();
+		let mut client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 
 		ObjectLifecycleService::new(&mut client, storage, state.config.object_lifecycle.clone())
 			.abort_upload(object_id, user_id)
@@ -276,41 +264,24 @@ impl Mutation {
 		ctx: &Context<'_>,
 		ids: Vec<ID>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
-		let wrapper = ContextWrapper(ctx);
-		let storage = wrapper.get_storage_client()?;
-		let mut client = wrapper.get_db_client().await?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let storage = wrapper.storage_client();
+		let mut client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 		let ids: Vec<i64> = ids
 			.into_iter()
 			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql))
 			.collect::<Result<Vec<i64>, _>>()?;
 
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(AppError::graphql)?;
-		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-
 		let objects = S3Object::where_ids(ctx, &ids).await?;
-		for obj in &objects {
-			let casbin_obj = CasbinObject {
-				user_id: obj.user_id.unwrap_or(0),
-			};
-			enforcer
-				.enforce((casbin_user.clone(), casbin_obj, "delete"))
-				.map_err(AppError::graphql)?
-				.then_some(())
-				.ok_or_else(|| AppError::Forbidden.extend_graphql())?;
-		}
+		wrapper
+			.require_permission_on_each(
+				"delete",
+				objects.iter().map(|obj| CasbinObject {
+					user_id: obj.user_id.unwrap_or(0),
+				}),
+			)
+			.await?;
 
 		let result = ObjectLifecycleService::new(
 			&mut client,
@@ -332,35 +303,22 @@ impl Mutation {
 		ctx: &Context<'_>,
 		input: UpdateS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
-		let wrapper = ContextWrapper(ctx);
-		let storage = wrapper.get_storage_client()?;
-		let mut client = wrapper.get_db_client().await?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let storage = wrapper.storage_client();
+		let mut client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 		let id_int =
 			input.id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
 
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(AppError::graphql)?;
-		let enforcer = state.enforcer.read().await;
-		let user = User::by_id(ctx, user_id)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-
 		let obj = S3Object::where_id(ctx, id_int).await?;
-		let casbin_obj = CasbinObject {
-			user_id: obj.user_id.unwrap_or(0),
-		};
-		if !enforcer.enforce((casbin_user, casbin_obj, "update")).map_err(AppError::graphql)? {
-			return Err(AppError::Forbidden.extend_graphql());
-		}
+		wrapper
+			.require_permission(
+				"update",
+				CasbinObject {
+					user_id: obj.user_id.unwrap_or(0),
+				},
+			)
+			.await?;
 
 		let allowed_users = input.allowed_users.unwrap_or_default();
 
@@ -388,11 +346,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		default_publicity: PublicityDefault,
 	) -> Result<User, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let user_id = ctx
-			.data_opt::<UserId>()
-			.map(|u| u.0)
-			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
 		wrapper
 			.require_permission(
 				"update",
@@ -401,7 +356,7 @@ impl Mutation {
 				},
 			)
 			.await?;
-		let client = wrapper.get_db_client().await?;
+		let client = wrapper.db_client().await?;
 
 		let row = client
 			.query_one(UPDATE_USER_PUBLICITY_QUERY, &[&default_publicity, &user_id])
@@ -419,9 +374,9 @@ impl Mutation {
 		email: String,
 		password: String,
 	) -> Result<User, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let client = wrapper.get_db_client().await?;
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let client = wrapper.db_client().await?;
+		let state = wrapper.shared_state();
 
 		if !state.config.auth.enable_registration {
 			return Err(AppError::Forbidden.extend_graphql());
@@ -470,8 +425,8 @@ impl Mutation {
 		email: String,
 		password: String,
 	) -> Result<User, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let client = wrapper.get_db_client().await?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let client = wrapper.db_client().await?;
 
 		let statement = client.prepare_cached(SELECT_USER_WITH_PASSWORD_BY_EMAIL_QUERY).await?;
 
@@ -496,7 +451,7 @@ impl Mutation {
 			.verify_password(password.as_bytes(), &parsed_hash)
 			.map_err(|_| AppError::Unauthorized.extend_graphql())?;
 
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let state = wrapper.shared_state();
 
 		let cookie = auth_cookie(user.id.to_string(), None, state.config.cookie_secure());
 
@@ -513,7 +468,8 @@ impl Mutation {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<bool, GraphQLError> {
-		let state = ctx.data::<Arc<SharedState<Manager, Client>>>()?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let state = wrapper.shared_state();
 		let cookie =
 			auth_cookie(String::new(), Some(Duration::seconds(0)), state.config.cookie_secure());
 
@@ -532,11 +488,8 @@ impl Mutation {
 		old_password: String,
 		new_password: String,
 	) -> Result<bool, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let user_id = ctx
-			.data_opt::<UserId>()
-			.map(|u| u.0)
-			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
 		wrapper
 			.require_permission(
 				"update",
@@ -545,7 +498,7 @@ impl Mutation {
 				},
 			)
 			.await?;
-		let client = wrapper.get_db_client().await?;
+		let client = wrapper.db_client().await?;
 
 		validate_password(&new_password).map_err(AppError::graphql)?;
 
@@ -583,11 +536,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		new_email: String,
 	) -> Result<User, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let user_id = ctx
-			.data_opt::<UserId>()
-			.map(|u| u.0)
-			.ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id = wrapper.user_id()?;
 		wrapper
 			.require_permission(
 				"update",
@@ -596,7 +546,7 @@ impl Mutation {
 				},
 			)
 			.await?;
-		let client = wrapper.get_db_client().await?;
+		let client = wrapper.db_client().await?;
 
 		if !EmailAddress::is_valid(&new_email) {
 			return Err(AppError::Validation("Invalid email format".to_string()).extend_graphql());
@@ -628,8 +578,8 @@ impl Mutation {
 		ctx: &Context<'_>,
 		email: String,
 	) -> Result<bool, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let mut client = wrapper.get_db_client().await?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let mut client = wrapper.db_client().await?;
 		let transaction = client.transaction().await?;
 		let user_id_int: Option<i64> = transaction
 			.query_opt(SELECT_USER_ID_BY_EMAIL_FOR_UPDATE_QUERY, &[&email])
@@ -689,8 +639,8 @@ impl Mutation {
 		token: String,
 		new_password: String,
 	) -> Result<bool, GraphQLError> {
-		let wrapper = ContextWrapper(ctx);
-		let client = wrapper.get_db_client().await?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let client = wrapper.db_client().await?;
 
 		validate_password(&new_password).map_err(AppError::graphql)?;
 
@@ -738,34 +688,20 @@ impl Mutation {
 		role: Option<String>,
 		email: Option<String>,
 	) -> Result<User, GraphQLError> {
-		let user_id =
-			ctx.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?;
-		let wrapper = ContextWrapper(ctx);
-		let client = wrapper.get_db_client().await?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let client = wrapper.db_client().await?;
 
 		let target_id =
 			id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
 
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(AppError::graphql)?;
-		let enforcer = state.enforcer.read().await;
-		let current_user = User::by_id(ctx, user_id.0)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id.0,
-			role: current_user.role.to_string(),
-		};
-		let casbin_obj = CasbinObject {
-			user_id: target_id,
-		};
-
-		if !enforcer.enforce((casbin_user, casbin_obj, "manage_user")).map_err(AppError::graphql)? {
-			return Err(AppError::Forbidden.extend_graphql());
-		}
+		wrapper
+			.require_permission(
+				"manage_user",
+				CasbinObject {
+					user_id: target_id,
+				},
+			)
+			.await?;
 
 		let mut target_user = User::by_id(ctx, target_id)
 			.await?

@@ -253,8 +253,6 @@ pub const SELECT_USER_BY_EMAIL_QUERY: &str =
 pub const SELECT_USER_ID_BY_EMAIL_FOR_UPDATE_QUERY: &str =
 	"SELECT id FROM users WHERE email = $1 FOR UPDATE";
 
-pub const SELECT_USER_EXISTS_QUERY: &str = "SELECT 1 FROM users WHERE id = $1";
-
 pub const INSERT_OBJECT_STORAGE_DELETIONS_QUERY: &str =
 	"INSERT INTO object_storage_deletions (storage_key, object_id)
 SELECT UNNEST($1::TEXT[]), UNNEST($2::BIGINT[])

@@ -203,7 +203,11 @@ impl fmt::Debug for Config {
 
 refinery::embed_migrations!("migrations");
 
-pub struct UserId(pub i64);
+#[derive(Clone, Debug)]
+pub struct CallerIdentity {
+	pub user_id: i64,
+	pub casbin_user: CasbinUser,
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct GraphqlResponseCacheKey([u8; 32]);
@@ -321,60 +325,104 @@ impl<M: ManagedManager, W: From<Object<M>>> fmt::Debug for SharedState<M, W> {
 	}
 }
 
-pub struct ContextWrapper<'a>(&'a Context<'a>);
+pub struct ContextWrapper<'a> {
+	state: &'a Arc<SharedState<Manager, deadpool_postgres::Client>>,
+	caller_identity: Option<&'a CallerIdentity>,
+}
 
 impl<'a> ContextWrapper<'a> {
-	pub async fn get_db_client(&self) -> Result<Object<Manager>, GraphQLError> {
-		let state = self
-			.0
+	pub fn new(ctx: &'a Context<'a>) -> Result<Self, GraphQLError> {
+		let state = ctx
 			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
+			.map_err(|e| {
+				errors::AppError::Internal(anyhow::anyhow!(
+					"Shared state not found in context: {}",
+					e.message
+				))
+			})
 			.map_err(errors::AppError::graphql)?;
-		state.pool.get().await.map_err(errors::AppError::graphql)
+		Ok(Self {
+			state,
+			caller_identity: ctx.data_opt::<CallerIdentity>(),
+		})
 	}
 
-	pub fn get_storage_client(&self) -> Result<&StorageClient, GraphQLError> {
-		let state = self
-			.0
-			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
-			.map_err(errors::AppError::graphql)?;
-		Ok(&state.storage)
+	pub fn shared_state(&self) -> &'a Arc<SharedState<Manager, deadpool_postgres::Client>> {
+		self.state
 	}
 
-	/// Resolves the caller's `UserId`, loads their `User`, looks up the enforcer,
-	/// and returns the `CasbinUser` if `(caller, target, action)` is allowed.
-	///
-	/// Replaces ~15 lines of repeated state/enforcer/user/casbin boilerplate
-	/// in every authorized mutation and query resolver.
+	pub async fn db_client(&self) -> Result<Object<Manager>, GraphQLError> {
+		self.state.pool.get().await.map_err(errors::AppError::graphql)
+	}
+
+	pub fn storage_client(&self) -> &StorageClient {
+		&self.state.storage
+	}
+
+	pub fn caller_identity(&self) -> Result<&CallerIdentity, GraphQLError> {
+		self.caller_identity.ok_or_else(|| errors::AppError::Unauthorized.extend_graphql())
+	}
+
+	pub fn caller_identity_opt(&self) -> Option<&CallerIdentity> {
+		self.caller_identity
+	}
+
+	pub fn user_id(&self) -> Result<i64, GraphQLError> {
+		Ok(self.caller_identity()?.user_id)
+	}
+
+	pub fn user_id_opt(&self) -> Option<i64> {
+		self.caller_identity.map(|identity| identity.user_id)
+	}
+
+	pub async fn has_permission(
+		&self,
+		action: &str,
+		target: CasbinObject,
+	) -> Result<bool, GraphQLError> {
+		use {
+			casbin::CoreApi,
+			errors::AppError,
+		};
+
+		let caller_identity = self.caller_identity()?;
+		let enforcer = self.state.enforcer.read().await;
+		enforcer
+			.enforce((caller_identity.casbin_user.clone(), target, action))
+			.map_err(AppError::graphql)
+	}
+
 	pub async fn require_permission(
 		&self,
 		action: &str,
 		target: CasbinObject,
-	) -> Result<CasbinUser, GraphQLError> {
+	) -> Result<(), GraphQLError> {
+		self.require_permission_on_each(action, [target]).await
+	}
+
+	pub async fn require_permission_on_each<I>(
+		&self,
+		action: &str,
+		targets: I,
+	) -> Result<(), GraphQLError>
+	where
+		I: IntoIterator<Item = CasbinObject>, {
 		use {
 			casbin::CoreApi,
 			errors::AppError,
-			graphql::objects::user::User,
 		};
 
-		let user_id =
-			self.0.data_opt::<UserId>().ok_or_else(|| AppError::Unauthorized.extend_graphql())?.0;
-		let state = self
-			.0
-			.data::<std::sync::Arc<SharedState<Manager, deadpool_postgres::Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))
-			.map_err(AppError::graphql)?;
-		let user = User::by_id(self.0, user_id)
-			.await?
-			.ok_or_else(|| AppError::NotFound("User not found".to_string()).extend_graphql())?;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-		let enforcer = state.enforcer.read().await;
-		if !enforcer.enforce((casbin_user.clone(), target, action)).map_err(AppError::graphql)? {
-			return Err(AppError::Forbidden.extend_graphql());
+		let caller_identity = self.caller_identity()?;
+		let enforcer = self.state.enforcer.read().await;
+		for target in targets {
+			if !enforcer
+				.enforce((caller_identity.casbin_user.clone(), target, action))
+				.map_err(AppError::graphql)?
+			{
+				return Err(AppError::Forbidden.extend_graphql());
+			}
 		}
-		Ok(casbin_user)
+		Ok(())
 	}
 }
 
@@ -396,13 +444,13 @@ pub fn parse_longitude(longitude: f64) -> Result<f64, errors::AppError> {
 	Err(errors::AppError::Validation(format!("{longitude} is not a valid longitude value.")))
 }
 
-#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, serde::Serialize, Hash, Eq, PartialEq)]
 pub struct CasbinUser {
 	pub id: i64,
 	pub role: String,
 }
 
-#[derive(Clone, serde::Serialize, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, serde::Serialize, Hash, Eq, PartialEq)]
 pub struct CasbinObject {
 	pub user_id: i64,
 }
