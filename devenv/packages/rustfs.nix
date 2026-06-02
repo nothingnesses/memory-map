@@ -6,6 +6,11 @@
 }:
 
 let
+  # TODO: RustFS is still pinned to a pre-1.0 release. When bumping this
+  # version, revalidate the process-compose readiness assertion plus the S3
+  # contract used by the app: bucket bootstrap, put/head object behavior,
+  # multipart upload and abort, presigned upload-part PUTs, bucket CORS for
+  # browser PUTs, and exposed ETag headers for multipart completion.
   version = "1.0.0-beta.4";
   assets = {
     aarch64-darwin = {
