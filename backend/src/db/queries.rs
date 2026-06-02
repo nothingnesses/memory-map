@@ -150,24 +150,8 @@ SELECT
 	), '{}') AS allowed_users
 FROM finalized;";
 
-pub const SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY: &str = "SELECT
-	o.id,
-	o.name,
-	o.storage_key,
-	o.content_type,
-	o.made_on,
-	ST_Y(o.location::geometry) AS latitude,
-	ST_X(o.location::geometry) AS longitude,
-	o.user_id,
-	o.publicity,
-	COALESCE(array_agg(users.email) FILTER (WHERE users.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-LEFT JOIN object_allowed_users allowed ON o.id = allowed.object_id
-LEFT JOIN users ON allowed.user_id = users.id
-WHERE o.id = $1
-	AND o.user_id = $2
-	AND o.storage_state = 'available'
-GROUP BY o.id;";
+pub const SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY: &str =
+	"SELECT * FROM available_objects_with_users WHERE id = $1 AND user_id = $2;";
 
 pub const DELETE_PENDING_OBJECT_UPLOAD_QUERY: &str = "DELETE FROM objects
 WHERE id = $1
@@ -207,60 +191,37 @@ SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), public
 WHERE id = $1 AND storage_state = 'available'
 RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
 
-pub const SELECT_ALL_OBJECTS_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.storage_state = 'available'
-GROUP BY o.id;";
+pub const SELECT_ALL_OBJECTS_QUERY: &str = "SELECT * FROM available_objects_with_users;";
 
-pub const SELECT_OBJECT_BY_ID_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.id = $1 AND o.storage_state = 'available'
-GROUP BY o.id;";
+pub const SELECT_OBJECT_BY_ID_QUERY: &str =
+	"SELECT * FROM available_objects_with_users WHERE id = $1;";
 
-pub const SELECT_OBJECT_BY_NAME_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.name = $1 AND o.storage_state = 'available'
-GROUP BY o.id;";
+pub const SELECT_OBJECT_BY_NAME_QUERY: &str =
+	"SELECT * FROM available_objects_with_users WHERE name = $1;";
 
-pub const SELECT_OBJECTS_BY_IDS_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.id = ANY($1) AND o.storage_state = 'available'
-GROUP BY o.id;";
+pub const SELECT_OBJECTS_BY_IDS_QUERY: &str =
+	"SELECT * FROM available_objects_with_users WHERE id = ANY($1);";
 
-pub const SELECT_OBJECTS_BY_USER_ID_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-LEFT JOIN users u ON oau.user_id = u.id
-WHERE o.user_id = $1 AND o.storage_state = 'available'
-GROUP BY o.id;";
+pub const SELECT_OBJECTS_BY_USER_ID_QUERY: &str =
+	"SELECT * FROM available_objects_with_users WHERE user_id = $1;";
 
-pub const SELECT_VISIBLE_OBJECTS_QUERY: &str = "SELECT o.id, o.name, o.storage_key, o.content_type, o.made_on, ST_Y(o.location::geometry) AS latitude, ST_X(o.location::geometry) AS longitude, o.user_id, o.publicity,
-COALESCE(array_agg(u_allowed.email) FILTER (WHERE u_allowed.email IS NOT NULL), '{}') AS allowed_users
-FROM objects o
-JOIN users u ON o.user_id = u.id
-LEFT JOIN object_allowed_users oau ON o.id = oau.object_id
-LEFT JOIN users u_allowed ON oau.user_id = u_allowed.id
+pub const SELECT_VISIBLE_OBJECTS_QUERY: &str = "SELECT v.*
+FROM available_objects_with_users v
+JOIN users owner ON owner.id = v.user_id
 WHERE
-	o.storage_state = 'available' AND (
-		($1::BIGINT IS NOT NULL AND o.user_id = $1)
-		OR o.publicity = 'public'
-		OR (o.publicity = 'default' AND u.default_publicity = 'public')
-		OR (o.publicity = 'selected_users' AND $1::BIGINT IS NOT NULL AND $1 IN (SELECT user_id FROM object_allowed_users WHERE object_id = o.id))
-	)
-GROUP BY o.id;";
+	($1::BIGINT IS NOT NULL AND v.user_id = $1)
+	OR v.publicity = 'public'
+	OR (v.publicity = 'default' AND owner.default_publicity = 'public')
+	OR (
+		v.publicity = 'selected_users'
+		AND $1::BIGINT IS NOT NULL
+		AND EXISTS (
+			SELECT 1
+			FROM object_allowed_users allowed
+			WHERE allowed.object_id = v.id
+				AND allowed.user_id = $1
+		)
+	);";
 
 pub const DELETE_OBJECT_ALLOWED_USERS_QUERY: &str =
 	"DELETE FROM object_allowed_users WHERE object_id = $1";
