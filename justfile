@@ -181,7 +181,7 @@ storage-ci:
 	memory_map_start_process_compose --port "$port" --log-file "$log_file" --detached -t=false --logs-truncate
 	process_compose_started=true
 	memory_map_process_compose --port "$port" project is-ready --wait
-	STORAGE_TEST_REQUIRE_SERVICE=true just storage-test
+	BACKEND_TEST_REQUIRE_SERVICE=true just storage-test
 
 # Run backend API/auth integration tests against configured local services.
 [positional-arguments]
@@ -192,7 +192,7 @@ backend-integration-test *args:
 		set -- --ignored --nocapture --test-threads=1
 	fi
 	source scripts/e2e-env.sh
-	BACKEND_INTEGRATION_REQUIRE_SERVICE=true {{ direnv_prefix }} cargo test -p backend --test api_auth -- "$@"
+	BACKEND_TEST_REQUIRE_SERVICE=true {{ direnv_prefix }} cargo test -p backend --test api_auth -- "$@"
 
 # Run backend API/auth integration tests against the headless local service graph.
 backend-integration:

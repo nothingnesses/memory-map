@@ -1,3 +1,5 @@
+mod common;
+
 use {
 	anyhow::Context,
 	aws_sdk_s3::primitives::ByteStream,
@@ -45,6 +47,14 @@ use {
 		Enforcer,
 		FileAdapter,
 	},
+	common::{
+		endpoint_is_reachable,
+		env_or_default,
+		parse_bool_env,
+		skip_or_fail,
+		tcp_endpoint_is_reachable,
+		unique_suffix,
+	},
 	deadpool::managed::{
 		Object,
 		Pool,
@@ -58,21 +68,11 @@ use {
 		json,
 	},
 	std::{
-		env,
 		ops::DerefMut,
 		path::Path,
 		sync::Arc,
-		time::{
-			Duration,
-			SystemTime,
-			UNIX_EPOCH,
-		},
 	},
-	tokio::{
-		net::TcpStream,
-		sync::RwLock,
-		time::timeout,
-	},
+	tokio::sync::RwLock,
 	tokio_postgres::NoTls,
 	tower::ServiceExt,
 };
@@ -182,13 +182,18 @@ impl TestApp {
 		let cfg = test_config()?;
 
 		if !postgres_is_reachable(&cfg).await? {
-			return skip_or_fail("PostgreSQL is not reachable".to_string());
+			return skip_or_fail(
+				"backend integration test",
+				"PostgreSQL is not reachable".to_string(),
+				None,
+			);
 		}
-		if !storage_endpoint_is_reachable(&cfg.storage.endpoint_url).await? {
-			return skip_or_fail(format!(
-				"storage endpoint is not reachable: {}",
-				cfg.storage.endpoint_url
-			));
+		if !endpoint_is_reachable(&cfg.storage.endpoint_url).await? {
+			return skip_or_fail(
+				"backend integration test",
+				format!("storage endpoint is not reachable: {}", cfg.storage.endpoint_url),
+				None,
+			);
 		}
 
 		let pool = cfg.pg.create_pool(Some(Runtime::Tokio1), NoTls)?;
@@ -1395,17 +1400,7 @@ async fn test_enforcer() -> anyhow::Result<Enforcer> {
 async fn postgres_is_reachable(config: &Config) -> anyhow::Result<bool> {
 	let host = config.pg.host.as_deref().unwrap_or("127.0.0.1");
 	let port = config.pg.port.unwrap_or(5432);
-	Ok(matches!(timeout(Duration::from_secs(2), TcpStream::connect((host, port))).await, Ok(Ok(_))))
-}
-
-async fn storage_endpoint_is_reachable(endpoint_url: &str) -> anyhow::Result<bool> {
-	let url = reqwest::Url::parse(endpoint_url)?;
-	let host =
-		url.host_str().ok_or_else(|| anyhow::anyhow!("S3 endpoint URL is missing a host"))?;
-	let port = url
-		.port_or_known_default()
-		.ok_or_else(|| anyhow::anyhow!("S3 endpoint URL is missing a port"))?;
-	Ok(matches!(timeout(Duration::from_secs(2), TcpStream::connect((host, port))).await, Ok(Ok(_))))
+	tcp_endpoint_is_reachable(host, port).await
 }
 
 fn auth_cookie(headers: &HeaderMap) -> anyhow::Result<String> {
@@ -1460,53 +1455,4 @@ fn assert_graphql_error_contains(
 	}
 
 	Ok(())
-}
-
-fn skip_or_fail(message: String) -> anyhow::Result<Option<TestApp>> {
-	if integration_service_required() {
-		anyhow::bail!("{message}");
-	}
-
-	eprintln!("skipping backend integration test: {message}");
-	Ok(None)
-}
-
-fn integration_service_required() -> bool {
-	env::var("BACKEND_INTEGRATION_REQUIRE_SERVICE")
-		.map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-		.unwrap_or(false)
-}
-
-fn unique_suffix() -> anyhow::Result<String> {
-	use std::sync::atomic::{
-		AtomicU64,
-		Ordering,
-	};
-	// Tests in this file currently run with --test-threads=1, so the nanosecond
-	// timestamp alone would suffice today. The atomic counter makes the suffix
-	// robust against accidental parallelism (or two suffixes constructed in the
-	// same nanosecond on a fast machine) without requiring the test runner config.
-	static COUNTER: AtomicU64 = AtomicU64::new(0);
-	let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-	let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-	Ok(format!("{}-{counter}", now.as_nanos()))
-}
-
-fn env_or_default(
-	name: &str,
-	default: &str,
-) -> String {
-	env::var(name).unwrap_or_else(|_| default.to_string())
-}
-
-fn parse_bool_env(
-	name: &str,
-	default: bool,
-) -> anyhow::Result<bool> {
-	let value = env_or_default(name, if default { "true" } else { "false" });
-	match value.to_ascii_lowercase().as_str() {
-		"1" | "true" | "yes" | "on" => Ok(true),
-		"0" | "false" | "no" | "off" => Ok(false),
-		_ => anyhow::bail!("{name} must be a boolean"),
-	}
 }

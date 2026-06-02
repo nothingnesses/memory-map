@@ -133,7 +133,7 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 - `just test`: Run the workspace test suite.
 - `just storage-test`: Run ignored storage integration tests against the
   configured S3-compatible endpoint. Missing local storage skips by default; set
-  `STORAGE_TEST_REQUIRE_SERVICE=true` to fail instead.
+  `BACKEND_TEST_REQUIRE_SERVICE=true` to fail instead.
 - `just frontend-build`: Build the frontend with Trunk using the existing
   `frontend/public/config.json` runtime config.
 - `just verify`: Run the full verification suite before submitting a PR.
