@@ -17,6 +17,7 @@ const fixtureBuffer = fs.readFileSync(
 
 const password = "memory-map-e2e-password-123";
 const backendUrl = process.env.E2E_BACKEND_URL ?? "http://127.0.0.1:8000";
+const storageUrl = process.env.E2E_STORAGE_URL ?? "http://127.0.0.1:9000";
 
 function runId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -60,6 +61,47 @@ async function openMarkerPopup(
 	throw new Error(`Could not find marker popup for ${text}`);
 }
 
+async function registerAndSignIn(
+	page: Page,
+	email: string,
+): Promise<void> {
+	await page.goto("/register");
+	await expect(page.getByRole("heading", { name: "Register" })).toBeVisible();
+	await page.getByLabel("Email").fill(email);
+	await page.getByLabel("Password", { exact: true }).fill(password);
+	await page.getByLabel("Confirm Password").fill(password);
+	await page.getByRole("button", { name: "Register" }).click();
+	await expect(page).toHaveURL(/\/sign-in$/);
+
+	await page.getByLabel("Email").fill(email);
+	await page.getByLabel("Password", { exact: true }).fill(password);
+	await page.getByRole("button", { name: "Sign In" }).click();
+	await expect(page).toHaveURL(/\/$/);
+}
+
+async function openAddObjectDialog(page: Page): Promise<void> {
+	await page.goto("/objects");
+	await expect(page.getByRole("heading", { name: "Objects" })).toBeVisible();
+	await page.getByRole("button", { name: "Add Object" }).click();
+	await expect(page.getByRole("heading", { name: "Add Object", exact: true })).toBeVisible();
+}
+
+async function fillUploadForm(
+	page: Page,
+	objectName: string,
+	latitude: string,
+	longitude: string,
+): Promise<void> {
+	await page.getByLabel("Set latitude").fill(latitude);
+	await page.getByLabel("Set longitude").fill(longitude);
+	await page.getByLabel("Set date and time").fill("2026-05-29T12:34");
+	await page.getByLabel("Select files to upload").setInputFiles({
+		name: objectName,
+		mimeType: "image/svg+xml",
+		buffer: fixtureBuffer,
+	});
+}
+
 function waitForGraphqlOperation(
 	page: Page,
 	operationName: string,
@@ -94,34 +136,12 @@ test("authenticated object workflow covers upload preview gallery delete and log
 	});
 
 	await test.step("register and sign in", async () => {
-		await page.goto("/register");
-		await expect(page.getByRole("heading", { name: "Register" })).toBeVisible();
-		await page.getByLabel("Email").fill(email);
-		await page.getByLabel("Password", { exact: true }).fill(password);
-		await page.getByLabel("Confirm Password").fill(password);
-		await page.getByRole("button", { name: "Register" }).click();
-		await expect(page).toHaveURL(/\/sign-in$/);
-
-		await page.getByLabel("Email").fill(email);
-		await page.getByLabel("Password", { exact: true }).fill(password);
-		await page.getByRole("button", { name: "Sign In" }).click();
-		await expect(page).toHaveURL(/\/$/);
+		await registerAndSignIn(page, email);
 	});
 
 	await test.step("upload object and verify table preview", async () => {
-		await page.goto("/objects");
-		await expect(page.getByRole("heading", { name: "Objects" })).toBeVisible();
-		await page.getByRole("button", { name: "Add Object" }).click();
-		await expect(page.getByRole("heading", { name: "Add Object", exact: true })).toBeVisible();
-
-		await page.getByLabel("Set latitude").fill(latitude);
-		await page.getByLabel("Set longitude").fill(longitude);
-		await page.getByLabel("Set date and time").fill("2026-05-29T12:34");
-		await page.getByLabel("Select files to upload").setInputFiles({
-			name: objectName,
-			mimeType: "image/svg+xml",
-			buffer: fixtureBuffer,
-		});
+		await openAddObjectDialog(page);
+		await fillUploadForm(page, objectName, latitude, longitude);
 
 		const createSessionPromise = waitForGraphqlOperation(
 			page,
@@ -196,6 +216,65 @@ test("authenticated object workflow covers upload preview gallery delete and log
 		await page.goto("/objects");
 		await expect(page).toHaveURL(/\/sign-in$/);
 		await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
+	});
+});
+
+test.describe("direct upload failure handling", () => {
+	test.use({
+		allowConsoleErrors: [
+			/^Failed to load resource: the server responded with a status of 503/,
+		],
+	});
+
+	test("direct upload part failure aborts the upload session", async ({ page }) => {
+		const id = runId();
+		const email = `memory-map-e2e-abort-${id}@example.test`;
+		const objectName = `memory-map-e2e-abort-${id}.svg`;
+		const latitude = "51.505";
+		const longitude = "-0.09";
+
+		await registerAndSignIn(page, email);
+		await openAddObjectDialog(page);
+		await fillUploadForm(page, objectName, latitude, longitude);
+
+		await page.route(`${storageUrl}/**`, async (route) => {
+			if (route.request().method() === "PUT") {
+				await route.fulfill({
+					status: 503,
+					body: "simulated storage upload failure",
+				});
+				return;
+			}
+
+			await route.continue();
+		});
+
+		const createSessionPromise = waitForGraphqlOperation(
+			page,
+			"CreateObjectUploadSessionMutation",
+		);
+		const presignPartsPromise = waitForGraphqlOperation(
+			page,
+			"PresignObjectUploadPartsMutation",
+		);
+		const failedUploadPartPromise = page.waitForResponse((response) =>
+			response.request().method() === "PUT" && response.url().startsWith(storageUrl)
+		);
+		const abortUploadPromise = waitForGraphqlOperation(
+			page,
+			"AbortObjectUploadMutation",
+		);
+
+		await page.getByRole("button", { name: "Submit" }).click();
+
+		expect((await createSessionPromise).ok()).toBe(true);
+		expect((await presignPartsPromise).ok()).toBe(true);
+		expect((await failedUploadPartPromise).status()).toBe(503);
+		expect((await abortUploadPromise).ok()).toBe(true);
+		await expect(page.getByText(/Failed to upload files\. Status: 503/)).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Add Object", exact: true }))
+			.toBeVisible();
+		await expect(page.getByRole("button", { name: "Submit" })).toBeEnabled();
 	});
 });
 
