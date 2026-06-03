@@ -32,6 +32,10 @@ use {
 				S3Object,
 			},
 		},
+		outbox::{
+			OutboxRetryConfig,
+			ensure_positive,
+		},
 		storage::{
 			CompletedUploadPart,
 			MultipartUploadAbortOutcome,
@@ -93,8 +97,8 @@ pub struct ObjectLifecycleConfig {
 	pub storage_deletion_retry_seconds: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_lease_seconds")]
 	pub storage_deletion_lease_seconds: i64,
-	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_worker_interval_seconds")]
-	pub storage_deletion_worker_interval_seconds: i64,
+	#[serde(default = "ObjectLifecycleConfig::default_maintenance_interval_seconds")]
+	pub maintenance_interval_seconds: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_batch_size")]
 	pub storage_deletion_batch_size: i64,
 	#[serde(default = "ObjectLifecycleConfig::default_storage_deletion_max_attempts")]
@@ -150,7 +154,7 @@ impl ObjectLifecycleConfig {
 		300
 	}
 
-	pub const fn default_storage_deletion_worker_interval_seconds() -> i64 {
+	pub const fn default_maintenance_interval_seconds() -> i64 {
 		30
 	}
 
@@ -166,9 +170,7 @@ impl ObjectLifecycleConfig {
 	}
 
 	pub fn validate(&self) -> anyhow::Result<()> {
-		if self.pending_upload_timeout_seconds <= 0 {
-			anyhow::bail!("pending_upload_timeout_seconds must be greater than 0");
-		}
+		ensure_positive!(self, pending_upload_timeout_seconds);
 		if self.upload_max_file_size_bytes <= 0 {
 			anyhow::bail!("upload_max_file_size_bytes must be greater than 0");
 		}
@@ -184,47 +186,39 @@ impl ObjectLifecycleConfig {
 				Self::S3_MIN_MULTIPART_PART_SIZE_BYTES
 			);
 		}
-		if self.upload_max_part_count <= 0 {
-			anyhow::bail!("upload_max_part_count must be greater than 0");
-		}
+		ensure_positive!(self, upload_max_part_count);
 		if self.upload_max_part_count > Self::S3_MAX_MULTIPART_PART_COUNT {
 			anyhow::bail!(
 				"upload_max_part_count must be at most {}",
 				Self::S3_MAX_MULTIPART_PART_COUNT
 			);
 		}
-		if self.upload_session_ttl_seconds <= 0 {
-			anyhow::bail!("upload_session_ttl_seconds must be greater than 0");
-		}
-		if self.upload_session_cleanup_retry_seconds <= 0 {
-			anyhow::bail!("upload_session_cleanup_retry_seconds must be greater than 0");
-		}
-		if self.upload_session_cleanup_lease_seconds <= 0 {
-			anyhow::bail!("upload_session_cleanup_lease_seconds must be greater than 0");
-		}
-		if self.upload_session_cleanup_max_attempts <= 0 {
-			anyhow::bail!("upload_session_cleanup_max_attempts must be greater than 0");
-		}
-		if self.upload_session_cleanup_batch_size <= 0 {
-			anyhow::bail!("upload_session_cleanup_batch_size must be greater than 0");
-		}
+		ensure_positive!(self, upload_session_ttl_seconds);
+		self.upload_session_cleanup().validate("upload_session_cleanup")?;
 		self.upload_session_total_parts(self.upload_max_file_size_bytes)?;
-		if self.storage_deletion_retry_seconds <= 0 {
-			anyhow::bail!("storage_deletion_retry_seconds must be greater than 0");
-		}
-		if self.storage_deletion_lease_seconds <= 0 {
-			anyhow::bail!("storage_deletion_lease_seconds must be greater than 0");
-		}
-		if self.storage_deletion_worker_interval_seconds <= 0 {
-			anyhow::bail!("storage_deletion_worker_interval_seconds must be greater than 0");
-		}
-		if self.storage_deletion_batch_size <= 0 {
-			anyhow::bail!("storage_deletion_batch_size must be greater than 0");
-		}
-		if self.storage_deletion_max_attempts <= 0 {
-			anyhow::bail!("storage_deletion_max_attempts must be greater than 0");
-		}
+		ensure_positive!(self, maintenance_interval_seconds);
+		self.storage_deletion().validate("storage_deletion")?;
 		Ok(())
+	}
+
+	/// Lease/retry policy for the storage-deletion outbox, as a runtime view.
+	pub fn storage_deletion(&self) -> OutboxRetryConfig {
+		OutboxRetryConfig {
+			retry_seconds: self.storage_deletion_retry_seconds,
+			lease_seconds: self.storage_deletion_lease_seconds,
+			batch_size: self.storage_deletion_batch_size,
+			max_attempts: self.storage_deletion_max_attempts,
+		}
+	}
+
+	/// Lease/retry policy for the expired-upload-session cleanup, as a runtime view.
+	pub fn upload_session_cleanup(&self) -> OutboxRetryConfig {
+		OutboxRetryConfig {
+			retry_seconds: self.upload_session_cleanup_retry_seconds,
+			lease_seconds: self.upload_session_cleanup_lease_seconds,
+			batch_size: self.upload_session_cleanup_batch_size,
+			max_attempts: self.upload_session_cleanup_max_attempts,
+		}
 	}
 
 	pub fn upload_session_total_parts(
@@ -267,7 +261,7 @@ impl ObjectLifecycleConfig {
 	}
 
 	fn worker_interval(&self) -> Duration {
-		Duration::from_secs(self.storage_deletion_worker_interval_seconds as u64)
+		Duration::from_secs(self.maintenance_interval_seconds as u64)
 	}
 }
 
@@ -288,8 +282,7 @@ impl Default for ObjectLifecycleConfig {
 			upload_session_cleanup_batch_size: Self::default_upload_session_cleanup_batch_size(),
 			storage_deletion_retry_seconds: Self::default_storage_deletion_retry_seconds(),
 			storage_deletion_lease_seconds: Self::default_storage_deletion_lease_seconds(),
-			storage_deletion_worker_interval_seconds:
-				Self::default_storage_deletion_worker_interval_seconds(),
+			maintenance_interval_seconds: Self::default_maintenance_interval_seconds(),
 			storage_deletion_batch_size: Self::default_storage_deletion_batch_size(),
 			storage_deletion_max_attempts: Self::default_storage_deletion_max_attempts(),
 		}
@@ -1592,7 +1585,7 @@ mod tests {
 				..valid.clone()
 			},
 			ObjectLifecycleConfig {
-				storage_deletion_worker_interval_seconds: -5,
+				maintenance_interval_seconds: -5,
 				..valid.clone()
 			},
 			ObjectLifecycleConfig {

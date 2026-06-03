@@ -47,6 +47,7 @@ pub mod email_worker;
 pub mod errors;
 pub mod graphql;
 pub mod object_lifecycle;
+pub mod outbox;
 pub mod storage;
 pub mod worker;
 

@@ -9,6 +9,10 @@ use {
 		},
 		email::send_password_reset_email,
 		errors::AppError,
+		outbox::{
+			OutboxRetryConfig,
+			ensure_positive,
+		},
 		worker::MaintenanceTask,
 	},
 	anyhow::Context,
@@ -66,22 +70,19 @@ impl EmailOutboxConfig {
 	}
 
 	pub fn validate(&self) -> anyhow::Result<()> {
-		if self.retry_seconds <= 0 {
-			anyhow::bail!("email_outbox.retry_seconds must be greater than 0");
-		}
-		if self.lease_seconds <= 0 {
-			anyhow::bail!("email_outbox.lease_seconds must be greater than 0");
-		}
-		if self.worker_interval_seconds <= 0 {
-			anyhow::bail!("email_outbox.worker_interval_seconds must be greater than 0");
-		}
-		if self.batch_size <= 0 {
-			anyhow::bail!("email_outbox.batch_size must be greater than 0");
-		}
-		if self.max_attempts <= 0 {
-			anyhow::bail!("email_outbox.max_attempts must be greater than 0");
-		}
+		self.retry().validate("email_outbox")?;
+		ensure_positive!(self, worker_interval_seconds);
 		Ok(())
+	}
+
+	/// Lease/retry policy for the email outbox, as a runtime view.
+	pub fn retry(&self) -> OutboxRetryConfig {
+		OutboxRetryConfig {
+			retry_seconds: self.retry_seconds,
+			lease_seconds: self.lease_seconds,
+			batch_size: self.batch_size,
+			max_attempts: self.max_attempts,
+		}
 	}
 
 	fn worker_interval(&self) -> Duration {

@@ -82,7 +82,7 @@ You can optionally configure the build mode and other settings by editing `.env`
 - Object storage cleanup settings live under
   `MEMORY_MAP__OBJECT_LIFECYCLE__*`, including
   `PENDING_UPLOAD_TIMEOUT_SECONDS`, `STORAGE_DELETION_RETRY_SECONDS`,
-  `STORAGE_DELETION_LEASE_SECONDS`, `STORAGE_DELETION_WORKER_INTERVAL_SECONDS`,
+  `STORAGE_DELETION_LEASE_SECONDS`, `MAINTENANCE_INTERVAL_SECONDS`,
   `STORAGE_DELETION_BATCH_SIZE`, and `STORAGE_DELETION_MAX_ATTEMPTS`.
 
 ### 4. Start database & storage

@@ -1059,7 +1059,7 @@ async fn stale_pending_upload_cleanup_removes_blob_metadata_and_releases_name() 
 		pending_upload_timeout_seconds: 1,
 		storage_deletion_retry_seconds: 1,
 		storage_deletion_lease_seconds: 30,
-		storage_deletion_worker_interval_seconds: 1,
+		maintenance_interval_seconds: 1,
 		storage_deletion_batch_size: 1000,
 		storage_deletion_max_attempts: 10,
 		..ObjectLifecycleConfig::default()
