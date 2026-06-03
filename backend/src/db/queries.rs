@@ -258,7 +258,6 @@ pub const CLAIM_OBJECT_STORAGE_DELETIONS_QUERY: &str = "WITH claimed AS MATERIAL
 UPDATE object_storage_deletions deletion
 SET attempts = attempts + 1,
 	last_attempt_at = now(),
-	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
 	next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
 	last_error = NULL
 FROM claimed
@@ -272,8 +271,7 @@ pub const DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY: &str =
 	"DELETE FROM objects WHERE storage_key = ANY($1) AND storage_state = 'delete_pending'";
 
 pub const MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY: &str = "UPDATE object_storage_deletions
-SET processing_expires_at = NULL,
-	next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
+SET next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
 	last_error = $2
 WHERE storage_key = ANY($1)";
 
@@ -338,7 +336,6 @@ pub const CLAIM_EMAIL_OUTBOX_QUERY: &str = "WITH claimed AS MATERIALIZED (
 UPDATE email_outbox outbox
 SET attempts = attempts + 1,
 	last_attempt_at = now(),
-	processing_expires_at = now() + ($2::BIGINT * interval '1 second'),
 	next_attempt_at = now() + ($2::BIGINT * interval '1 second'),
 	last_error = NULL
 FROM claimed
@@ -348,7 +345,6 @@ RETURNING outbox.id, outbox.kind, outbox.payload::TEXT AS payload";
 pub const DELETE_EMAIL_OUTBOX_QUERY: &str = "DELETE FROM email_outbox WHERE id = ANY($1)";
 
 pub const MARK_EMAIL_OUTBOX_FAILED_QUERY: &str = "UPDATE email_outbox
-SET processing_expires_at = NULL,
-	next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
+SET next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
 	last_error = $2
 WHERE id = ANY($1)";

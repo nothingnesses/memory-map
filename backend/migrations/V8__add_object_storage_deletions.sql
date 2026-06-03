@@ -44,7 +44,6 @@ CREATE TABLE object_storage_deletions (
 	attempts INTEGER NOT NULL DEFAULT 0,
 	last_attempt_at timestamptz,
 	next_attempt_at timestamptz NOT NULL DEFAULT now(),
-	processing_expires_at timestamptz,
 	last_error TEXT
 );
 
