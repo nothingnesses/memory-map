@@ -159,14 +159,24 @@ impl Config {
 		self.auth.cookie_secure.unwrap_or_else(|| self.frontend.url.starts_with("https"))
 	}
 
-	/// Loads, deserializes, and validates the configuration from environment variables.
+	/// Loads, deserializes, and validates the configuration.
 	///
-	/// All env vars share the `MEMORY_MAP__` prefix with `__` as both the prefix and
-	/// the nested-path separator, so `MEMORY_MAP__STORAGE__ENDPOINT_URL` maps to
-	/// `config.storage.endpoint_url`. One source of truth, one deserialization path,
-	/// one validation pass.
-	pub fn from_env() -> Result<Self, errors::AppError> {
-		let raw = config::Config::builder()
+	/// An optional TOML file (selected by the `MEMORY_MAP_CONFIG` env var) is read
+	/// first, then the environment is layered on top so env always wins. When
+	/// `MEMORY_MAP_CONFIG` is unset, no file source is added and loading is
+	/// pure-environment, identical to the previous env-only behaviour. Env vars
+	/// share the `MEMORY_MAP__` prefix with `__` as both the prefix and the
+	/// nested-path separator, so `MEMORY_MAP__STORAGE__ENDPOINT_URL` maps to
+	/// `config.storage.endpoint_url`.
+	pub fn load() -> Result<Self, errors::AppError> {
+		let mut builder = config::Config::builder();
+		// The file is opt-in and, when requested, required: a missing or unreadable
+		// path is a loud startup error rather than a silent fall-through to defaults.
+		if let Ok(path) = std::env::var("MEMORY_MAP_CONFIG") {
+			builder = builder
+				.add_source(config::File::new(&path, config::FileFormat::Toml).required(true));
+		}
+		let raw = builder
 			.add_source(
 				config::Environment::with_prefix("MEMORY_MAP")
 					.prefix_separator("__")
@@ -480,6 +490,22 @@ mod tests {
 		},
 		deadpool_postgres::Config as PostgresConfig,
 	};
+
+	#[test]
+	fn config_example_toml_deserializes_into_config() {
+		// Guards against drift between config.example.toml and the Config structs:
+		// a renamed or removed field there fails to deserialize here. Only the
+		// structural mapping is checked; validation is not run because the example
+		// intentionally leaves secrets blank.
+		let parsed = config::Config::builder()
+			.add_source(config::File::from_str(
+				include_str!("../../config.example.toml"),
+				config::FileFormat::Toml,
+			))
+			.build()
+			.and_then(|raw| raw.try_deserialize::<Config>());
+		assert!(parsed.is_ok(), "config.example.toml should map onto Config: {parsed:?}");
+	}
 
 	#[test]
 	fn parse_latitude_accepts_boundary_values() {

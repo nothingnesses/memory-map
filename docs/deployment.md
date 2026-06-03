@@ -19,10 +19,28 @@ and CI only. Their deterministic credentials are not production secrets.
 
 ## Backend Environment
 
-The backend reads configuration from environment variables. All variables share
-the `MEMORY_MAP__` prefix; `__` is both the prefix separator and the path
-separator, so `MEMORY_MAP__STORAGE__ENDPOINT_URL` maps to
-`config.storage.endpoint_url`.
+The backend reads configuration from two layered sources. An optional TOML file
+is read first, then environment variables are layered on top (so the environment
+always wins). The file is selected by the `MEMORY_MAP_CONFIG` environment
+variable: set it to the file's path and the file is loaded and required; leave it
+unset and the backend is configured purely from the environment (the default,
+unchanged from previous releases). Secrets should not be committed: keep them in
+a gitignored `config.toml` (copy `config.example.toml`, or run `just config`) or
+supply them via environment variables.
+
+In the TOML file, sections are tables and keys are flat within them, e.g.
+
+```toml
+[storage]
+endpoint_url = "http://127.0.0.1:9000/"
+
+[object_lifecycle]
+storage_deletion_retry_seconds = 60
+```
+
+All variables share the `MEMORY_MAP__` prefix; `__` is both the prefix separator
+and the path separator, so `MEMORY_MAP__STORAGE__ENDPOINT_URL` maps to
+`config.storage.endpoint_url` (and to `storage.endpoint_url` in the TOML file).
 
 Required database settings:
 

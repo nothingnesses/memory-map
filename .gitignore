@@ -4,6 +4,8 @@ data/pg1/
 data/postgres/
 data/rustfs/
 .env
+config.toml
+config.local.toml
 frontend/public/config.json
 .direnv/
 /result

@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
 	// Read and parse dotenv config
 	dotenv().ok();
-	let cfg = Config::from_env().context("Failed to load configuration from environment")?;
+	let cfg = Config::load().context("Failed to load configuration")?;
 
 	// Connect to DB
 	let pool = cfg

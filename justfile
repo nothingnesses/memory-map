@@ -39,6 +39,15 @@ frontend-config:
 		echo "Created frontend/public/config.json from frontend/config.example.json"; \
 	fi
 
+# Create a local backend TOML config from the example when missing. Opt-in: the
+# backend only reads it when MEMORY_MAP_CONFIG points at it (otherwise it is
+# configured purely from the environment, e.g. .env).
+config:
+	@if [ ! -f config.toml ]; then \
+		cp config.example.toml config.toml; \
+		echo "Created config.toml from config.example.toml; set MEMORY_MAP_CONFIG=\$(pwd)/config.toml to use it"; \
+	fi
+
 # Require an explicit frontend runtime config for builds that copy /config.json.
 require-frontend-config:
 	@if [ ! -f frontend/public/config.json ]; then \

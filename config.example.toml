@@ -1,0 +1,69 @@
+# Memory Map backend configuration example.
+#
+# Copy this to config.toml (gitignored), fill in the secret fields, and run the
+# backend with MEMORY_MAP_CONFIG set to the file's path. The file is optional:
+# with MEMORY_MAP_CONFIG unset the backend is configured purely from the
+# environment, exactly as before. Any value here can also be overridden by a
+# MEMORY_MAP__SECTION__KEY environment variable (the environment wins over this
+# file). Secret fields are left blank below; set them in config.toml or via env.
+
+[pg]
+host = "127.0.0.1"
+port = 5432
+dbname = "db"
+# user = "postgres"
+# password = ""  # secret; or MEMORY_MAP__PG__PASSWORD
+
+[server]
+host = "127.0.0.1"
+port = 8000
+
+[smtp]
+host = "smtp.example.com"
+user = "user"
+pass = ""  # secret; or MEMORY_MAP__SMTP__PASS
+from = "noreply@example.com"
+
+[auth]
+cookie_secret = ""  # secret; must be at least 64 bytes; or MEMORY_MAP__AUTH__COOKIE_SECRET
+enable_registration = true
+# cookie_secure = true
+
+[frontend]
+url = "http://localhost:3000"
+
+[cors]
+allowed_origins = "http://127.0.0.1:3000"
+
+[storage]
+endpoint_url = "http://127.0.0.1:9000/"
+public_endpoint_url = "http://127.0.0.1:9000/"
+access_key = ""  # secret; or MEMORY_MAP__STORAGE__ACCESS_KEY
+secret_key = ""  # secret; or MEMORY_MAP__STORAGE__SECRET_KEY
+bucket_name = "memory-map"
+region = "us-east-1"
+force_path_style = true
+presigned_url_ttl_seconds = 604800
+
+[object_lifecycle]
+pending_upload_timeout_seconds = 3600
+upload_max_file_size_bytes = 1073741824
+upload_part_size_bytes = 8388608
+upload_max_part_count = 10000
+upload_session_ttl_seconds = 3600
+upload_session_cleanup_retry_seconds = 60
+upload_session_cleanup_lease_seconds = 300
+upload_session_cleanup_max_attempts = 10
+upload_session_cleanup_batch_size = 1000
+storage_deletion_retry_seconds = 60
+storage_deletion_lease_seconds = 300
+maintenance_interval_seconds = 30
+storage_deletion_batch_size = 1000
+storage_deletion_max_attempts = 10
+
+[email_outbox]
+retry_seconds = 60
+lease_seconds = 300
+worker_interval_seconds = 30
+batch_size = 100
+max_attempts = 10
