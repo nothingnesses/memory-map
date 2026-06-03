@@ -32,22 +32,6 @@ RETURNING
 	cleanup_last_error,
 	created_at";
 
-pub const SELECT_OBJECT_UPLOAD_SESSION_QUERY: &str = "SELECT
-	object_id,
-	storage_key,
-	upload_id,
-	content_type,
-	file_size,
-	part_size_bytes,
-	expires_at,
-	cleanup_attempts,
-	cleanup_last_attempt_at,
-	cleanup_next_attempt_at,
-	cleanup_last_error,
-	created_at
-FROM object_upload_sessions
-WHERE object_id = $1";
-
 pub const SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = "SELECT
 	session.object_id,
 	session.storage_key,
