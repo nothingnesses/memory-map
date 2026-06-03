@@ -53,7 +53,10 @@ use {
 		distr::Alphanumeric,
 	},
 	serde::Deserialize,
-	shared::ALLOWED_MIME_TYPES,
+	shared::{
+		ALLOWED_MIME_TYPES,
+		MAX_PRESIGN_PARTS_PER_REQUEST,
+	},
 	std::{
 		collections::BTreeSet,
 		time::Duration,
@@ -343,8 +346,6 @@ pub struct PresignedObjectUploadPart {
 	pub headers: Vec<PresignedHeader>,
 	pub expected_content_length: i64,
 }
-
-const MAX_PRESIGN_PARTS_PER_REQUEST: usize = 100;
 
 impl TryFrom<Row> for ObjectUploadSession {
 	type Error = AppError;

@@ -70,12 +70,13 @@ use {
 			SubmitEvent,
 		},
 	},
-	shared::ALLOWED_MIME_TYPES,
+	shared::{
+		ALLOWED_MIME_TYPES,
+		MAX_PRESIGN_PARTS_PER_REQUEST,
+	},
 	thaw::*,
 	wasm_bindgen_futures::JsFuture,
 };
-
-const MAX_PRESIGN_PARTS_PER_REQUEST: i64 = 100;
 
 #[derive(Clone, Debug)]
 struct UploadMetadata {
@@ -390,7 +391,7 @@ async fn upload_file_parts(
 	let mut next_part_number = 1;
 	while next_part_number <= total_parts {
 		let last_part_number =
-			(next_part_number + MAX_PRESIGN_PARTS_PER_REQUEST - 1).min(total_parts);
+			(next_part_number + MAX_PRESIGN_PARTS_PER_REQUEST as i64 - 1).min(total_parts);
 		let part_numbers = (next_part_number ..= last_part_number).collect::<Vec<_>>();
 		let mut presigned_parts = crate::graphql_queries::run::<PresignObjectUploadPartsMutation>(
 			api_url.clone(),
