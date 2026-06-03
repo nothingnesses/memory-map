@@ -651,18 +651,20 @@ impl<'a> ObjectLifecycleService<'a> {
 		drain_outbox(&mut queue, &processor, &self.config.storage_deletion()).await
 	}
 
+	// This reconcile is deliberately NOT a `drain_outbox`: it reconciles a primary
+	// record (`object_upload_sessions`) with storage and fans out INTO the deletion
+	// queue, rather than draining a queue of jobs. Its claim query also joins
+	// `objects` and filters `storage_state`, so it is queue-specific. It shares
+	// only the lease/retry policy, read here as the `upload_session_cleanup` view.
 	async fn claim_expired_upload_sessions(
 		&mut self
 	) -> Result<Vec<ObjectUploadSession>, AppError> {
+		let cleanup = self.config.upload_session_cleanup();
 		let rows = self
 			.db_client
 			.query(
 				CLAIM_EXPIRED_OBJECT_UPLOAD_SESSIONS_QUERY,
-				&[
-					&self.config.upload_session_cleanup_batch_size,
-					&self.config.upload_session_cleanup_lease_seconds,
-					&self.config.upload_session_cleanup_max_attempts,
-				],
+				&[&cleanup.batch_size, &cleanup.lease_seconds, &cleanup.max_attempts],
 			)
 			.await
 			.context("Failed to claim expired object upload sessions")?;
@@ -698,10 +700,11 @@ impl<'a> ObjectLifecycleService<'a> {
 		object_id: i64,
 		error_message: &str,
 	) -> Result<(), AppError> {
+		let retry_seconds = self.config.upload_session_cleanup().retry_seconds;
 		self.db_client
 			.execute(
 				MARK_OBJECT_UPLOAD_SESSION_CLEANUP_FAILED_QUERY,
-				&[&object_id, &error_message, &self.config.upload_session_cleanup_retry_seconds],
+				&[&object_id, &error_message, &retry_seconds],
 			)
 			.await
 			.context("Failed to record object upload session cleanup failure")?;
