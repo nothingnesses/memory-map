@@ -48,6 +48,7 @@ pub mod errors;
 pub mod graphql;
 pub mod object_lifecycle;
 pub mod storage;
+pub mod worker;
 
 use {
 	email_worker::EmailOutboxConfig,

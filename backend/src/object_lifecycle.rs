@@ -40,6 +40,7 @@ use {
 			StorageClient,
 			StoredObjectMetadata,
 		},
+		worker::MaintenanceTask,
 	},
 	anyhow::Context,
 	deadpool::managed::Pool,
@@ -60,13 +61,6 @@ use {
 	std::{
 		collections::BTreeSet,
 		time::Duration,
-	},
-	tokio::{
-		task::JoinHandle,
-		time::{
-			MissedTickBehavior,
-			interval,
-		},
 	},
 	tokio_postgres::{
 		Row,
@@ -273,7 +267,7 @@ impl ObjectLifecycleConfig {
 	}
 
 	fn worker_interval(&self) -> Duration {
-		Duration::from_secs(self.storage_deletion_worker_interval_seconds.unsigned_abs())
+		Duration::from_secs(self.storage_deletion_worker_interval_seconds as u64)
 	}
 }
 
@@ -920,33 +914,22 @@ impl ObjectLifecycleWorker {
 			config,
 		}
 	}
+}
 
-	pub fn spawn(self) -> JoinHandle<()> {
-		tokio::spawn(async move {
-			self.run_forever().await;
-		})
+impl MaintenanceTask for ObjectLifecycleWorker {
+	fn name(&self) -> &'static str {
+		"object_storage_lifecycle"
 	}
 
-	pub async fn run_once(&self) -> Result<(), AppError> {
+	fn interval(&self) -> Duration {
+		self.config.worker_interval()
+	}
+
+	async fn run_once(&self) -> Result<(), AppError> {
 		let mut client = self.pool.get().await?;
 		let mut object_lifecycle =
 			ObjectLifecycleService::new(&mut client, &self.storage, self.config.clone());
 		object_lifecycle.run_storage_maintenance().await
-	}
-
-	async fn run_forever(self) {
-		let mut interval = interval(self.config.worker_interval());
-		interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-		loop {
-			interval.tick().await;
-			if let Err(error) = self.run_once().await {
-				tracing::warn!(
-					error = ?error,
-					"Object storage lifecycle maintenance failed"
-				);
-			}
-		}
 	}
 }
 

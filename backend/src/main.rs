@@ -10,6 +10,7 @@ use {
 		migrations,
 		object_lifecycle::ObjectLifecycleWorker,
 		storage::StorageClient,
+		worker,
 	},
 	casbin::{
 		CoreApi,
@@ -66,10 +67,12 @@ async fn main() -> anyhow::Result<()> {
 	let storage = StorageClient::from_config(&cfg).context("Failed to build S3 storage client")?;
 	storage.verify_bucket_ready().await.context("Failed to verify S3 bucket readiness")?;
 
-	let _object_lifecycle_worker =
-		ObjectLifecycleWorker::new(pool.clone(), storage.clone(), cfg.object_lifecycle.clone())
-			.spawn();
-	let _email_worker = EmailWorker::new(pool.clone(), cfg.clone()).spawn();
+	let _object_lifecycle_worker = worker::spawn(ObjectLifecycleWorker::new(
+		pool.clone(),
+		storage.clone(),
+		cfg.object_lifecycle.clone(),
+	));
+	let _email_worker = worker::spawn(EmailWorker::new(pool.clone(), cfg.clone()));
 
 	// Initialise Casbin Enforcer
 	let enforcer = Enforcer::new("authz_model.conf", "authz_policy.csv").await?;

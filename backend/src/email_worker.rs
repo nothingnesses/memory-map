@@ -9,6 +9,7 @@ use {
 		},
 		email::send_password_reset_email,
 		errors::AppError,
+		worker::MaintenanceTask,
 	},
 	anyhow::Context,
 	deadpool::managed::Pool,
@@ -21,13 +22,6 @@ use {
 		Serialize,
 	},
 	std::time::Duration,
-	tokio::{
-		task::JoinHandle,
-		time::{
-			MissedTickBehavior,
-			interval,
-		},
-	},
 	tokio_postgres::{
 		Row,
 		Transaction,
@@ -169,31 +163,20 @@ impl EmailWorker {
 			},
 		}
 	}
+}
 
-	pub fn spawn(self) -> JoinHandle<()> {
-		tokio::spawn(async move {
-			self.run_forever().await;
-		})
+impl MaintenanceTask for EmailWorker {
+	fn name(&self) -> &'static str {
+		"email_outbox"
 	}
 
-	pub async fn run_once(&self) -> Result<(), AppError> {
+	fn interval(&self) -> Duration {
+		self.config.worker_interval()
+	}
+
+	async fn run_once(&self) -> Result<(), AppError> {
 		let mut client = self.pool.get().await?;
 		drain_email_outbox(&mut client, &self.sender, &self.config).await
-	}
-
-	async fn run_forever(self) {
-		let mut interval = interval(self.config.worker_interval());
-		interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-		loop {
-			interval.tick().await;
-			if let Err(error) = self.run_once().await {
-				tracing::warn!(
-					error = ?error,
-					"Email outbox delivery failed"
-				);
-			}
-		}
 	}
 }
 

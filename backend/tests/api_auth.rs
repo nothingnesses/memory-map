@@ -40,6 +40,7 @@ use {
 			StorageClient,
 			StorageConfig,
 		},
+		worker::MaintenanceTask,
 	},
 	casbin::{
 		CoreApi,
