@@ -33,7 +33,11 @@ use {
 			},
 		},
 		outbox::{
+			DrainOutcome,
+			OutboxProcessor,
+			OutboxQueue,
 			OutboxRetryConfig,
+			drain_outbox,
 			ensure_positive,
 		},
 		storage::{
@@ -640,7 +644,11 @@ impl<'a> ObjectLifecycleService<'a> {
 	}
 
 	pub async fn drain_storage_deletions(&mut self) -> Result<(), AppError> {
-		drain_storage_deletion_outbox(self.db_client, self.storage, &self.config).await
+		let processor = StorageDeletionProcessor {
+			storage: self.storage,
+		};
+		let mut queue = StorageDeletionQueue(&mut *self.db_client);
+		drain_outbox(&mut queue, &processor, &self.config.storage_deletion()).await
 	}
 
 	async fn claim_expired_upload_sessions(
@@ -926,52 +934,24 @@ impl MaintenanceTask for ObjectLifecycleWorker {
 	}
 }
 
-trait StorageDeletionSink {
-	async fn delete_objects(
-		&self,
-		storage_keys: &[String],
-	) -> anyhow::Result<()>;
-}
+/// The object-storage-deletion outbox as an [`OutboxQueue`]. `clear` is a
+/// two-statement transaction because a finished deletion removes both the queue
+/// row and the object-metadata row it points at.
+struct StorageDeletionQueue<'a>(&'a mut Client);
 
-impl StorageDeletionSink for StorageClient {
-	async fn delete_objects(
-		&self,
-		storage_keys: &[String],
-	) -> anyhow::Result<()> {
-		StorageClient::delete_objects(self, storage_keys).await
-	}
-}
+impl OutboxQueue for StorageDeletionQueue<'_> {
+	type Item = String;
 
-trait StorageDeletionOutbox {
-	async fn claim_storage_deletions(
+	async fn claim(
 		&mut self,
-		limit: i64,
-		lease_seconds: i64,
-		max_attempts: i32,
-	) -> Result<Vec<String>, AppError>;
-
-	async fn clear_storage_deletions(
-		&mut self,
-		storage_keys: &[String],
-	) -> Result<(), AppError>;
-
-	async fn mark_storage_deletions_failed(
-		&mut self,
-		storage_keys: &[String],
-		error_message: &str,
-		retry_after_seconds: i64,
-	) -> Result<(), AppError>;
-}
-
-impl StorageDeletionOutbox for Client {
-	async fn claim_storage_deletions(
-		&mut self,
-		limit: i64,
-		lease_seconds: i64,
-		max_attempts: i32,
+		retry: &OutboxRetryConfig,
 	) -> Result<Vec<String>, AppError> {
 		let rows = self
-			.query(CLAIM_OBJECT_STORAGE_DELETIONS_QUERY, &[&limit, &lease_seconds, &max_attempts])
+			.0
+			.query(
+				CLAIM_OBJECT_STORAGE_DELETIONS_QUERY,
+				&[&retry.batch_size, &retry.lease_seconds, &retry.max_attempts],
+			)
 			.await
 			.context("Failed to claim pending object storage deletions")?;
 		rows.into_iter()
@@ -981,11 +961,11 @@ impl StorageDeletionOutbox for Client {
 			.map_err(AppError::from)
 	}
 
-	async fn clear_storage_deletions(
+	async fn clear(
 		&mut self,
 		storage_keys: &[String],
 	) -> Result<(), AppError> {
-		let transaction = self.transaction().await?;
+		let transaction = self.0.transaction().await?;
 		transaction
 			.execute(DELETE_OBJECTS_BY_STORAGE_KEYS_QUERY, &[&storage_keys])
 			.await
@@ -998,70 +978,41 @@ impl StorageDeletionOutbox for Client {
 		Ok(())
 	}
 
-	async fn mark_storage_deletions_failed(
+	async fn mark_failed(
 		&mut self,
 		storage_keys: &[String],
 		error_message: &str,
 		retry_after_seconds: i64,
 	) -> Result<(), AppError> {
-		self.execute(
-			MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
-			&[&storage_keys, &error_message, &retry_after_seconds],
-		)
-		.await
-		.context("Failed to record object storage deletion failure")?;
+		self.0
+			.execute(
+				MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY,
+				&[&storage_keys, &error_message, &retry_after_seconds],
+			)
+			.await
+			.context("Failed to record object storage deletion failure")?;
 		Ok(())
 	}
 }
 
-/// Drains the deletion outbox to completion.
-///
-/// On a batch storage failure, the batch is marked failed (so it will retry on
-/// a future tick or, past max_attempts, stay parked for triage) and the loop
-/// continues claiming the next batch. The first error is surfaced after the
-/// claim loop exhausts so the worker still sees that something went wrong.
-/// Bounded by `storage_deletion_max_attempts`: a permanently broken row stops
-/// being claimable once it hits the cap, so the loop cannot spin forever.
-async fn drain_storage_deletion_outbox(
-	outbox: &mut impl StorageDeletionOutbox,
-	storage: &impl StorageDeletionSink,
-	config: &ObjectLifecycleConfig,
-) -> Result<(), AppError> {
-	let mut first_error: Option<AppError> = None;
-	loop {
-		let storage_keys = outbox
-			.claim_storage_deletions(
-				config.storage_deletion_batch_size,
-				config.storage_deletion_lease_seconds,
-				config.storage_deletion_max_attempts,
-			)
-			.await?;
+/// Deletes a claimed batch of storage keys in one S3 multi-delete request. The
+/// request is all-or-nothing, so the whole batch clears or the whole batch is
+/// marked failed.
+struct StorageDeletionProcessor<'a> {
+	storage: &'a StorageClient,
+}
 
-		if storage_keys.is_empty() {
-			break;
+impl OutboxProcessor for StorageDeletionProcessor<'_> {
+	type Item = String;
+
+	async fn process(
+		&self,
+		storage_keys: Vec<String>,
+	) -> DrainOutcome<String> {
+		match self.storage.delete_objects(&storage_keys).await {
+			Ok(()) => DrainOutcome::all_cleared(storage_keys),
+			Err(error) => DrainOutcome::whole_batch_failed(storage_keys, error),
 		}
-
-		if let Err(error) = storage.delete_objects(&storage_keys).await {
-			let error_message = error.to_string();
-			outbox
-				.mark_storage_deletions_failed(
-					&storage_keys,
-					&error_message,
-					config.storage_deletion_retry_seconds,
-				)
-				.await?;
-			if first_error.is_none() {
-				first_error = Some(AppError::Internal(error));
-			}
-			continue;
-		}
-
-		outbox.clear_storage_deletions(&storage_keys).await?;
-	}
-
-	match first_error {
-		Some(error) => Err(error),
-		None => Ok(()),
 	}
 }
 
@@ -1329,13 +1280,9 @@ fn insert_object_error(
 mod tests {
 	use {
 		super::{
-			AppError,
 			ObjectLifecycleConfig,
 			ObjectUploadSession,
-			StorageDeletionOutbox,
-			StorageDeletionSink,
 			completed_upload_metadata_error,
-			drain_storage_deletion_outbox,
 			validate_completed_parts,
 		},
 		crate::storage::{
@@ -1343,185 +1290,7 @@ mod tests {
 			StoredObjectMetadata,
 		},
 		jiff::Timestamp,
-		std::{
-			collections::VecDeque,
-			sync::Mutex,
-		},
 	};
-
-	#[derive(Default)]
-	struct FakeStorageDeletionOutbox {
-		pending_batches: VecDeque<Vec<String>>,
-		requested_limits: Vec<i64>,
-		requested_leases: Vec<i64>,
-		requested_max_attempts: Vec<i32>,
-		cleared_batches: Vec<Vec<String>>,
-		failed_batches: Vec<(Vec<String>, String, i64)>,
-	}
-
-	impl FakeStorageDeletionOutbox {
-		fn with_pending_batches(pending_batches: Vec<Vec<String>>) -> Self {
-			Self {
-				pending_batches: pending_batches.into(),
-				..Default::default()
-			}
-		}
-	}
-
-	impl StorageDeletionOutbox for FakeStorageDeletionOutbox {
-		async fn claim_storage_deletions(
-			&mut self,
-			limit: i64,
-			lease_seconds: i64,
-			max_attempts: i32,
-		) -> Result<Vec<String>, AppError> {
-			self.requested_limits.push(limit);
-			self.requested_leases.push(lease_seconds);
-			self.requested_max_attempts.push(max_attempts);
-			Ok(self.pending_batches.pop_front().unwrap_or_default())
-		}
-
-		async fn clear_storage_deletions(
-			&mut self,
-			storage_keys: &[String],
-		) -> Result<(), AppError> {
-			self.cleared_batches.push(storage_keys.to_vec());
-			Ok(())
-		}
-
-		async fn mark_storage_deletions_failed(
-			&mut self,
-			storage_keys: &[String],
-			error_message: &str,
-			retry_after_seconds: i64,
-		) -> Result<(), AppError> {
-			self.failed_batches.push((
-				storage_keys.to_vec(),
-				error_message.to_string(),
-				retry_after_seconds,
-			));
-			Ok(())
-		}
-	}
-
-	#[derive(Default)]
-	struct FakeStorageDeletionSink {
-		deleted_batches: Mutex<Vec<Vec<String>>>,
-		error_message: Option<&'static str>,
-	}
-
-	impl FakeStorageDeletionSink {
-		fn failing(error_message: &'static str) -> Self {
-			Self {
-				deleted_batches: Mutex::new(Vec::new()),
-				error_message: Some(error_message),
-			}
-		}
-
-		fn deleted_batches(&self) -> anyhow::Result<Vec<Vec<String>>> {
-			let deleted_batches = self
-				.deleted_batches
-				.lock()
-				.map_err(|_| anyhow::anyhow!("deleted batch lock is poisoned"))?;
-			Ok(deleted_batches.clone())
-		}
-	}
-
-	impl StorageDeletionSink for FakeStorageDeletionSink {
-		async fn delete_objects(
-			&self,
-			storage_keys: &[String],
-		) -> anyhow::Result<()> {
-			if let Some(error_message) = self.error_message {
-				anyhow::bail!(error_message);
-			}
-
-			let mut deleted_batches = self
-				.deleted_batches
-				.lock()
-				.map_err(|_| anyhow::anyhow!("deleted batch lock is poisoned"))?;
-			deleted_batches.push(storage_keys.to_vec());
-			Ok(())
-		}
-	}
-
-	#[tokio::test]
-	async fn drain_storage_deletion_outbox_clears_all_pending_batches() -> anyhow::Result<()> {
-		let config = ObjectLifecycleConfig::default();
-		let first_batch = storage_keys("first", config.storage_deletion_batch_size as usize);
-		let second_batch = storage_keys("second", 2);
-		let mut outbox = FakeStorageDeletionOutbox::with_pending_batches(vec![
-			first_batch.clone(),
-			second_batch.clone(),
-		]);
-		let storage = FakeStorageDeletionSink::default();
-
-		drain_storage_deletion_outbox(&mut outbox, &storage, &config).await?;
-
-		assert_eq!(
-			outbox.requested_limits,
-			vec![
-				config.storage_deletion_batch_size,
-				config.storage_deletion_batch_size,
-				config.storage_deletion_batch_size,
-			]
-		);
-		assert_eq!(
-			outbox.requested_leases,
-			vec![
-				config.storage_deletion_lease_seconds,
-				config.storage_deletion_lease_seconds,
-				config.storage_deletion_lease_seconds,
-			]
-		);
-		assert_eq!(storage.deleted_batches()?, vec![first_batch.clone(), second_batch.clone()]);
-		assert_eq!(outbox.cleared_batches, vec![first_batch, second_batch]);
-		assert!(outbox.failed_batches.is_empty());
-		assert_eq!(
-			outbox.requested_max_attempts,
-			vec![
-				config.storage_deletion_max_attempts,
-				config.storage_deletion_max_attempts,
-				config.storage_deletion_max_attempts,
-			]
-		);
-
-		Ok(())
-	}
-
-	#[tokio::test]
-	async fn drain_storage_deletion_outbox_records_storage_delete_failure() -> anyhow::Result<()> {
-		let config = ObjectLifecycleConfig::default();
-		let pending_batch = storage_keys("failed", 2);
-		let mut outbox =
-			FakeStorageDeletionOutbox::with_pending_batches(vec![pending_batch.clone()]);
-		let storage = FakeStorageDeletionSink::failing("storage delete failed");
-
-		let Err(error) = drain_storage_deletion_outbox(&mut outbox, &storage, &config).await else {
-			anyhow::bail!("storage delete failure should surface as an error");
-		};
-
-		assert!(matches!(error, AppError::Internal(_)));
-		assert!(storage.deleted_batches()?.is_empty());
-		assert!(outbox.cleared_batches.is_empty());
-		assert_eq!(
-			outbox.failed_batches,
-			vec![(
-				pending_batch,
-				"storage delete failed".to_string(),
-				config.storage_deletion_retry_seconds
-			)]
-		);
-		// Two claims: one returning the failing batch, then one returning empty after
-		// the batch is marked failed. Drain continues past failures rather than aborting
-		// on the first; the second claim drains the queue to completion.
-		assert_eq!(
-			outbox.requested_limits,
-			vec![config.storage_deletion_batch_size, config.storage_deletion_batch_size,]
-		);
-
-		Ok(())
-	}
 
 	#[test]
 	fn object_lifecycle_config_rejects_invalid_values() {
@@ -1698,13 +1467,6 @@ mod tests {
 			)
 			.is_some()
 		);
-	}
-
-	fn storage_keys(
-		prefix: &str,
-		count: usize,
-	) -> Vec<String> {
-		(0 .. count).map(|index| format!("{prefix}-{index}")).collect()
 	}
 
 	fn completed_part(

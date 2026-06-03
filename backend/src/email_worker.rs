@@ -10,7 +10,12 @@ use {
 		email::send_password_reset_email,
 		errors::AppError,
 		outbox::{
+			DrainOutcome,
+			FailedGroup,
+			OutboxProcessor,
+			OutboxQueue,
 			OutboxRetryConfig,
+			drain_outbox,
 			ensure_positive,
 		},
 		worker::MaintenanceTask,
@@ -25,7 +30,10 @@ use {
 		Deserialize,
 		Serialize,
 	},
-	std::time::Duration,
+	std::{
+		future::Future,
+		time::Duration,
+	},
 	tokio_postgres::{
 		Row,
 		Transaction,
@@ -177,7 +185,11 @@ impl MaintenanceTask for EmailWorker {
 
 	async fn run_once(&self) -> Result<(), AppError> {
 		let mut client = self.pool.get().await?;
-		drain_email_outbox(&mut client, &self.sender, &self.config).await
+		let processor = EmailOutboxProcessor {
+			sender: &self.sender,
+		};
+		let mut queue = EmailOutboxQueue(&mut client);
+		drain_outbox(&mut queue, &processor, &self.config.retry()).await
 	}
 }
 
@@ -186,11 +198,15 @@ struct SmtpEmailSender {
 	config: Config,
 }
 
+/// Sends one email. `send_password_reset` carries an explicit `Send` bound on its
+/// future so the generic `EmailOutboxProcessor` can compose it into the
+/// `Send`-bounded `OutboxProcessor::process` future (`drain_outbox` runs in a
+/// spawned worker task).
 trait EmailSender {
-	async fn send_password_reset(
+	fn send_password_reset(
 		&self,
 		payload: &PasswordResetEmailPayload,
-	) -> anyhow::Result<()>;
+	) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
 impl EmailSender for SmtpEmailSender {
@@ -202,104 +218,90 @@ impl EmailSender for SmtpEmailSender {
 	}
 }
 
-trait EmailOutbox {
-	async fn claim_email_outbox(
-		&mut self,
-		limit: i64,
-		lease_seconds: i64,
-		max_attempts: i32,
-	) -> Result<Vec<EmailOutboxMessage>, AppError>;
+/// The email outbox as an [`OutboxQueue`]. `clear`/`mark_failed` operate on the
+/// message ids; the item carries the kind and payload the processor needs.
+struct EmailOutboxQueue<'a>(&'a mut Client);
 
-	async fn clear_email_outbox(
-		&mut self,
-		ids: &[i64],
-	) -> Result<(), AppError>;
+impl OutboxQueue for EmailOutboxQueue<'_> {
+	type Item = EmailOutboxMessage;
 
-	async fn mark_email_outbox_failed(
+	async fn claim(
 		&mut self,
-		ids: &[i64],
-		error_message: &str,
-		retry_after_seconds: i64,
-	) -> Result<(), AppError>;
-}
-
-impl EmailOutbox for Client {
-	async fn claim_email_outbox(
-		&mut self,
-		limit: i64,
-		lease_seconds: i64,
-		max_attempts: i32,
+		retry: &OutboxRetryConfig,
 	) -> Result<Vec<EmailOutboxMessage>, AppError> {
 		let rows = self
-			.query(CLAIM_EMAIL_OUTBOX_QUERY, &[&limit, &lease_seconds, &max_attempts])
+			.0
+			.query(
+				CLAIM_EMAIL_OUTBOX_QUERY,
+				&[&retry.batch_size, &retry.lease_seconds, &retry.max_attempts],
+			)
 			.await
 			.context("Failed to claim email outbox rows")?;
 		rows.into_iter().map(EmailOutboxMessage::try_from).collect()
 	}
 
-	async fn clear_email_outbox(
+	async fn clear(
 		&mut self,
-		ids: &[i64],
+		messages: &[EmailOutboxMessage],
 	) -> Result<(), AppError> {
-		if ids.is_empty() {
+		if messages.is_empty() {
 			return Ok(());
 		}
-		self.execute(DELETE_EMAIL_OUTBOX_QUERY, &[&ids])
+		let ids = messages.iter().map(|message| message.id).collect::<Vec<_>>();
+		self.0
+			.execute(DELETE_EMAIL_OUTBOX_QUERY, &[&ids])
 			.await
 			.context("Failed to clear delivered email outbox rows")?;
 		Ok(())
 	}
 
-	async fn mark_email_outbox_failed(
+	async fn mark_failed(
 		&mut self,
-		ids: &[i64],
+		messages: &[EmailOutboxMessage],
 		error_message: &str,
 		retry_after_seconds: i64,
 	) -> Result<(), AppError> {
-		if ids.is_empty() {
+		if messages.is_empty() {
 			return Ok(());
 		}
-		self.execute(MARK_EMAIL_OUTBOX_FAILED_QUERY, &[&ids, &error_message, &retry_after_seconds])
+		let ids = messages.iter().map(|message| message.id).collect::<Vec<_>>();
+		self.0
+			.execute(MARK_EMAIL_OUTBOX_FAILED_QUERY, &[&ids, &error_message, &retry_after_seconds])
 			.await
 			.context("Failed to record email outbox delivery failure")?;
 		Ok(())
 	}
 }
 
-async fn drain_email_outbox(
-	outbox: &mut impl EmailOutbox,
-	sender: &impl EmailSender,
-	config: &EmailOutboxConfig,
-) -> Result<(), AppError> {
-	let mut first_error: Option<AppError> = None;
-	loop {
-		let messages = outbox
-			.claim_email_outbox(config.batch_size, config.lease_seconds, config.max_attempts)
-			.await?;
+/// Sends each claimed message independently, so one failed send does not fail the
+/// rest of the batch: successes clear, and each failure becomes its own
+/// `FailedGroup` to be marked for retry.
+struct EmailOutboxProcessor<'a, S> {
+	sender: &'a S,
+}
 
-		if messages.is_empty() {
-			break;
-		}
+impl<S: EmailSender + Sync> OutboxProcessor for EmailOutboxProcessor<'_, S> {
+	type Item = EmailOutboxMessage;
 
+	async fn process(
+		&self,
+		messages: Vec<EmailOutboxMessage>,
+	) -> DrainOutcome<EmailOutboxMessage> {
+		let mut cleared = Vec::new();
+		let mut failed = Vec::new();
 		for message in messages {
-			if let Err(error) = send_email_message(sender, &message).await {
-				let error_message = error.to_string();
-				outbox
-					.mark_email_outbox_failed(&[message.id], &error_message, config.retry_seconds)
-					.await?;
-				if first_error.is_none() {
-					first_error = Some(AppError::Internal(error));
-				}
-				continue;
+			match send_email_message(self.sender, &message).await {
+				Ok(()) => cleared.push(message),
+				Err(error) => failed.push(FailedGroup {
+					items: vec![message],
+					error,
+				}),
 			}
-
-			outbox.clear_email_outbox(&[message.id]).await?;
 		}
-	}
-
-	match first_error {
-		Some(error) => Err(error),
-		None => Ok(()),
+		DrainOutcome {
+			cleared,
+			failed,
+		}
 	}
 }
 
@@ -321,55 +323,15 @@ async fn send_email_message(
 mod tests {
 	use {
 		super::{
-			EmailOutbox,
-			EmailOutboxConfig,
 			EmailOutboxMessage,
+			EmailOutboxProcessor,
 			EmailSender,
 			PASSWORD_RESET_EMAIL_KIND,
 			PasswordResetEmailPayload,
-			drain_email_outbox,
 		},
+		crate::outbox::OutboxProcessor,
 		std::sync::Mutex,
 	};
-
-	#[derive(Default)]
-	struct FakeOutbox {
-		claims: Vec<Vec<EmailOutboxMessage>>,
-		cleared: Vec<i64>,
-		failed: Vec<(Vec<i64>, String, i64)>,
-	}
-
-	impl EmailOutbox for FakeOutbox {
-		async fn claim_email_outbox(
-			&mut self,
-			_limit: i64,
-			_lease_seconds: i64,
-			_max_attempts: i32,
-		) -> Result<Vec<EmailOutboxMessage>, crate::errors::AppError> {
-			if self.claims.is_empty() {
-				return Ok(Vec::new());
-			}
-			Ok(self.claims.remove(0))
-		}
-
-		async fn clear_email_outbox(
-			&mut self,
-			ids: &[i64],
-		) -> Result<(), crate::errors::AppError> {
-			self.cleared.extend_from_slice(ids);
-			Ok(())
-		}
-
-		async fn mark_email_outbox_failed(
-			&mut self,
-			ids: &[i64],
-			error_message: &str,
-			retry_after_seconds: i64,
-		) -> Result<(), crate::errors::AppError> {
-			self.failed.push((ids.to_vec(), error_message.to_string(), retry_after_seconds));
-			Ok(())
-		}
-	}
 
 	#[derive(Default)]
 	struct FakeEmailSender {
@@ -402,60 +364,56 @@ mod tests {
 		}
 	}
 
+	fn password_reset_message(id: i64) -> anyhow::Result<EmailOutboxMessage> {
+		Ok(EmailOutboxMessage {
+			id,
+			kind: PASSWORD_RESET_EMAIL_KIND.to_string(),
+			payload: serde_json::to_string(&PasswordResetEmailPayload {
+				email: "person@example.test".to_string(),
+				token: "reset-token".to_string(),
+			})?,
+		})
+	}
+
 	#[tokio::test]
-	async fn drain_email_outbox_sends_and_clears_password_reset_rows() -> anyhow::Result<()> {
-		let payload = PasswordResetEmailPayload {
-			email: "person@example.test".to_string(),
-			token: "reset-token".to_string(),
-		};
-		let mut outbox = FakeOutbox {
-			claims: vec![vec![EmailOutboxMessage {
-				id: 42,
-				kind: PASSWORD_RESET_EMAIL_KIND.to_string(),
-				payload: serde_json::to_string(&payload)?,
-			}]],
-			..FakeOutbox::default()
-		};
+	async fn email_processor_sends_and_clears_password_reset_rows() -> anyhow::Result<()> {
 		let sender = FakeEmailSender::default();
+		let processor = EmailOutboxProcessor {
+			sender: &sender,
+		};
 
-		drain_email_outbox(&mut outbox, &sender, &EmailOutboxConfig::default()).await?;
+		let outcome = processor.process(vec![password_reset_message(42)?]).await;
 
-		assert_eq!(sender.sent()?, vec![payload]);
-		assert_eq!(outbox.cleared, vec![42]);
-		assert!(outbox.failed.is_empty());
+		assert_eq!(outcome.cleared.iter().map(|message| message.id).collect::<Vec<_>>(), vec![42]);
+		assert!(outcome.failed.is_empty());
+		assert_eq!(
+			sender.sent()?,
+			vec![PasswordResetEmailPayload {
+				email: "person@example.test".to_string(),
+				token: "reset-token".to_string(),
+			}]
+		);
 		Ok(())
 	}
 
 	#[tokio::test]
-	async fn drain_email_outbox_records_send_failures() -> anyhow::Result<()> {
-		let payload = PasswordResetEmailPayload {
-			email: "person@example.test".to_string(),
-			token: "reset-token".to_string(),
-		};
-		let mut outbox = FakeOutbox {
-			claims: vec![vec![EmailOutboxMessage {
-				id: 42,
-				kind: PASSWORD_RESET_EMAIL_KIND.to_string(),
-				payload: serde_json::to_string(&payload)?,
-			}]],
-			..FakeOutbox::default()
-		};
+	async fn email_processor_isolates_send_failures_per_message() -> anyhow::Result<()> {
 		let sender = FakeEmailSender {
 			fail: true,
 			..FakeEmailSender::default()
 		};
-		let config = EmailOutboxConfig {
-			retry_seconds: 17,
-			..EmailOutboxConfig::default()
+		let processor = EmailOutboxProcessor {
+			sender: &sender,
 		};
 
-		let Err(error) = drain_email_outbox(&mut outbox, &sender, &config).await else {
-			anyhow::bail!("drain unexpectedly succeeded");
-		};
+		let outcome = processor.process(vec![password_reset_message(42)?]).await;
 
-		assert!(error.to_string().contains("smtp failed"));
-		assert!(outbox.cleared.is_empty());
-		assert_eq!(outbox.failed, vec![(vec![42], "smtp failed".to_string(), 17)]);
+		assert!(outcome.cleared.is_empty());
+		let [group] = outcome.failed.as_slice() else {
+			anyhow::bail!("expected exactly one failed group");
+		};
+		assert_eq!(group.items.iter().map(|message| message.id).collect::<Vec<_>>(), vec![42]);
+		assert!(group.error.to_string().contains("smtp failed"));
 		Ok(())
 	}
 }
