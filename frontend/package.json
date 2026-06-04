@@ -3,7 +3,7 @@
 		"e2e:typecheck": "tsc --noEmit --project tsconfig.json"
 	},
 	"devDependencies": {
-		"@playwright/test": "1.59.1",
+		"@playwright/test": "1.60.0",
 		"@types/node": "^25.9.1",
 		"@unocss/cli": "66.7.0",
 		"@unocss/preset-wind4": "^66.7.0",
