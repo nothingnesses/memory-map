@@ -230,15 +230,21 @@ impl StorageClient {
 		Ok(self.head_object(storage_key).await?.content_type)
 	}
 
+	/// Presigns a GET for `storage_key`. When `content_disposition` is set it is
+	/// signed into the URL as `response-content-disposition`, so the storage
+	/// response carries that header (used to force `attachment` for script-capable
+	/// types like SVG; see the object resolver).
 	pub async fn presigned_get_url(
 		&self,
 		storage_key: &str,
+		content_disposition: Option<&str>,
 	) -> anyhow::Result<String> {
 		let request = self
 			.presigning_client
 			.get_object()
 			.bucket(&self.bucket_name)
 			.key(storage_key)
+			.set_response_content_disposition(content_disposition.map(str::to_string))
 			.presigned(self.presigning_config.clone())
 			.await
 			.context("Failed to generate S3 presigned GET URL")?;

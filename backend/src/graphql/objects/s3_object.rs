@@ -102,6 +102,19 @@ where
 	serializer.collect_str(value)
 }
 
+/// Whether objects of this content type must be served as a download rather than
+/// rendered inline.
+///
+/// Script-capable types (currently only SVG) are forced to
+/// `Content-Disposition: attachment` on their presigned GET URL, so a direct
+/// top-level navigation downloads the file instead of executing embedded script
+/// in the storage origin. In-app `<img>`/`<video>` embedding ignores the header,
+/// so display is unaffected. A new script-capable type cannot enter the system
+/// without an `ALLOWED_MIME_TYPES` edit, which is the checkpoint to extend this.
+fn content_type_requires_attachment(content_type: &str) -> bool {
+	matches!(content_type, "image/svg+xml")
+}
+
 #[derive(Debug, Serialize)]
 pub struct S3Object {
 	#[serde(serialize_with = "serialize_i64_as_string")]
@@ -257,15 +270,30 @@ impl S3Object {
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
+		let content_disposition =
+			content_type_requires_attachment(&self.content_type).then_some("attachment");
 		wrapper
 			.shared_state()
 			.storage
-			.presigned_get_url(&self.storage_key)
+			.presigned_get_url(&self.storage_key, content_disposition)
 			.await
 			.map_err(AppError::graphql)
 	}
 
 	async fn content_type(&self) -> String {
 		self.content_type.clone()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::content_type_requires_attachment;
+
+	#[test]
+	fn only_script_capable_types_force_attachment() {
+		assert!(content_type_requires_attachment("image/svg+xml"));
+		assert!(!content_type_requires_attachment("image/png"));
+		assert!(!content_type_requires_attachment("video/mp4"));
+		assert!(!content_type_requires_attachment("audio/mpeg"));
 	}
 }

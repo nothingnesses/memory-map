@@ -53,9 +53,21 @@ async fn storage_roundtrip_against_configured_service() -> anyhow::Result<()> {
 
 	assert_eq!(storage.object_content_type(&first_object).await?, "text/plain");
 
-	let url = storage.presigned_get_url(&first_object).await?;
+	let url = storage.presigned_get_url(&first_object, None).await?;
 	let body = reqwest::get(url).await?.error_for_status()?.bytes().await?;
 	assert_eq!(body.as_ref(), first_body);
+
+	// A signed response-content-disposition must round-trip through storage so the
+	// object resolver can force `attachment` for script-capable types (e.g. SVG).
+	let attachment_url = storage.presigned_get_url(&first_object, Some("attachment")).await?;
+	let attachment_response = reqwest::get(attachment_url).await?.error_for_status()?;
+	assert_eq!(
+		attachment_response
+			.headers()
+			.get(reqwest::header::CONTENT_DISPOSITION)
+			.and_then(|value| value.to_str().ok()),
+		Some("attachment")
+	);
 
 	storage.delete_objects(&[first_object.clone(), second_object.clone()]).await?;
 	assert!(storage.object_content_type(&first_object).await.is_err());
