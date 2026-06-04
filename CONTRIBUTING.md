@@ -30,7 +30,8 @@ just deny            # Check dependency licenses and advisories
 just doc             # Build docs and run ASCII/link checks
 just test            # Run tests
 just frontend-build  # Build the Trunk frontend
-just verify          # Run the full verification suite
+just verify-fast     # Fast checks; skips the service-backed suites
+just verify          # Full suite, incl. service-backed integration and e2e
 ```
 
 ### Filtered Command Output
@@ -64,6 +65,11 @@ Before opening a pull request, run:
 ```sh
 just verify
 ```
+
+This runs the full suite, including the service-backed storage,
+backend-integration, and e2e tests, which stand up the local Postgres + RustFS
+service graph and take several minutes. For faster iteration while developing,
+`just verify-fast` runs everything except those service-backed suites.
 
 Include tests for behavior changes. Avoid public API or user-visible behavior
 changes unless the issue or pull request explicitly calls for them.

@@ -18,6 +18,7 @@ just deny
 just doc
 just test
 just frontend-build
+just verify-fast
 just verify
 ```
 
@@ -45,10 +46,13 @@ full diffs, or broad command output unless explicitly requested.
 
 ## Project Shape
 
-- `backend/` contains the Axum, GraphQL, PostgreSQL, MinIO, and Casbin backend.
+- `backend/` contains the Axum, GraphQL, PostgreSQL, RustFS, and Casbin backend.
 - `frontend/` contains the Leptos CSR application built by Trunk.
 - `shared/` contains Rust code shared by the workspace crates.
 - `devenv/` contains the Nix development environment and service definitions.
+- `docs/` contains long-form documentation (e.g. `deployment.md`).
+- `scripts/` contains shared shell helpers used by `justfile` recipes
+  (e.g. `e2e-env.sh`, `service-graph.sh`).
 
 ## Editing Guidelines
 
@@ -63,5 +67,8 @@ full diffs, or broad command output unless explicitly requested.
 ## Verification
 
 After changes, run the narrowest useful command first, then run `just verify`
-before final handoff when feasible. If a command fails because dependencies or
-network access are unavailable, report that directly.
+before final handoff when feasible. `just verify` runs the full suite, including
+the service-backed storage, backend-integration, and e2e tests that stand up the
+local Postgres + RustFS service graph; use `just verify-fast` for a quick gate
+when the service graph is unavailable or for fast iteration. If a command fails
+because dependencies or network access are unavailable, report that directly.

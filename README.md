@@ -136,7 +136,9 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
   `BACKEND_TEST_REQUIRE_SERVICE=true` to fail instead.
 - `just frontend-build`: Build the frontend with Trunk using the existing
   `frontend/public/config.json` runtime config.
-- `just verify`: Run the full verification suite before submitting a PR.
+- `just verify-fast`: Run every check that does not need the local service graph.
+- `just verify`: Run the full verification suite (adds the service-backed storage,
+  backend-integration, and e2e tests) before submitting a PR.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
 - `just scan-hardcoded`: Scan the codebase for hardcoded secrets or values.
 
@@ -164,17 +166,23 @@ and a deployment-supplied frontend `/config.json`. See
 
 ```
 memory-map/
-|-- .direnv/         # Direnv environment cache
-|-- backend/         # Axum and GraphQL backend
-|-- data/            # Database and storage volumes
-|-- devenv/          # Nix development environment
-|-- frontend/        # Leptos and UnoCSS frontend
-|-- shared/          # Shared utilities and types
-|-- .env.example     # Environment configuration template
-|-- justfile         # Development commands
-|-- Cargo.toml       # Rust workspace configuration
-|-- Cargo.lock       # Rust dependency lock file
-`-- README.md        # Project documentation
+|-- backend/             # Axum and GraphQL backend
+|-- data/                # Database and storage volumes
+|-- devenv/              # Nix development environment
+|-- docs/                # Long-form documentation
+|-- frontend/            # Leptos and UnoCSS frontend
+|-- screenshots/         # README image assets
+|-- scripts/             # Shared shell helpers for justfile recipes
+|-- shared/              # Shared utilities and types
+|-- .env.example         # Environment configuration template
+|-- AGENTS.md            # AI coding assistant guidance
+|-- Cargo.lock           # Rust dependency lock file
+|-- Cargo.toml           # Rust workspace configuration
+|-- config.example.toml  # Optional TOML configuration template
+|-- CONTRIBUTING.md      # Contributor documentation
+|-- justfile             # Development commands
+|-- LICENSE              # Project license
+`-- README.md            # Project documentation
 ```
 
 ## Contributing
@@ -193,6 +201,10 @@ This command will:
 - Generate documentation
 - Run tests
 - Build the frontend
+- Run the service-backed storage, backend-integration, and Playwright e2e suites
+  against the local Postgres + RustFS service graph
+
+For faster iteration that skips the service-backed suites, use `just verify-fast`.
 
 ## License
 

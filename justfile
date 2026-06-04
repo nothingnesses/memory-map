@@ -328,7 +328,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|frontend-e2e-typecheck|shellcheck|storage-ci|storage-test|test|verify) ;;
+		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|frontend-e2e-typecheck|shellcheck|storage-ci|storage-test|test|verify|verify-fast) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2
@@ -373,8 +373,11 @@ shellcheck:
 scan-hardcoded:
 	./scripts/scan_hardcoded.sh
 
-# Verify: fmt, shell scripts, check, clippy, deny, doc, test, frontend build.
-verify:
+# Fast verification: every check that does not need the local service graph
+# (fmt, shell scripts, check, clippy, deny, doc, test, frontend build). The
+# service-skipping unit/integration tests run here too. Use this for the quick
+# inner loop; use `verify` for the full suite.
+verify-fast:
 	just fmt
 	just shellcheck
 	just check
@@ -385,3 +388,14 @@ verify:
 	just frontend-e2e-typecheck
 	just frontend-config
 	just frontend-build
+
+# Full verification: everything `verify-fast` runs, then the service-backed
+# suites (storage integration, backend integration, and Playwright e2e), each
+# of which stands up the local Postgres + RustFS service graph. Runs serially
+# and is slow; CI runs these as parallel jobs instead. Run this before opening a
+# pull request to validate everything locally in one command.
+verify:
+	just verify-fast
+	just storage-ci
+	just backend-integration
+	just e2e
