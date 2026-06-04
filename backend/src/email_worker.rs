@@ -135,6 +135,21 @@ impl TryFrom<Row> for EmailOutboxMessage {
 	}
 }
 
+/// Enqueues a password-reset email for asynchronous delivery by the outbox
+/// worker.
+///
+/// The payload deliberately carries the plaintext reset `token`: an outbox must
+/// hold everything the deferred side effect needs, and the email has to contain
+/// the usable token. This is a conscious trade-off, not an oversight. The
+/// exposure is small and bounded: the token of record is stored only as a hash
+/// in `password_reset_tokens`, the token expires in ten minutes, and this row is
+/// deleted as soon as the worker sends the email. Anyone able to read
+/// `email_outbox` already has the database access that defeats the auth system.
+/// If the threat model later admits an untrusted reader of the outbox (a read
+/// replica or a log pipeline), encrypt this payload at rest before considering
+/// the more invasive option of minting the token in the worker, which would
+/// spread the rate-limit and single-active-token invariant across request and
+/// worker paths.
 pub async fn enqueue_password_reset_email(
 	transaction: &Transaction<'_>,
 	email: &str,

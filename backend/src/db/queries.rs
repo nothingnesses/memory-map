@@ -10,6 +10,36 @@ macro_rules! object_returning_columns {
 	};
 }
 
+/// The `ObjectUploadSession` column projection, single-sourced because four
+/// queries (insert RETURNING, the two per-user SELECTs, and the expired-session
+/// claim RETURNING) must all match `ObjectUploadSession::try_from`'s by-name
+/// reads. Only the seven columns that `try_from` decodes are listed; the
+/// `cleanup_*`/`created_at` bookkeeping columns are read in WHERE/SET clauses but
+/// never projected into the struct. `$prefix` disambiguates `storage_key` (and
+/// the rest) in the JOIN queries, where the session table is aliased `session.`;
+/// the insert RETURNING passes an empty prefix. Expands to a string literal so it
+/// composes into the query consts via `concat!`.
+macro_rules! upload_session_columns {
+	($prefix:literal) => {
+		concat!(
+			$prefix,
+			"object_id, ",
+			$prefix,
+			"storage_key, ",
+			$prefix,
+			"upload_id, ",
+			$prefix,
+			"content_type, ",
+			$prefix,
+			"file_size, ",
+			$prefix,
+			"part_size_bytes, ",
+			$prefix,
+			"expires_at"
+		)
+	};
+}
+
 pub const MARK_OBJECTS_DELETE_PENDING_QUERY: &str = concat!(
 	"UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()
@@ -27,7 +57,8 @@ RETURNING ",
 	";"
 );
 
-pub const INSERT_OBJECT_UPLOAD_SESSION_QUERY: &str = "INSERT INTO object_upload_sessions (
+pub const INSERT_OBJECT_UPLOAD_SESSION_QUERY: &str = concat!(
+	"INSERT INTO object_upload_sessions (
 	object_id,
 	storage_key,
 	upload_id,
@@ -38,63 +69,38 @@ pub const INSERT_OBJECT_UPLOAD_SESSION_QUERY: &str = "INSERT INTO object_upload_
 	cleanup_next_attempt_at
 )
 VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::BIGINT * interval '1 second'), now() + ($7::BIGINT * interval '1 second'))
-RETURNING
-	object_id,
-	storage_key,
-	upload_id,
-	content_type,
-	file_size,
-	part_size_bytes,
-	expires_at,
-	cleanup_attempts,
-	cleanup_last_attempt_at,
-	cleanup_next_attempt_at,
-	cleanup_last_error,
-	created_at";
+RETURNING ",
+	upload_session_columns!("")
+);
 
-pub const SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = "SELECT
-	session.object_id,
-	session.storage_key,
-	session.upload_id,
-	session.content_type,
-	session.file_size,
-	session.part_size_bytes,
-	session.expires_at,
-	session.cleanup_attempts,
-	session.cleanup_last_attempt_at,
-	session.cleanup_next_attempt_at,
-	session.cleanup_last_error,
-	session.created_at
+pub const SELECT_ACTIVE_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = concat!(
+	"SELECT ",
+	upload_session_columns!("session."),
+	"
 FROM object_upload_sessions session
 JOIN objects object ON object.id = session.object_id
 WHERE session.object_id = $1
 	AND object.user_id = $2
 	AND object.storage_state = 'pending_upload'
-	AND session.expires_at > now()";
+	AND session.expires_at > now()"
+);
 
-pub const SELECT_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = "SELECT
-	session.object_id,
-	session.storage_key,
-	session.upload_id,
-	session.content_type,
-	session.file_size,
-	session.part_size_bytes,
-	session.expires_at,
-	session.cleanup_attempts,
-	session.cleanup_last_attempt_at,
-	session.cleanup_next_attempt_at,
-	session.cleanup_last_error,
-	session.created_at
+pub const SELECT_OBJECT_UPLOAD_SESSION_FOR_USER_QUERY: &str = concat!(
+	"SELECT ",
+	upload_session_columns!("session."),
+	"
 FROM object_upload_sessions session
 JOIN objects object ON object.id = session.object_id
 WHERE session.object_id = $1
 	AND object.user_id = $2
-	AND object.storage_state = 'pending_upload'";
+	AND object.storage_state = 'pending_upload'"
+);
 
 /// Claims up to `$1` expired upload sessions whose retry/lease time has arrived
 /// and which still have retry budget left. Rows past `$3::INTEGER` attempts are
 /// parked with their last error for operator triage.
-pub const CLAIM_EXPIRED_OBJECT_UPLOAD_SESSIONS_QUERY: &str = "WITH claimed AS MATERIALIZED (
+pub const CLAIM_EXPIRED_OBJECT_UPLOAD_SESSIONS_QUERY: &str = concat!(
+	"WITH claimed AS MATERIALIZED (
 	SELECT session.object_id
 	FROM object_upload_sessions session
 	JOIN objects object ON object.id = session.object_id
@@ -113,19 +119,9 @@ SET cleanup_attempts = cleanup_attempts + 1,
 	cleanup_last_error = NULL
 FROM claimed
 WHERE session.object_id = claimed.object_id
-RETURNING
-	session.object_id,
-	session.storage_key,
-	session.upload_id,
-	session.content_type,
-	session.file_size,
-	session.part_size_bytes,
-	session.expires_at,
-	session.cleanup_attempts,
-	session.cleanup_last_attempt_at,
-	session.cleanup_next_attempt_at,
-	session.cleanup_last_error,
-	session.created_at";
+RETURNING ",
+	upload_session_columns!("session.")
+);
 
 pub const DELETE_OBJECT_UPLOAD_SESSION_QUERY: &str =
 	"DELETE FROM object_upload_sessions WHERE object_id = $1";
@@ -172,6 +168,12 @@ pub const MARK_OBJECT_UPLOAD_SESSION_CLEANUP_FAILED_QUERY: &str = "UPDATE object
 SET cleanup_next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
 	cleanup_last_error = $2
 WHERE object_id = $1";
+
+/// Counts upload-session cleanups that have exhausted their retry budget
+/// (`cleanup_attempts >= $1`) and so will never be reclaimed by the cleanup
+/// claim. Used to surface a parked backlog to operators.
+pub const COUNT_PARKED_OBJECT_UPLOAD_SESSIONS_QUERY: &str =
+	"SELECT COUNT(*) FROM object_upload_sessions WHERE cleanup_attempts >= $1::INTEGER";
 
 pub const MARK_UPLOAD_DELETE_PENDING_QUERY: &str = concat!(
 	"UPDATE objects
@@ -306,6 +308,12 @@ pub const MARK_OBJECT_STORAGE_DELETIONS_FAILED_QUERY: &str = "UPDATE object_stor
 SET next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
 	last_error = $2
 WHERE storage_key = ANY($1)";
+
+/// Counts storage deletions that have exhausted their retry budget
+/// (`attempts >= $1`) and so will never be reclaimed by the deletion claim. Used
+/// to surface a parked backlog to operators.
+pub const COUNT_PARKED_OBJECT_STORAGE_DELETIONS_QUERY: &str =
+	"SELECT COUNT(*) FROM object_storage_deletions WHERE attempts >= $1::INTEGER";
 
 pub const SELECT_USER_COUNT_BY_EMAIL_QUERY: &str = "SELECT COUNT(*) FROM users WHERE email = $1";
 

@@ -235,6 +235,23 @@ queue row remains for a later retry instead of losing track of the blob cleanup
 work. Pending rows without upload sessions are also moved into the same cleanup
 path after the configured timeout.
 
+Incomplete multipart uploads: the backend reconciles expired upload sessions and
+aborts their multipart uploads, but a cleanup that fails permanently, after
+exhausting its retry budget, is parked for operator triage and its multipart
+upload is not retried. Configure a bucket lifecycle rule that aborts incomplete
+multipart uploads, for example after one day, as a backstop so abandoned upload
+parts cannot accumulate storage cost. The backend logs a warning naming the
+parked-row counts on each maintenance pass while a backlog exists.
+
+Storage origin isolation: serve object storage from an origin distinct from the
+application origin. The application embeds object media only through `<img>` and
+`<video>` and forces `Content-Disposition: attachment` on presigned GET URLs for
+script-capable types such as SVG, so a direct navigation downloads rather than
+renders them. A distinct storage origin (set
+`MEMORY_MAP__STORAGE__PUBLIC_ENDPOINT_URL` when the storage endpoint would
+otherwise share the application origin) is defense in depth that keeps any
+content served by the object store away from application cookies.
+
 ## Reverse Proxy And TLS
 
 Serve the frontend over HTTPS in production.
