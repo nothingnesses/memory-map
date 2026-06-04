@@ -199,6 +199,9 @@ impl StorageClient {
 		})
 	}
 
+	/// Uploads an object directly. Now exercised only by the integration tests
+	/// (the production upload path is presigned multipart, driven by the client);
+	/// kept as a public storage primitive and test seam.
 	pub async fn upload_object(
 		&self,
 		storage_key: &str,
@@ -217,6 +220,9 @@ impl StorageClient {
 		Ok(())
 	}
 
+	/// Reads a stored object's content type. Now exercised only by the integration
+	/// tests (production reads metadata via [`Self::head_object`]); kept as a public
+	/// storage primitive and test seam.
 	pub async fn object_content_type(
 		&self,
 		storage_key: &str,
