@@ -235,14 +235,14 @@ impl ObjectLifecycleConfig {
 		if file_size_bytes > self.upload_max_file_size_bytes {
 			anyhow::bail!("file_size_bytes must be at most {}", self.upload_max_file_size_bytes);
 		}
-		let part_count = ((file_size_bytes - 1) / self.upload_part_size_bytes) + 1;
-		if part_count > i64::from(self.upload_max_part_count) {
+		let count = part_count(file_size_bytes, self.upload_part_size_bytes);
+		if count > i64::from(self.upload_max_part_count) {
 			anyhow::bail!(
-				"file_size_bytes requires {part_count} parts, exceeding upload_max_part_count {}",
+				"file_size_bytes requires {count} parts, exceeding upload_max_part_count {}",
 				self.upload_max_part_count
 			);
 		}
-		i32::try_from(part_count).context("upload part count exceeds i32 range")
+		i32::try_from(count).context("upload part count exceeds i32 range")
 	}
 
 	pub fn upload_session_expected_part_size_bytes(
@@ -254,8 +254,7 @@ impl ObjectLifecycleConfig {
 		if !(1 ..= total_parts).contains(&part_number) {
 			anyhow::bail!("part_number must be between 1 and {total_parts}");
 		}
-		let part_start = i64::from(part_number - 1) * self.upload_part_size_bytes;
-		Ok(self.upload_part_size_bytes.min(file_size_bytes - part_start))
+		Ok(part_length(file_size_bytes, self.upload_part_size_bytes, part_number))
 	}
 
 	/// Returns Self if `validate` succeeds; convenient for builder-style construction.
@@ -562,7 +561,7 @@ impl<'a> ObjectLifecycleService<'a> {
 		let drain = self.drain_storage_deletions().await;
 
 		match &reconcile {
-			Ok(reconciled_uploads) if *reconciled_uploads > 0 => tracing::warn!(
+			Ok(reconciled_uploads) if *reconciled_uploads > 0 => tracing::info!(
 				count = reconciled_uploads,
 				"Reconciled expired object upload sessions"
 			),
@@ -573,7 +572,7 @@ impl<'a> ObjectLifecycleService<'a> {
 			),
 		}
 		match &reap {
-			Ok(stale_uploads) if !stale_uploads.is_empty() => tracing::warn!(
+			Ok(stale_uploads) if !stale_uploads.is_empty() => tracing::info!(
 				count = stale_uploads.len(),
 				"Marked stale pending uploads for storage cleanup"
 			),
@@ -786,7 +785,7 @@ impl<'a> ObjectLifecycleService<'a> {
 			.query_opt(SELECT_AVAILABLE_OBJECT_FOR_USER_QUERY, &[&object_id, &user_id])
 			.await
 			.context("Failed to load available object")?
-			.map(s3_object_from_row)
+			.map(S3Object::try_from)
 			.transpose()
 	}
 
@@ -826,7 +825,7 @@ impl<'a> ObjectLifecycleService<'a> {
 			.await
 			.context("Failed to delete finalized object upload session")?;
 		transaction.commit().await?;
-		s3_object_from_row(finalized)
+		S3Object::try_from(finalized)
 	}
 
 	async fn delete_pending_upload_metadata(
@@ -863,7 +862,7 @@ impl<'a> ObjectLifecycleService<'a> {
 		session: &ObjectUploadSession,
 	) -> Result<(), AppError> {
 		let transaction = self.db_client.transaction().await?;
-		let object = s3_object_from_row(
+		let object = S3Object::try_from(
 			transaction
 				.query_one(
 					MARK_UPLOAD_DELETE_PENDING_QUERY,
@@ -1131,15 +1130,41 @@ fn validate_part_numbers(
 	Ok(())
 }
 
+/// Number of equal parts (the last possibly shorter) needed to cover
+/// `file_size_bytes` at `part_size_bytes`. Both must be positive.
+///
+/// The two callers layer their own part-count cap on top, and the caps differ
+/// intentionally: the config enforces the operator's `upload_max_part_count` at
+/// session creation, while the session-based path enforces the immutable S3
+/// limit at completion (the session was already validated against the config).
+fn part_count(
+	file_size_bytes: i64,
+	part_size_bytes: i64,
+) -> i64 {
+	((file_size_bytes - 1) / part_size_bytes) + 1
+}
+
+/// Byte length of the 1-based `part_number` for a `file_size_bytes` upload split
+/// at `part_size_bytes` (the final part is whatever remains). `part_number` must
+/// be in range.
+fn part_length(
+	file_size_bytes: i64,
+	part_size_bytes: i64,
+	part_number: i32,
+) -> i64 {
+	let part_start = i64::from(part_number - 1) * part_size_bytes;
+	part_size_bytes.min(file_size_bytes - part_start)
+}
+
 fn upload_session_total_parts(session: &ObjectUploadSession) -> Result<i32, AppError> {
-	let part_count = ((session.file_size_bytes - 1) / session.part_size_bytes) + 1;
-	if part_count > i64::from(ObjectLifecycleConfig::S3_MAX_MULTIPART_PART_COUNT) {
+	let count = part_count(session.file_size_bytes, session.part_size_bytes);
+	if count > i64::from(ObjectLifecycleConfig::S3_MAX_MULTIPART_PART_COUNT) {
 		return Err(AppError::Validation(format!(
-			"upload session requires {part_count} parts, exceeding S3 multipart limit {}",
+			"upload session requires {count} parts, exceeding S3 multipart limit {}",
 			ObjectLifecycleConfig::S3_MAX_MULTIPART_PART_COUNT
 		)));
 	}
-	i32::try_from(part_count)
+	i32::try_from(count)
 		.context("upload session part count exceeds i32 range")
 		.map_err(AppError::from)
 }
@@ -1154,8 +1179,7 @@ fn upload_session_part_size(
 			"part_number must be between 1 and {total_parts}"
 		)));
 	}
-	let part_start = i64::from(part_number - 1) * session.part_size_bytes;
-	Ok(session.part_size_bytes.min(session.file_size_bytes - part_start))
+	Ok(part_length(session.file_size_bytes, session.part_size_bytes, part_number))
 }
 
 fn validate_completed_parts(
@@ -1224,10 +1248,6 @@ async fn enqueue_storage_deletions(
 
 fn collect_s3_objects(rows: Vec<Row>) -> Result<Vec<S3Object>, AppError> {
 	rows.into_iter().map(S3Object::try_from).collect()
-}
-
-fn s3_object_from_row(row: Row) -> Result<S3Object, AppError> {
-	S3Object::try_from(row)
 }
 
 async fn replace_allowed_users(
