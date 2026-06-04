@@ -525,6 +525,40 @@ mod tests {
 	}
 
 	#[test]
+	fn env_example_deserializes_into_config() {
+		// The `.env.example` counterpart of the TOML drift guard above. The
+		// `MEMORY_MAP__*` pairs are fed through the same `config::Environment`
+		// source `Config::load` uses (same prefix and `__` separators), so a
+		// renamed or removed key, or a new required field missing from the example,
+		// fails to deserialize here. Non-prefixed entries (e.g. RUST_LOG,
+		// BUILD_MODE) are ignored by the prefix filter. Only the structural mapping
+		// is checked; validation is not run because the placeholder secrets are not
+		// meant to pass `validate`.
+		let source: std::collections::HashMap<String, String> = include_str!("../../.env.example")
+			.lines()
+			.filter_map(|line| {
+				let line = line.trim();
+				if line.is_empty() || line.starts_with('#') {
+					return None;
+				}
+				let (key, value) = line.split_once('=')?;
+				Some((key.trim().to_string(), value.trim().trim_matches('"').to_string()))
+			})
+			.collect();
+
+		let parsed = config::Config::builder()
+			.add_source(
+				config::Environment::with_prefix("MEMORY_MAP")
+					.prefix_separator("__")
+					.separator("__")
+					.source(Some(source)),
+			)
+			.build()
+			.and_then(|raw| raw.try_deserialize::<Config>());
+		assert!(parsed.is_ok(), ".env.example should map onto Config: {parsed:?}");
+	}
+
+	#[test]
 	fn parse_latitude_accepts_boundary_values() {
 		assert!(parse_latitude(-90.0).is_ok());
 		assert!(parse_latitude(0.0).is_ok());
