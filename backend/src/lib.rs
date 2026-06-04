@@ -53,7 +53,10 @@ pub mod worker;
 
 use {
 	email_worker::EmailOutboxConfig,
-	object_lifecycle::ObjectLifecycleConfig,
+	object_lifecycle::{
+		ObjectLifecycleConfig,
+		ObjectLifecycleService,
+	},
 	serde::Deserialize,
 	storage::{
 		StorageClient,
@@ -373,6 +376,20 @@ impl<'a> ContextWrapper<'a> {
 
 	pub fn storage_client(&self) -> &StorageClient {
 		&self.state.storage
+	}
+
+	/// Builds an [`ObjectLifecycleService`] borrowing this request's storage client
+	/// and lifecycle config, over the caller-provided database client. Centralises
+	/// the wiring (and the config clone) the object-lifecycle mutations all repeat.
+	pub fn object_lifecycle_service<'c>(
+		&'c self,
+		client: &'c mut Object<Manager>,
+	) -> ObjectLifecycleService<'c> {
+		ObjectLifecycleService::new(
+			client,
+			&self.state.storage,
+			self.state.config.object_lifecycle.clone(),
+		)
 	}
 
 	pub fn caller_identity(&self) -> Result<&CallerIdentity, GraphQLError> {

@@ -38,10 +38,7 @@ use {
 				User,
 			},
 		},
-		object_lifecycle::{
-			ObjectLifecycleService,
-			ObjectUploadSessionCreate,
-		},
+		object_lifecycle::ObjectUploadSessionCreate,
 		storage::CompletedUploadPart,
 	},
 	anyhow::Context as AnyhowContext,
@@ -151,27 +148,22 @@ impl Mutation {
 	) -> Result<CreatedObjectUploadSession, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
 		let user_id = wrapper.user_id()?;
-		let storage = wrapper.storage_client();
 		let mut client = wrapper.db_client().await?;
-		let state = wrapper.shared_state();
 
-		let session = ObjectLifecycleService::new(
-			&mut client,
-			storage,
-			state.config.object_lifecycle.clone(),
-		)
-		.create_upload_session(ObjectUploadSessionCreate {
-			name: input.name,
-			content_type: input.content_type,
-			file_size_bytes: input.file_size_bytes,
-			made_on: input.made_on,
-			location: input.location,
-			user_id,
-			publicity: input.publicity,
-			allowed_users: input.allowed_users.unwrap_or_default(),
-		})
-		.await
-		.map_err(AppError::graphql)?;
+		let session = wrapper
+			.object_lifecycle_service(&mut client)
+			.create_upload_session(ObjectUploadSessionCreate {
+				name: input.name,
+				content_type: input.content_type,
+				file_size_bytes: input.file_size_bytes,
+				made_on: input.made_on,
+				location: input.location,
+				user_id,
+				publicity: input.publicity,
+				allowed_users: input.allowed_users.unwrap_or_default(),
+			})
+			.await
+			.map_err(AppError::graphql)?;
 
 		Ok(session.into())
 	}
@@ -186,19 +178,15 @@ impl Mutation {
 		let user_id = wrapper.user_id()?;
 		let object_id =
 			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
-		let storage = wrapper.storage_client();
 		let mut client = wrapper.db_client().await?;
 		let state = wrapper.shared_state();
 		let url_expires_at = presigned_url_expires_at(&state.config)?;
 
-		let parts = ObjectLifecycleService::new(
-			&mut client,
-			storage,
-			state.config.object_lifecycle.clone(),
-		)
-		.presign_upload_parts(object_id, user_id, part_numbers)
-		.await
-		.map_err(AppError::graphql)?;
+		let parts = wrapper
+			.object_lifecycle_service(&mut client)
+			.presign_upload_parts(object_id, user_id, part_numbers)
+			.await
+			.map_err(AppError::graphql)?;
 
 		ctx.data::<Arc<GraphqlMutationCacheEffect>>()
 			.map_err(|e| anyhow::anyhow!(e.message).context("Mutation cache effect not found"))
@@ -221,9 +209,7 @@ impl Mutation {
 		let user_id = wrapper.user_id()?;
 		let object_id =
 			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
-		let storage = wrapper.storage_client();
 		let mut client = wrapper.db_client().await?;
-		let state = wrapper.shared_state();
 		let completed_parts = parts
 			.into_iter()
 			.map(|part| CompletedUploadPart {
@@ -232,7 +218,8 @@ impl Mutation {
 			})
 			.collect();
 
-		ObjectLifecycleService::new(&mut client, storage, state.config.object_lifecycle.clone())
+		wrapper
+			.object_lifecycle_service(&mut client)
 			.complete_upload(object_id, user_id, completed_parts)
 			.await
 			.map_err(AppError::graphql)
@@ -247,11 +234,10 @@ impl Mutation {
 		let user_id = wrapper.user_id()?;
 		let object_id =
 			object_id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
-		let storage = wrapper.storage_client();
 		let mut client = wrapper.db_client().await?;
-		let state = wrapper.shared_state();
 
-		ObjectLifecycleService::new(&mut client, storage, state.config.object_lifecycle.clone())
+		wrapper
+			.object_lifecycle_service(&mut client)
 			.abort_upload(object_id, user_id)
 			.await
 			.map_err(AppError::graphql)?;
@@ -265,9 +251,7 @@ impl Mutation {
 		ids: Vec<ID>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
-		let storage = wrapper.storage_client();
 		let mut client = wrapper.db_client().await?;
-		let state = wrapper.shared_state();
 		let ids: Vec<i64> = ids
 			.into_iter()
 			.map(|id| id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql))
@@ -283,14 +267,11 @@ impl Mutation {
 			)
 			.await?;
 
-		let result = ObjectLifecycleService::new(
-			&mut client,
-			storage,
-			state.config.object_lifecycle.clone(),
-		)
-		.delete_objects(&ids)
-		.await
-		.map_err(AppError::graphql)?;
+		let result = wrapper
+			.object_lifecycle_service(&mut client)
+			.delete_objects(&ids)
+			.await
+			.map_err(AppError::graphql)?;
 
 		Ok(result)
 	}
@@ -304,9 +285,7 @@ impl Mutation {
 		input: UpdateS3ObjectInput,
 	) -> Result<S3Object, GraphQLError> {
 		let wrapper = ContextWrapper::new(ctx)?;
-		let storage = wrapper.storage_client();
 		let mut client = wrapper.db_client().await?;
-		let state = wrapper.shared_state();
 		let id_int =
 			input.id.parse::<i64>().context("Invalid ID format").map_err(AppError::graphql)?;
 
@@ -322,21 +301,18 @@ impl Mutation {
 
 		let allowed_users = input.allowed_users.unwrap_or_default();
 
-		let result = ObjectLifecycleService::new(
-			&mut client,
-			storage,
-			state.config.object_lifecycle.clone(),
-		)
-		.update_object_metadata(
-			id_int,
-			input.name,
-			input.made_on,
-			input.location,
-			input.publicity,
-			allowed_users,
-		)
-		.await
-		.map_err(AppError::graphql)?;
+		let result = wrapper
+			.object_lifecycle_service(&mut client)
+			.update_object_metadata(
+				id_int,
+				input.name,
+				input.made_on,
+				input.location,
+				input.publicity,
+				allowed_users,
+			)
+			.await
+			.map_err(AppError::graphql)?;
 
 		Ok(result)
 	}
