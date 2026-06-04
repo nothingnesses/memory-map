@@ -1,11 +1,31 @@
-pub const MARK_OBJECTS_DELETE_PENDING_QUERY: &str = "UPDATE objects
+/// The `S3Object` column projection shared by the mutation queries that RETURN an
+/// object in a transitional state (and so cannot use the
+/// `available_objects_with_users` view). Single-sourced because every column must
+/// match `S3Object::try_from`'s by-name reads (especially the `latitude`/
+/// `longitude` aliases); a drifted copy would silently break decoding. Expands to
+/// a string literal so it composes into the query consts via `concat!`.
+macro_rules! object_returning_columns {
+	() => {
+		"id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity"
+	};
+}
+
+pub const MARK_OBJECTS_DELETE_PENDING_QUERY: &str = concat!(
+	"UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()
 WHERE id = ANY($1) AND storage_state = 'available'
-RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING ",
+	object_returning_columns!(),
+	";"
+);
 
-pub const INSERT_OBJECT_QUERY: &str = "INSERT INTO objects (name, storage_key, content_type, storage_state, made_on, location, user_id, publicity)
+pub const INSERT_OBJECT_QUERY: &str = concat!(
+	"INSERT INTO objects (name, storage_key, content_type, storage_state, made_on, location, user_id, publicity)
 VALUES ($1, $2, $3, 'pending_upload', $4::timestamptz, ST_GeomFromEWKT($5), $6, $7)
-RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING ",
+	object_returning_columns!(),
+	";"
+);
 
 pub const INSERT_OBJECT_UPLOAD_SESSION_QUERY: &str = "INSERT INTO object_upload_sessions (
 	object_id,
@@ -153,12 +173,17 @@ SET cleanup_next_attempt_at = now() + ($3::BIGINT * interval '1 second'),
 	cleanup_last_error = $2
 WHERE object_id = $1";
 
-pub const MARK_UPLOAD_DELETE_PENDING_QUERY: &str = "UPDATE objects
+pub const MARK_UPLOAD_DELETE_PENDING_QUERY: &str = concat!(
+	"UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()
 WHERE id = $1 AND storage_key = $2 AND storage_state IN ('pending_upload', 'available')
-RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING ",
+	object_returning_columns!(),
+	";"
+);
 
-pub const MARK_STALE_UPLOADS_DELETE_PENDING_QUERY: &str = "UPDATE objects
+pub const MARK_STALE_UPLOADS_DELETE_PENDING_QUERY: &str = concat!(
+	"UPDATE objects
 SET storage_state = 'delete_pending', storage_state_updated_at = now()
 WHERE storage_state = 'pending_upload'
 	AND storage_state_updated_at < now() - ($1::BIGINT * interval '1 second')
@@ -166,14 +191,21 @@ WHERE storage_state = 'pending_upload'
 		SELECT 1 FROM object_upload_sessions session
 		WHERE session.object_id = objects.id
 	)
-RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING ",
+	object_returning_columns!(),
+	";"
+);
 
 /// Query to update an existing object in the database.
 /// It updates the name, made_on timestamp, and location based on the provided ID.
-pub const UPDATE_OBJECT_QUERY: &str = "UPDATE objects
+pub const UPDATE_OBJECT_QUERY: &str = concat!(
+	"UPDATE objects
 SET name = $2, made_on = $3::timestamptz, location = ST_GeomFromEWKT($4), publicity = $5
 WHERE id = $1 AND storage_state = 'available'
-RETURNING id, name, storage_key, content_type, made_on, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude, user_id, publicity;";
+RETURNING ",
+	object_returning_columns!(),
+	";"
+);
 
 pub const SELECT_ALL_OBJECTS_QUERY: &str = "SELECT * FROM available_objects_with_users;";
 
