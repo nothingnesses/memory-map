@@ -28,18 +28,30 @@ just check           # Run cargo check
 just clippy          # Run Clippy with warnings as errors
 just deny            # Check dependency licenses and advisories
 just doc             # Build docs and run ASCII/link checks
-just test            # Run tests with cached output
+just test            # Run tests
 just frontend-build  # Build the Trunk frontend
-just verify          # Run the full verification suite
+just verify-fast     # Fast checks; skips the service-backed suites
+just verify          # Full suite, incl. service-backed integration and e2e
 ```
 
-## Tests
+### Filtered Command Output
 
-`just test` caches command output under `.cache/test-output/`. The cache key is
-based on tracked file contents and the test arguments.
+When a `just` recipe is expected to produce a large amount of output, use
+`just filtered` instead of writing an ad-hoc shell pipeline. The first argument
+is the `just` recipe to run, the second argument is a ripgrep regex used to
+select output lines, and the remaining arguments are forwarded to the selected
+recipe.
 
-After creating a new source or test file, run `git add <file>` once so the cache
-can see it. Use `just clean` to clear build artifacts and cached test output.
+```sh
+just filtered check '^(error|warning|[[:space:]]*-->)'
+just filtered test '^(test .* \.\.\. FAILED|failures:|error)'
+just filtered verify '^(Recipe|error|warning|failures:|FAILED|test result:)'
+```
+
+`just filtered` preserves the selected recipe's exit status, rejects unsupported
+recipes and unsafe forwarded arguments, limits filtered matches so accidental
+broad filters do not dump full logs, and prints the last captured lines when a
+failing command has no filter matches.
 
 ## Documentation And Text
 
@@ -53,6 +65,11 @@ Before opening a pull request, run:
 ```sh
 just verify
 ```
+
+This runs the full suite, including the service-backed storage,
+backend-integration, and e2e tests, which stand up the local Postgres + RustFS
+service graph and take several minutes. For faster iteration while developing,
+`just verify-fast` runs everything except those service-backed suites.
 
 Include tests for behavior changes. Avoid public API or user-visible behavior
 changes unless the issue or pull request explicitly calls for them.

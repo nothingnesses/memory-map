@@ -16,19 +16,19 @@ pub async fn send_password_reset_email(
 	token: &str,
 ) -> anyhow::Result<()> {
 	let email = Message::builder()
-		.from(config.smtp_from.parse()?)
+		.from(config.smtp.from.parse()?)
 		.to(to_email.parse()?)
 		.subject("Password Reset Request")
 		.header(ContentType::TEXT_PLAIN)
 		.body(format!(
 			"Click the link below to reset your password:\n\n{}/reset-password?token={}\n\nThis link expires in 10 minutes.",
-			config.frontend_url, token
+			config.frontend.url, token
 		))?;
 
-	let creds = Credentials::new(config.smtp_user.clone(), config.smtp_pass.clone());
+	let creds = Credentials::new(config.smtp.user.clone(), config.smtp.pass.clone());
 
 	let mailer =
-		AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)?.credentials(creds).build();
+		AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp.host)?.credentials(creds).build();
 
 	mailer.send(email).await?;
 

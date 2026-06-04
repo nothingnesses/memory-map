@@ -1,5 +1,6 @@
 set dotenv-load
 set shell := ["bash", "-c"]
+set tempdir := "/tmp"
 
 # Load the Nix development environment via direnv for local recipes. CI invokes
 # recipes via `nix develop --command just`, so SKIP_DIRENV=1 bypasses the prefix.
@@ -19,16 +20,44 @@ default:
 allow-env:
 	direnv allow
 
-# Start PostgreSQL and Minio servers.
+# Start PostgreSQL and RustFS servers.
 servers:
 	{{ direnv_prefix }} nix run ./devenv
 
+# Remove local service state created by current and legacy service recipes.
+clean-service-state:
+	rm -rf data/postgres data/rustfs data/pg1 data/minio1
+
 # Start backend server.
 backend:
-	{{ direnv_prefix }} bash -c 'cd backend; {{ log_prefix }} bacon run -- {{ release_flag }}'
+	{{ direnv_prefix }} bash -c 'cd backend; {{ log_prefix }} bacon run -- --bin backend {{ release_flag }}'
+
+# Create local frontend runtime config when missing.
+frontend-config:
+	@if [ ! -f frontend/public/config.json ]; then \
+		cp frontend/config.example.json frontend/public/config.json; \
+		echo "Created frontend/public/config.json from frontend/config.example.json"; \
+	fi
+
+# Create a local backend TOML config from the example when missing. Opt-in: the
+# backend only reads it when MEMORY_MAP_CONFIG points at it (otherwise it is
+# configured purely from the environment, e.g. .env).
+config:
+	@if [ ! -f config.toml ]; then \
+		cp config.example.toml config.toml; \
+		echo "Created config.toml from config.example.toml; set MEMORY_MAP_CONFIG=\$(pwd)/config.toml to use it"; \
+	fi
+
+# Require an explicit frontend runtime config for builds that copy /config.json.
+require-frontend-config:
+	@if [ ! -f frontend/public/config.json ]; then \
+		echo "ERROR: frontend/public/config.json is required for frontend-build." >&2; \
+		echo "Run 'just frontend-config' for local development or provide a deployment-specific config file." >&2; \
+		exit 1; \
+	fi
 
 # Start frontend server. https://github.com/trunk-rs/trunk/issues/732#issuecomment-2391810077
-frontend:
+frontend: frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend; ping -c 1 8.8.8.8 && pnpm i --prefer-offline; env -u NO_COLOR trunk serve {{ release_flag }} --skip-version-check --offline --open'
 
 # Regenerate "frontend/graphql/schema.json".
@@ -66,7 +95,7 @@ doc *args:
 	set -euo pipefail
 
 	ascii_roots=()
-	for path in README.md CONTRIBUTING.md AGENTS.md frontend/README.md backend/src frontend/src shared/src; do
+	for path in README.md CONTRIBUTING.md AGENTS.md docs frontend/README.md backend/src frontend/src shared/src; do
 		if [[ -e "$path" ]]; then
 			ascii_roots+=("$path")
 		fi
@@ -81,7 +110,7 @@ doc *args:
 		exit 1
 	fi
 
-	{{ direnv_prefix }} lychee --offline --no-progress README.md frontend/README.md
+	{{ direnv_prefix }} lychee --offline --no-progress README.md docs/deployment.md frontend/README.md
 
 	if [ "$#" -eq 0 ]; then
 		set -- --workspace --all-features --no-deps
@@ -99,8 +128,12 @@ build *args:
 	{{ direnv_prefix }} cargo build "$@"
 
 # Build the frontend application through Trunk.
-frontend-build:
+frontend-build: require-frontend-config
 	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build {{ release_flag }} --skip-version-check'
+
+# Typecheck the Playwright E2E TypeScript support code and specs.
+frontend-e2e-typecheck:
+	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && pnpm run e2e:typecheck'
 
 # Run any cargo subcommand except test; use `just test` for tests.
 [positional-arguments]
@@ -117,57 +150,167 @@ cargo *args:
 	fi
 	{{ direnv_prefix }} cargo "$@"
 
-# Run tests with output caching. Re-runs only when tracked source files change.
+# Run tests.
 [positional-arguments]
 test *args:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	mkdir -p .cache/test-output
-	ARGS=$(printf '%q ' "$@")
-	CONTENT_HASH=$(git ls-files -z | xargs -0 md5sum 2>/dev/null | md5sum | cut -c1-32 || true)
-	CACHE_KEY=$(echo "${ARGS}:${CONTENT_HASH}" | md5sum | cut -c1-12)
-	OUTPUT_FILE=".cache/test-output/test-output-${CACHE_KEY}.txt"
-	STATUS_FILE=".cache/test-output/test-output-${CACHE_KEY}.status"
-	if [ -s "$OUTPUT_FILE" ] && [ -s "$STATUS_FILE" ]; then
-		echo "No source changes, proceeding to print cached test outputs:"
-		(trap '' PIPE; cat "$OUTPUT_FILE")
-		echo "Finished printing cached test outputs."
-		exit "$(cat "$STATUS_FILE")"
-	else
-		echo "No cached outputs currently present, proceeding to run tests:"
-		TEMP_FILE="${OUTPUT_FILE}.tmp"
-		TEMP_STATUS_FILE="${STATUS_FILE}.tmp"
-		rm -f "$TEMP_FILE"
-		rm -f "$TEMP_STATUS_FILE"
-		trap 'rm -f "$TEMP_FILE" "$TEMP_STATUS_FILE"' INT TERM HUP
-		RC=0
-		if [ "$#" -eq 0 ]; then
-			set -- --workspace --all-features
-		fi
-		{{ direnv_prefix }} cargo test "$@" > "$TEMP_FILE" 2>&1 || RC=$?
-		if [ ! -s "$TEMP_FILE" ]; then
-			rm -f "$TEMP_FILE"
-			rm -f "$TEMP_STATUS_FILE"
-			exit "${RC:-1}"
-		fi
-		printf '%s\n' "$RC" > "$TEMP_STATUS_FILE"
-		mv "$TEMP_FILE" "$OUTPUT_FILE"
-		mv "$TEMP_STATUS_FILE" "$STATUS_FILE"
-		(trap '' PIPE; cat "$OUTPUT_FILE")
-		echo "Test outputs and exit status saved to cache files:"
-		echo "  output: $OUTPUT_FILE"
-		echo "  status: $STATUS_FILE"
-		exit "$RC"
+	if [ "$#" -eq 0 ]; then
+		set -- --workspace --all-features
 	fi
+	{{ direnv_prefix }} cargo test "$@"
 
-# Remove build artifacts and test cache.
+# Run storage integration tests against a configured S3-compatible service.
+[positional-arguments]
+storage-test *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --ignored --nocapture
+	fi
+	{{ direnv_prefix }} cargo test -p backend --test storage -- "$@"
+
+# Run storage integration tests against the headless local service graph.
+storage-ci:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	source scripts/e2e-env.sh
+	source scripts/service-graph.sh
+
+	log_file="${PROCESS_COMPOSE_LOG:-process-compose.log}"
+	port="${PROCESS_COMPOSE_PORT:-8080}"
+
+	memory_map_with_process_compose "$port" "$log_file" -- env BACKEND_TEST_REQUIRE_SERVICE=true just storage-test
+
+# Run backend API/auth integration tests against configured local services.
+[positional-arguments]
+backend-integration-test *args:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+		set -- --ignored --nocapture --test-threads=1
+	fi
+	source scripts/e2e-env.sh
+	BACKEND_TEST_REQUIRE_SERVICE=true {{ direnv_prefix }} cargo test -p backend --test api_auth -- "$@"
+
+# Run backend API/auth integration tests against the headless local service graph.
+backend-integration:
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	source scripts/e2e-env.sh
+	source scripts/service-graph.sh
+	log_dir="${BACKEND_INTEGRATION_LOG_DIR:-backend-integration-logs}"
+	log_file="${BACKEND_INTEGRATION_PROCESS_COMPOSE_LOG:-$log_dir/process-compose.log}"
+	port="${BACKEND_INTEGRATION_PROCESS_COMPOSE_PORT:-$PROCESS_COMPOSE_PORT}"
+
+	memory_map_require_port_free "$E2E_PG_PORT" "PostgreSQL"
+	memory_map_require_port_free "$E2E_STORAGE_API_PORT" "RustFS API"
+	memory_map_require_port_free "$E2E_STORAGE_CONSOLE_PORT" "RustFS console"
+	memory_map_require_port_free "$port" "process-compose"
+
+	memory_map_with_process_compose "$port" "$log_file" -- just backend-integration-test
+
+# Run Playwright E2E tests against the headless local service graph.
+e2e: frontend-config frontend-e2e-typecheck
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	source scripts/e2e-env.sh
+	source scripts/service-graph.sh
+	mkdir -p "$E2E_LOG_DIR"
+
+	run_e2e() {
+		local backend_pid=""
+		local frontend_pid=""
+
+		cleanup_app_servers() {
+			local status=$?
+
+			trap - EXIT INT TERM
+			memory_map_stop_pid "${frontend_pid:-}"
+			memory_map_stop_pid "${backend_pid:-}"
+			exit "$status"
+		}
+		trap cleanup_app_servers EXIT INT TERM
+
+		{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
+		backend_pid=$!
+		if ! memory_map_wait_for_http "$E2E_BACKEND_URL/" 120 "GraphiQL"; then
+			echo "ERROR: backend did not become ready; see $E2E_LOG_DIR/backend.log." >&2
+			tail -n 80 "$E2E_LOG_DIR/backend.log" >&2 || true
+			return 1
+		fi
+
+		{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address "$E2E_FRONTEND_HOST" --port "$E2E_FRONTEND_PORT" --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
+		frontend_pid=$!
+		if ! memory_map_wait_for_http "$E2E_FRONTEND_URL/" 120; then
+			echo "ERROR: frontend did not become ready; see $E2E_LOG_DIR/frontend.log." >&2
+			tail -n 80 "$E2E_LOG_DIR/frontend.log" >&2 || true
+			return 1
+		fi
+
+		{{ direnv_prefix }} bash -c 'cd frontend && exec pnpm exec playwright test'
+	}
+
+	memory_map_require_port_free "$E2E_PG_PORT" "PostgreSQL"
+	memory_map_require_port_free "$E2E_STORAGE_API_PORT" "RustFS API"
+	memory_map_require_port_free "$E2E_STORAGE_CONSOLE_PORT" "RustFS console"
+	memory_map_require_port_free "$E2E_BACKEND_PORT" "backend"
+	memory_map_require_port_free "$E2E_FRONTEND_PORT" "frontend"
+	memory_map_require_port_free "$PROCESS_COMPOSE_PORT" "process-compose"
+
+	{{ direnv_prefix }} cargo build --bin backend
+	{{ direnv_prefix }} bash -c 'cd frontend && pnpm install --frozen-lockfile --prefer-offline && env -u NO_COLOR trunk build --skip-version-check --offline'
+
+	memory_map_with_process_compose "$PROCESS_COMPOSE_PORT" "$PROCESS_COMPOSE_LOG" -- run_e2e
+
+# Remove build artifacts.
 clean:
 	{{ direnv_prefix }} cargo clean
-	rm -rf .cache/test-output/
 
 # Check licenses and advisories with cargo-deny.
 deny:
-	{{ direnv_prefix }} cargo deny check
+	#!/usr/bin/env bash
+	set -euo pipefail
+
+	if [[ "${CI:-}" == "true" && -z "${CARGO_HOME:-}" ]]; then
+		export CARGO_HOME="${RUNNER_TEMP:-$PWD/.cargo-deny}/cargo-home"
+	fi
+	cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+
+	prepare_ci_advisory_db() {
+		local advisory_root="$cargo_home/advisory-dbs"
+		# cargo-deny 0.18+ documents this stable directory for the default RustSec DB URL.
+		local advisory_db="$advisory_root/advisory-db-3157b0e258782691"
+
+		mkdir -p "$advisory_root"
+		if [[ ! -d "$advisory_db/.git" ]]; then
+			rm -rf "$advisory_db"
+			git clone --depth 1 https://github.com/rustsec/advisory-db "$advisory_db"
+		fi
+
+		git -C "$advisory_db" fetch --depth 1 origin HEAD
+		git -C "$advisory_db" reset --hard FETCH_HEAD
+	}
+
+	run_deny() {
+		if [[ "${CI:-}" == "true" ]]; then
+			prepare_ci_advisory_db
+			{{ direnv_prefix }} cargo deny check --disable-fetch
+		else
+			{{ direnv_prefix }} cargo deny check
+		fi
+	}
+
+	if ! run_deny; then
+		if [[ "${CI:-}" != "true" ]]; then
+			exit 1
+		fi
+
+		rm -rf "$cargo_home/advisory-dbs"
+		run_deny
+	fi
 
 # Run an allowed just recipe and filter its output with a caller-provided rg regex.
 [positional-arguments]
@@ -185,7 +328,7 @@ filtered recipe filter *args:
 	fi
 
 	case "$recipe" in
-		build|check|clippy|deny|doc|fmt|frontend-build|test|verify) ;;
+		backend-integration|backend-integration-test|build|check|clippy|deny|doc|e2e|fmt|frontend-build|frontend-e2e-typecheck|shellcheck|storage-ci|storage-test|test|verify|verify-fast) ;;
 		*)
 			echo "ERROR: unsupported filtered recipe: $recipe" >&2
 			exit 2
@@ -222,16 +365,37 @@ filtered recipe filter *args:
 
 	exit "$recipe_status"
 
+# Check shell scripts with ShellCheck.
+shellcheck:
+	{{ direnv_prefix }} shellcheck --enable=all scripts/*.sh
+
 # Scan for hardcoded values.
 scan-hardcoded:
 	./scripts/scan_hardcoded.sh
 
-# Verify: fmt, check, clippy, deny, doc, test, frontend build.
-verify:
+# Fast verification: every check that does not need the local service graph
+# (fmt, shell scripts, check, clippy, deny, doc, test, frontend build). The
+# service-skipping unit/integration tests run here too. Use this for the quick
+# inner loop; use `verify` for the full suite.
+verify-fast:
 	just fmt
+	just shellcheck
 	just check
 	just clippy
 	just deny
 	just doc
 	just test
+	just frontend-e2e-typecheck
+	just frontend-config
 	just frontend-build
+
+# Full verification: everything `verify-fast` runs, then the service-backed
+# suites (storage integration, backend integration, and Playwright e2e), each
+# of which stands up the local Postgres + RustFS service graph. Runs serially
+# and is slow; CI runs these as parallel jobs instead. Run this before opening a
+# pull request to validate everything locally in one command.
+verify:
+	just verify-fast
+	just storage-ci
+	just backend-integration
+	just e2e

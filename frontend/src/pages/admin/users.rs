@@ -33,6 +33,7 @@ use {
 			users::{
 				UserRole,
 				UsersQuery,
+				users_query,
 			},
 		},
 	},
@@ -56,7 +57,10 @@ pub fn Users() -> impl IntoView {
 	let config = StoredValue::new(config);
 	let users_resource = LocalResource::new(move || {
 		trigger.get();
-		UsersQuery::run(config.with_value(|c| c.api_url.clone()))
+		crate::graphql_queries::run::<UsersQuery>(
+			config.with_value(|c| c.api_url.clone()),
+			users_query::Variables {},
+		)
 	});
 
 	let on_update_email = move |id: String, email: String, loading: RwSignal<bool>| {
@@ -68,7 +72,9 @@ pub fn Users() -> impl IntoView {
 				role: None,
 				email: Some(email),
 			};
-			if let Err(e) = AdminUpdateUserMutation::run(api_url, variables).await {
+			if let Err(e) =
+				crate::graphql_queries::run::<AdminUpdateUserMutation>(api_url, variables).await
+			{
 				error_ctx.report(AppError::GraphQL(e.to_string()));
 			}
 			loading.set(false);
@@ -86,7 +92,9 @@ pub fn Users() -> impl IntoView {
 				role: Some(new_role),
 				email: None,
 			};
-			if let Err(e) = AdminUpdateUserMutation::run(api_url, variables).await {
+			if let Err(e) =
+				crate::graphql_queries::run::<AdminUpdateUserMutation>(api_url, variables).await
+			{
 				error_ctx.report(AppError::GraphQL(e.to_string()));
 			}
 			loading.set(false);
@@ -102,7 +110,11 @@ pub fn Users() -> impl IntoView {
 			let variables = request_password_reset_mutation::Variables {
 				email,
 			};
-			if let Err(e) = RequestPasswordResetMutation::run(api_url, variables).await {
+			if let Err(e) = crate::graphql_queries::run_unauthenticated::<
+				RequestPasswordResetMutation,
+			>(api_url, variables)
+			.await
+			{
 				error_ctx.report(AppError::GraphQL(e.to_string()));
 			}
 			loading.set(false);

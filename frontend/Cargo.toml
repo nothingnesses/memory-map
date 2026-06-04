@@ -11,7 +11,7 @@ anyhow = "1.0"
 console_error_panic_hook = "0.1"
 console_log = "1"
 email_address = "0.2"
-graphql_client = "0.15"
+graphql_client = "0.16"
 leptos = { version = "0.8", features = ["csr"] }
 leptos-leaflet = { version = "0.10", features = [
 	"csr",
@@ -19,7 +19,7 @@ leptos-leaflet = { version = "0.10", features = [
 leptos_meta = { version = "0.8" }
 leptos_router = { version = "0.8" }
 log = "0.4"
-lucide-leptos = { version = "2", features = [
+lucide-leptos = { version = "3", features = [
 	"account",
 	"arrows",
 	"files",
@@ -37,7 +37,7 @@ shared = { path = "../shared" }
 # @todo Bump this once out of beta.
 thaw = { version = "0.5.0-beta", features = ["csr"] }
 thiserror = "2.0"
-tokio = { version = "1.49", features = [
+tokio = { version = "1.52", features = [
 	"io-util",
 	"macros",
 	"rt",
@@ -61,8 +61,8 @@ web-sys = { version = "0.3", features = [
 ] }
 
 [dev-dependencies]
-# Locked to =0.2.106 since that's the latest available on nixpkgs
-wasm-bindgen = "=0.2.106"
+# Locked to match wasm-bindgen-cli_0_2_118 from nixpkgs.
+wasm-bindgen = "=0.2.118"
 wasm-bindgen-test = "0.3"
 
 [lints]

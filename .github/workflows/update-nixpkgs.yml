@@ -1,4 +1,4 @@
-name: Update nixpkgs
+name: Update Nix flake inputs
 
 on:
   schedule:
@@ -12,19 +12,40 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Update nixpkgs input
-        run: nix flake update nixpkgs --flake ./devenv/
+      - name: Update Nix flake inputs
+        run: nix flake update --flake ./devenv/
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet devenv/flake.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Disable git hooks
+        if: steps.diff.outputs.changed == 'true'
+        run: git config --unset core.hooksPath || true
 
       - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update nixpkgs input"
-          branch: update-nixpkgs
-          title: "chore: update nixpkgs input"
+          token: ${{ steps.app-token.outputs.token }}
+          commit-message: "chore: update Nix flake inputs"
+          branch: update-nix-flake-inputs
+          title: "chore: update Nix flake inputs"
           body: |
-            Automated weekly update of the `nixpkgs` flake input.
+            Automated weekly update of moving Nix flake inputs.

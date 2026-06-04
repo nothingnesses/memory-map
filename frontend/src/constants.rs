@@ -150,13 +150,8 @@ pub const ERR_SYSTEM_REQUEST_FAILED: &str = "Failed to create Request";
 pub const ERR_SYSTEM_NO_WINDOW: &str = "No window found";
 pub const ERR_SYSTEM_RESPONSE_CAST: &str = "Failed to cast response value to Response";
 pub const ERR_NETWORK_UPLOAD_FAILED: &str = "Failed to upload files. Status: ";
-pub const ERR_NETWORK_PREFIX: &str = "Network error: ";
-pub const ERR_GRAPHQL_PREFIX: &str = "GraphQL error: ";
-pub const ERR_VALIDATION_PREFIX: &str = "Validation error: ";
-pub const ERR_AUTHENTICATION_PREFIX: &str = "Authentication error: ";
-pub const ERR_SYSTEM_PREFIX: &str = "System error: ";
-pub const ERR_NOT_FOUND_MSG: &str = "Not found";
-pub const ERR_JS_PREFIX: &str = "JS error: ";
+// Display prefixes for AppError variants live in #[error(...)] attrs on
+// the variant; only constants referenced from non-Display sites remain.
 pub const ERR_CONTEXT_MISSING: &str = "Context missing: ";
 pub const ERR_UNSUPPORTED_FILE_TYPE: &str = "Unsupported file type: ";
 pub const MSG_FAILED_LOAD_USERS: &str = "Failed to load users";

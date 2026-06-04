@@ -1,9 +1,8 @@
 use {
 	crate::{
 		CasbinObject,
-		CasbinUser,
-		SharedState,
-		UserId,
+		ContextWrapper,
+		errors::AppError,
 		graphql::objects::{
 			config::PublicConfig,
 			s3_object::S3Object,
@@ -15,12 +14,6 @@ use {
 		Error as GraphQLError,
 		Object,
 	},
-	casbin::CoreApi,
-	deadpool_postgres::{
-		Client,
-		Manager,
-	},
-	std::sync::Arc,
 };
 
 pub struct Query;
@@ -31,11 +24,10 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<PublicConfig, GraphQLError> {
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
+		let wrapper = ContextWrapper::new(ctx)?;
+		let state = wrapper.shared_state();
 		Ok(PublicConfig {
-			enable_registration: state.config.enable_registration,
+			enable_registration: state.config.auth.enable_registration,
 		})
 	}
 
@@ -43,8 +35,9 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Option<User>, GraphQLError> {
-		if let Some(user_id) = ctx.data_opt::<UserId>() {
-			User::by_id(ctx, user_id.0).await
+		let wrapper = ContextWrapper::new(ctx)?;
+		if let Some(user_id) = wrapper.user_id_opt() {
+			User::by_id(ctx, user_id).await.map_err(AppError::graphql)
 		} else {
 			Ok(None)
 		}
@@ -54,33 +47,16 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<User>, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
-		let enforcer = state.enforcer.read().await;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-		// Dummy object for system-level permission
-		let casbin_obj = CasbinObject {
-			user_id: 0,
-		};
-
-		if !enforcer
-			.enforce((casbin_user, casbin_obj, "read_all_users"))
-			.map_err(GraphQLError::from)?
-		{
-			return Err(GraphQLError::new("Forbidden"));
-		}
-
-		User::all(ctx).await
+		let wrapper = ContextWrapper::new(ctx)?;
+		wrapper
+			.require_permission(
+				"read_all_users",
+				CasbinObject {
+					user_id: 0,
+				},
+			)
+			.await?;
+		User::all(ctx).await.map_err(AppError::graphql)
 	}
 
 	async fn s3_object_by_id(
@@ -88,28 +64,16 @@ impl Query {
 		ctx: &Context<'_>,
 		id: i64,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let object = S3Object::where_id(ctx, id).await?;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
-		let enforcer = state.enforcer.read().await;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-		let casbin_obj = CasbinObject {
-			user_id: object.user_id.unwrap_or(0),
-		};
-
-		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
-		}
-
+		let wrapper = ContextWrapper::new(ctx)?;
+		let object = S3Object::where_id(ctx, id).await.map_err(AppError::graphql)?;
+		wrapper
+			.require_permission(
+				"read",
+				CasbinObject {
+					user_id: object.user_id.unwrap_or(0),
+				},
+			)
+			.await?;
 		Ok(object)
 	}
 
@@ -118,28 +82,16 @@ impl Query {
 		ctx: &Context<'_>,
 		name: String,
 	) -> Result<S3Object, GraphQLError> {
-		let user_id = ctx.data_opt::<UserId>().ok_or_else(|| GraphQLError::new("Unauthorized"))?.0;
-		let user =
-			User::by_id(ctx, user_id).await?.ok_or_else(|| GraphQLError::new("User not found"))?;
-		let object = S3Object::where_name(ctx, name).await?;
-
-		// Check permissions
-		let state = ctx
-			.data::<Arc<SharedState<Manager, Client>>>()
-			.map_err(|e| anyhow::anyhow!(e.message).context("Shared state not found in context"))?;
-		let enforcer = state.enforcer.read().await;
-		let casbin_user = CasbinUser {
-			id: user_id,
-			role: user.role.to_string(),
-		};
-		let casbin_obj = CasbinObject {
-			user_id: object.user_id.unwrap_or(0),
-		};
-
-		if !enforcer.enforce((casbin_user, casbin_obj, "read")).map_err(GraphQLError::from)? {
-			return Err(GraphQLError::new("Forbidden"));
-		}
-
+		let wrapper = ContextWrapper::new(ctx)?;
+		let object = S3Object::where_name(ctx, name).await.map_err(AppError::graphql)?;
+		wrapper
+			.require_permission(
+				"read",
+				CasbinObject {
+					user_id: object.user_id.unwrap_or(0),
+				},
+			)
+			.await?;
 		Ok(object)
 	}
 
@@ -147,34 +99,22 @@ impl Query {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<Vec<S3Object>, GraphQLError> {
-		let user_id_opt = ctx.data_opt::<UserId>().map(|u| u.0);
+		let wrapper = ContextWrapper::new(ctx)?;
+		let user_id_opt = wrapper.user_id_opt();
 
-		if let Some(user_id) = user_id_opt {
-			let user = User::by_id(ctx, user_id)
+		if wrapper.caller_identity_opt().is_some() &&
+			wrapper
+				.has_permission(
+					"read_all_s3_objects",
+					CasbinObject {
+						user_id: 0,
+					},
+				)
 				.await?
-				.ok_or_else(|| GraphQLError::new("User not found"))?;
-
-			// Check permissions
-			let state = ctx.data::<Arc<SharedState<Manager, Client>>>().map_err(|e| {
-				anyhow::anyhow!(e.message).context("Shared state not found in context")
-			})?;
-			let enforcer = state.enforcer.read().await;
-			let casbin_user = CasbinUser {
-				id: user_id,
-				role: user.role.to_string(),
-			};
-			let casbin_obj = CasbinObject {
-				user_id: 0,
-			}; // System level object
-
-			if enforcer
-				.enforce((casbin_user, casbin_obj, "read_all_s3_objects"))
-				.map_err(GraphQLError::from)?
-			{
-				return S3Object::all(ctx).await;
-			}
+		{
+			return S3Object::all(ctx).await.map_err(AppError::graphql);
 		}
 
-		S3Object::visible_to_user(ctx, user_id_opt).await
+		S3Object::visible_to_user(ctx, user_id_opt).await.map_err(AppError::graphql)
 	}
 }

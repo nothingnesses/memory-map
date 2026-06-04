@@ -1,53 +1,83 @@
 use {
-	crate::constants::{
-		ERR_AUTHENTICATION_PREFIX,
-		ERR_CONTEXT_MISSING,
-		ERR_GRAPHQL_PREFIX,
-		ERR_JS_PREFIX,
-		ERR_NETWORK_PREFIX,
-		ERR_NOT_FOUND_MSG,
-		ERR_SYSTEM_PREFIX,
-		ERR_VALIDATION_PREFIX,
-	},
+	crate::constants::ERR_CONTEXT_MISSING,
 	leptos::prelude::*,
-	std::fmt,
 	wasm_bindgen::JsValue,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AppError {
+	#[error("Network error: {0}")]
 	Network(String),
+	#[error("GraphQL error: {0}")]
 	GraphQL(String),
+	#[error("Validation error: {0}")]
 	Validation(String),
+	#[error("Authentication error: {0}")]
 	Authentication(String),
+	#[error("Forbidden: {0}")]
+	Forbidden(String),
+	#[error("System error: {0}")]
 	System(String),
+	#[error("Not found")]
 	NotFound,
+	#[error("JS error: {0}")]
 	Js(String),
 }
 
-impl fmt::Display for AppError {
-	fn fmt(
-		&self,
-		f: &mut fmt::Formatter<'_>,
-	) -> fmt::Result {
-		match self {
-			AppError::Network(msg) => write!(f, "{}{}", ERR_NETWORK_PREFIX, msg),
-			AppError::GraphQL(msg) => write!(f, "{}{}", ERR_GRAPHQL_PREFIX, msg),
-			AppError::Validation(msg) => write!(f, "{}{}", ERR_VALIDATION_PREFIX, msg),
-			AppError::Authentication(msg) => write!(f, "{}{}", ERR_AUTHENTICATION_PREFIX, msg),
-			AppError::System(msg) => write!(f, "{}{}", ERR_SYSTEM_PREFIX, msg),
-			AppError::NotFound => write!(f, "{}", ERR_NOT_FOUND_MSG),
-			AppError::Js(msg) => write!(f, "{}{}", ERR_JS_PREFIX, msg),
-		}
+impl AppError {
+	/// Maps a GraphQL response's first error (if any) to the matching variant,
+	/// reading the backend's stable `extensions.code`. Falls back to
+	/// `AppError::GraphQL` when no code is present or the code is unknown.
+	pub fn from_graphql_errors(errors: &[graphql_client::Error]) -> Option<Self> {
+		let error = errors.first()?;
+		let code = error
+			.extensions
+			.as_ref()
+			.and_then(|ext| ext.get("code"))
+			.and_then(|value| value.as_str());
+		Some(match code {
+			Some("UNAUTHORIZED") => AppError::Authentication(error.message.clone()),
+			Some("FORBIDDEN") => AppError::Forbidden(error.message.clone()),
+			Some("NOT_FOUND") => AppError::NotFound,
+			Some("VALIDATION") => AppError::Validation(error.message.clone()),
+			_ => AppError::GraphQL(error.message.clone()),
+		})
 	}
 }
 
-impl std::error::Error for AppError {
+/// Unwraps the `data` of a GraphQL response, surfacing any backend errors as
+/// the matching `AppError` variant. Use at the boundary of every `run()`
+/// function so the frontend's error UX is consistent with the backend's
+/// stable error codes.
+pub fn graphql_data<T>(response: graphql_client::Response<T>) -> Result<T, AppError> {
+	if let Some(errors) = response.errors.as_ref() &&
+		!errors.is_empty()
+	{
+		return Err(AppError::from_graphql_errors(errors)
+			.unwrap_or_else(|| AppError::GraphQL("Unknown error".to_string())));
+	}
+	response.data.ok_or_else(|| AppError::GraphQL("Empty response".to_string()))
 }
 
 impl From<JsValue> for AppError {
 	fn from(value: JsValue) -> Self {
 		AppError::Js(format!("{:?}", value))
+	}
+}
+
+// Network and serialization errors from the GraphQL HTTP client come through as
+// a boxed std::error::Error (for the authed helper) or a bare reqwest::Error
+// (for the unauthed helper); both are treated as Network failures so the UI can
+// distinguish them from server-reported GraphQL errors.
+impl From<Box<dyn std::error::Error + Send + Sync>> for AppError {
+	fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+		AppError::Network(err.to_string())
+	}
+}
+
+impl From<reqwest::Error> for AppError {
+	fn from(err: reqwest::Error) -> Self {
+		AppError::Network(err.to_string())
 	}
 }
 

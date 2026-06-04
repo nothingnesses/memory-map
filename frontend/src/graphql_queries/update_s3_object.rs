@@ -1,13 +1,9 @@
 use {
-	crate::{
-		graphql_queries::update_s3_object::update_s3_object_mutation::{
-			UpdateS3ObjectMutationUpdateS3Object as S3Object,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		update_s3_object::update_s3_object_mutation::UpdateS3ObjectMutationUpdateS3Object as S3Object,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -21,20 +17,10 @@ pub struct UpdateS3ObjectMutation;
 
 pub use crate::graphql_queries::types::PublicityOverride;
 
-impl UpdateS3ObjectMutation {
-	/// Executes the UpdateS3ObjectQuery against the GraphQL API.
-	pub async fn run(
-		api_url: String,
-		variables: Variables,
-	) -> Result<S3Object, Error> {
-		Ok(post_graphql_with_auth::<UpdateS3ObjectMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			variables,
-		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.update_s3_object)?)
+impl GraphqlOp for UpdateS3ObjectMutation {
+	type Output = S3Object;
+
+	fn extract(data: update_s3_object_mutation::ResponseData) -> Self::Output {
+		data.update_s3_object
 	}
 }

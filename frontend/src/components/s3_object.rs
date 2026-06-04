@@ -21,9 +21,16 @@ pub fn S3Object(
 					.map(|m| m.type_().as_str().to_string())
 					.unwrap_or_default()
 					.as_str(),
-				"image" => view! { <img class=move || class.get() src=move || s3_object.url.clone() /> },
+				"image" => view! {
+					<img
+						alt=s3_object.name.clone()
+						class=move || class.get()
+						src=move || s3_object.url.clone()
+					/>
+				},
 				"video" | "audio" => view! {
 					<video
+						aria-label=s3_object.name.clone()
 						class=move || class.get()
 						src=move || s3_object.url.clone()
 						controls

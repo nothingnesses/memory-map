@@ -71,7 +71,7 @@ pub fn ResetPassword() -> impl IntoView {
 				new_password: password_val,
 			};
 
-			match ResetPasswordMutation::run(api_url, variables).await {
+			match crate::graphql_queries::run::<ResetPasswordMutation>(api_url, variables).await {
 				Ok(_) => {
 					success_message.set(Some(MSG_RESET_SUCCESS.to_string()));
 					error_message.set(None);

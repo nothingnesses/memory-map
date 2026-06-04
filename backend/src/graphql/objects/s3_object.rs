@@ -1,7 +1,6 @@
 use {
 	crate::{
 		ContextWrapper,
-		SharedState,
 		db::queries::{
 			SELECT_ALL_OBJECTS_QUERY,
 			SELECT_OBJECT_BY_ID_QUERY,
@@ -10,8 +9,10 @@ use {
 			SELECT_OBJECTS_BY_USER_ID_QUERY,
 			SELECT_VISIBLE_OBJECTS_QUERY,
 		},
+		errors::AppError,
 		graphql::objects::location::Location,
 	},
+	anyhow::Context as AnyhowContext,
 	async_graphql::{
 		Context,
 		Enum,
@@ -19,11 +20,7 @@ use {
 		ID,
 		Object,
 	},
-	axum::http::Method,
-	deadpool_postgres::Manager,
-	futures::future::join_all,
 	jiff::Timestamp,
-	minio::s3::types::S3Api,
 	postgres_types::{
 		FromSql,
 		ToSql,
@@ -35,7 +32,6 @@ use {
 	std::{
 		fmt,
 		str::FromStr,
-		sync::Arc,
 	},
 	tokio_postgres::Row,
 };
@@ -93,10 +89,39 @@ where
 	}
 }
 
+/// Emits a 64-bit id as a JSON string.
+///
+/// Matches the GraphQL `ID` wire format and protects JavaScript clients from the
+/// `Number` precision ceiling at 2^53.
+fn serialize_i64_as_string<S>(
+	value: &i64,
+	serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+	S: Serializer, {
+	serializer.collect_str(value)
+}
+
+/// Whether objects of this content type must be served as a download rather than
+/// rendered inline.
+///
+/// Script-capable types (currently only SVG) are forced to
+/// `Content-Disposition: attachment` on their presigned GET URL, so a direct
+/// top-level navigation downloads the file instead of executing embedded script
+/// in the storage origin. In-app `<img>`/`<video>` embedding ignores the header,
+/// so display is unaffected. A new script-capable type cannot enter the system
+/// without an `ALLOWED_MIME_TYPES` edit, which is the checkpoint to extend this.
+fn content_type_requires_attachment(content_type: &str) -> bool {
+	matches!(content_type, "image/svg+xml")
+}
+
 #[derive(Debug, Serialize)]
 pub struct S3Object {
-	pub id: ID,
+	#[serde(serialize_with = "serialize_i64_as_string")]
+	pub id: i64,
 	pub name: String,
+	pub storage_key: String,
+	pub content_type: String,
 	#[serde(serialize_with = "serialize_timestamp")]
 	pub made_on: Option<Timestamp>,
 	pub location: Option<Location>,
@@ -105,127 +130,119 @@ pub struct S3Object {
 	pub allowed_users: Vec<String>,
 }
 
-impl S3Object {
-	pub async fn try_from(row: Row) -> Result<Self, GraphQLError> {
-		let name: String = row.try_get("name")?;
-		let id: i64 = row.try_get("id")?;
-		let made_on: Option<Timestamp> = row.try_get("made_on")?;
-		let user_id: Option<i64> = row.try_get("user_id").ok();
-		let publicity: PublicityOverride = row.try_get("publicity")?;
-		// allowed_users might be null if no join, but we will ensure join
+impl TryFrom<Row> for S3Object {
+	type Error = AppError;
+
+	fn try_from(row: Row) -> Result<Self, Self::Error> {
+		let name: String = row.try_get("name").context("Failed to read object name")?;
+		let storage_key: String =
+			row.try_get("storage_key").context("Failed to read object storage_key")?;
+		let content_type: String =
+			row.try_get("content_type").context("Failed to read object content_type")?;
+		let id: i64 = row.try_get("id").context("Failed to read object id")?;
+		let made_on: Option<Timestamp> =
+			row.try_get("made_on").context("Failed to read object made_on")?;
+		let user_id: Option<i64> =
+			row.try_get("user_id").context("Failed to read object user_id")?;
+		let publicity: PublicityOverride =
+			row.try_get("publicity").context("Failed to read object publicity")?;
+		// Some lifecycle queries return partial object rows and fill allowed users later.
 		let allowed_users: Vec<String> = row.try_get("allowed_users").unwrap_or_default();
 
+		// Distinguish "no location set" (both NULL) from a decode failure.
+		// ST_Y/ST_X return NULL only when `location` is NULL, so a single-NULL pair
+		// signals a query shape regression and must propagate rather than be hidden.
+		let latitude: Option<f64> =
+			row.try_get("latitude").context("Failed to read object latitude")?;
+		let longitude: Option<f64> =
+			row.try_get("longitude").context("Failed to read object longitude")?;
+		let location = match (latitude, longitude) {
+			(Some(latitude), Some(longitude)) => Some(
+				Location {
+					latitude,
+					longitude,
+				}
+				.validated()?,
+			),
+			(None, None) => None,
+			_ => {
+				return Err(AppError::Internal(anyhow::anyhow!(
+					"Object row has only one of (latitude, longitude) set"
+				)));
+			}
+		};
+
 		Ok(S3Object {
-			id: id.into(),
+			id,
 			name,
+			storage_key,
+			content_type,
 			made_on,
-			location: Location::try_from(row).ok(),
+			location,
 			user_id,
 			publicity,
 			allowed_users,
 		})
 	}
+}
 
-	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+impl S3Object {
+	pub async fn all(ctx: &Context<'_>) -> Result<Vec<Self>, AppError> {
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_ALL_OBJECTS_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client.query(&statement, &[]).await?.into_iter().map(Self::try_from).collect()
 	}
 
 	pub async fn where_id(
 		ctx: &Context<'_>,
 		id: i64,
-	) -> Result<Self, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+	) -> Result<Self, AppError> {
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_ID_QUERY).await?;
-		Self::try_from(client.query_one(&statement, &[&id]).await?).await
+		Self::try_from(client.query_one(&statement, &[&id]).await?)
 	}
 
 	pub async fn where_name(
 		ctx: &Context<'_>,
 		name: String,
-	) -> Result<Self, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+	) -> Result<Self, AppError> {
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECT_BY_NAME_QUERY).await?;
-		Self::try_from(client.query_one(&statement, &[&name]).await?).await
+		Self::try_from(client.query_one(&statement, &[&name]).await?)
 	}
 
 	pub async fn where_ids(
 		ctx: &Context<'_>,
 		ids: &[i64],
-	) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+	) -> Result<Vec<Self>, AppError> {
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_IDS_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[&ids])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client.query(&statement, &[&ids]).await?.into_iter().map(Self::try_from).collect()
 	}
 
 	pub async fn where_user_id(
 		ctx: &Context<'_>,
 		user_id: i64,
-	) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+	) -> Result<Vec<Self>, AppError> {
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_OBJECTS_BY_USER_ID_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[&user_id])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client.query(&statement, &[&user_id]).await?.into_iter().map(Self::try_from).collect()
 	}
 
 	pub async fn visible_to_user(
 		ctx: &Context<'_>,
 		user_id: Option<i64>,
-	) -> Result<Vec<Self>, GraphQLError> {
-		let client = ContextWrapper(ctx).get_db_client().await?;
+	) -> Result<Vec<Self>, AppError> {
+		let client = ContextWrapper::new(ctx)?.db_client().await?;
 		let statement = client.prepare_cached(SELECT_VISIBLE_OBJECTS_QUERY).await?;
-		join_all(
-			client
-				.query(&statement, &[&user_id])
-				.await
-				.map_err(GraphQLError::from)?
-				.into_iter()
-				.map(Self::try_from)
-				.collect::<Vec<_>>(),
-		)
-		.await
-		.into_iter()
-		.collect::<Result<Vec<_>, _>>()
+		client.query(&statement, &[&user_id]).await?.into_iter().map(Self::try_from).collect()
 	}
 }
 
 #[Object]
 impl S3Object {
 	async fn id(&self) -> ID {
-		self.id.clone()
+		self.id.into()
 	}
 
 	async fn name(&self) -> String {
@@ -252,28 +269,31 @@ impl S3Object {
 		&self,
 		ctx: &Context<'_>,
 	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		Ok(data
-			.minio_client
-			.get_presigned_object_url(&data.bucket_name, &self.name, Method::GET)
-			.send()
-			.await?
-			.url)
+		let wrapper = ContextWrapper::new(ctx)?;
+		let content_disposition =
+			content_type_requires_attachment(&self.content_type).then_some("attachment");
+		wrapper
+			.shared_state()
+			.storage
+			.presigned_get_url(&self.storage_key, content_disposition)
+			.await
+			.map_err(AppError::graphql)
 	}
 
-	async fn content_type(
-		&self,
-		ctx: &Context<'_>,
-	) -> Result<String, GraphQLError> {
-		let data = ctx.data::<Arc<SharedState<Manager, deadpool_postgres::Client>>>()?;
-		data.minio_client
-			.get_object(&data.bucket_name, &self.name)
-			.send()
-			.await?
-			.headers
-			.get("Content-Type")
-			.and_then(|content_type| content_type.to_str().ok())
-			.map(|s| s.to_string())
-			.ok_or_else(|| "Invalid Content-Type".into())
+	async fn content_type(&self) -> String {
+		self.content_type.clone()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::content_type_requires_attachment;
+
+	#[test]
+	fn only_script_capable_types_force_attachment() {
+		assert!(content_type_requires_attachment("image/svg+xml"));
+		assert!(!content_type_requires_attachment("image/png"));
+		assert!(!content_type_requires_attachment("video/mp4"));
+		assert!(!content_type_requires_attachment("audio/mpeg"));
 	}
 }

@@ -1,13 +1,9 @@
 use {
-	crate::{
-		graphql_queries::change_email::change_email_mutation::{
-			ChangeEmailMutationChangeEmail as User,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		change_email::change_email_mutation::ChangeEmailMutationChangeEmail as User,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -18,19 +14,10 @@ use {
 )]
 pub struct ChangeEmailMutation;
 
-impl ChangeEmailMutation {
-	pub async fn run(
-		api_url: String,
-		variables: Variables,
-	) -> Result<User, Error> {
-		Ok(post_graphql_with_auth::<ChangeEmailMutation, _>(
-			&reqwest::Client::new(),
-			api_url,
-			variables,
-		)
-		.await?
-		.data
-		.ok_or("Empty response".to_string())
-		.map(|response| response.change_email)?)
+impl GraphqlOp for ChangeEmailMutation {
+	type Output = User;
+
+	fn extract(data: change_email_mutation::ResponseData) -> Self::Output {
+		data.change_email
 	}
 }

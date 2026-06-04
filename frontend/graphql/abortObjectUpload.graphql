@@ -1,0 +1,5 @@
+mutation AbortObjectUploadMutation($objectId: ID!) {
+	abortObjectUpload(objectId: $objectId) {
+		objectId
+	}
+}

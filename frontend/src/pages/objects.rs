@@ -49,7 +49,10 @@ pub fn Objects() -> impl IntoView {
 	};
 	let s3_objects_resource = LocalResource::new(move || {
 		trigger.get();
-		S3ObjectsQuery::run(config.api_url.clone())
+		crate::graphql_queries::run::<S3ObjectsQuery>(
+			config.api_url.clone(),
+			crate::graphql_queries::s3_objects::s3_objects_query::Variables {},
+		)
 	});
 
 	// Callback to update the trigger, effectively reloading the table

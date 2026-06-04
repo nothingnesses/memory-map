@@ -1,13 +1,9 @@
 use {
-	crate::{
-		graphql_queries::users::users_query::{
-			UsersQueryUsers as User,
-			Variables,
-		},
-		post_graphql_with_auth,
+	crate::graphql_queries::{
+		GraphqlOp,
+		users::users_query::UsersQueryUsers as User,
 	},
 	graphql_client::GraphQLQuery,
-	leptos::error::Error,
 };
 
 #[derive(GraphQLQuery)]
@@ -20,12 +16,10 @@ pub struct UsersQuery;
 
 pub use users_query::UserRole;
 
-impl UsersQuery {
-	pub async fn run(api_url: String) -> Result<Vec<User>, Error> {
-		Ok(post_graphql_with_auth::<UsersQuery, _>(&reqwest::Client::new(), api_url, Variables {})
-			.await?
-			.data
-			.ok_or("Empty response".to_string())
-			.map(|response| response.users)?)
+impl GraphqlOp for UsersQuery {
+	type Output = Vec<User>;
+
+	fn extract(data: users_query::ResponseData) -> Self::Output {
+		data.users
 	}
 }

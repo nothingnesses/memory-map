@@ -1,0 +1,8 @@
+mutation CreateObjectUploadSessionMutation($input: CreateObjectUploadSessionInput!) {
+	createObjectUploadSession(input: $input) {
+		objectId
+		partSizeBytes
+		totalParts
+		expiresAt
+	}
+}

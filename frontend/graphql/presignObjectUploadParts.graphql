@@ -1,0 +1,13 @@
+mutation PresignObjectUploadPartsMutation($objectId: ID!, $partNumbers: [Int!]!) {
+	presignObjectUploadParts(objectId: $objectId, partNumbers: $partNumbers) {
+		partNumber
+		url
+		method
+		headers {
+			name
+			value
+		}
+		expectedContentLength
+		urlExpiresAt
+	}
+}

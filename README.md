@@ -53,16 +53,37 @@ cd memory-map
 
 ```sh
 cp .env.example .env
+just frontend-config
 direnv allow
 ```
 
 This installs all dependencies and auto-loads the development shell whenever you enter the directory.
+
+`just frontend-config` creates the ignored local runtime config at
+`frontend/public/config.json` from `frontend/config.example.json`.
 
 You can optionally configure the build mode and other settings by editing `.env`:
 
 - `BUILD_MODE="debug"` (default): Faster compilation, includes debug info.
 - `BUILD_MODE="release"`: Optimised build, smaller binaries, slower compilation.
 - Database, SMTP, and S3 storage configurations.
+- All backend environment variables share the `MEMORY_MAP__` prefix, with `__`
+  as the nested-path separator (e.g.
+  `MEMORY_MAP__STORAGE__ENDPOINT_URL`). See `docs/deployment.md` for the full
+  list.
+- Local storage settings are `MEMORY_MAP__STORAGE__ENDPOINT_URL`,
+  `MEMORY_MAP__STORAGE__ACCESS_KEY`, `MEMORY_MAP__STORAGE__SECRET_KEY`,
+  `MEMORY_MAP__STORAGE__BUCKET_NAME`, `MEMORY_MAP__STORAGE__REGION`,
+  `MEMORY_MAP__STORAGE__FORCE_PATH_STYLE`, and
+  `MEMORY_MAP__STORAGE__PRESIGNED_URL_TTL_SECONDS`.
+- The default local S3 API endpoint is `http://127.0.0.1:9000/`, with region
+  `us-east-1`, bucket `memory-map`, and path-style addressing enabled for
+  RustFS. Presigned media URLs default to a seven-day lifetime.
+- Object storage cleanup settings live under
+  `MEMORY_MAP__OBJECT_LIFECYCLE__*`, including
+  `PENDING_UPLOAD_TIMEOUT_SECONDS`, `STORAGE_DELETION_RETRY_SECONDS`,
+  `STORAGE_DELETION_LEASE_SECONDS`, `MAINTENANCE_INTERVAL_SECONDS`,
+  `STORAGE_DELETION_BATCH_SIZE`, and `STORAGE_DELETION_MAX_ATTEMPTS`.
 
 ### 4. Start database & storage
 
@@ -70,10 +91,10 @@ You can optionally configure the build mode and other settings by editing `.env`
 just servers
 ```
 
-MinIO object storage becomes available at: [http://localhost:9001/login](http://localhost:9001/login)
+RustFS S3-compatible storage becomes available at: [http://localhost:9001/login](http://localhost:9001/login)
 
-- **Username:** `minioadmin`
-- **Password:** `minioadmin`
+- **Username:** `memorymapdev`
+- **Password:** `memorymapdevsecret`
 
 ### 5. Start backend
 
@@ -99,19 +120,33 @@ Frontend app: [http://localhost:3000/](http://localhost:3000/)
 
 The project uses [Just](https://github.com/casey/just) as a task runner.
 
-- `just servers`: Start PostgreSQL and MinIO via Nix.
+- `just servers`: Start PostgreSQL and RustFS via Nix.
+- `just clean-service-state`: Remove local PostgreSQL and storage service state.
 - `just backend`: Start the Axum backend with hot-reloading (via Bacon).
+- `just frontend-config`: Create local frontend runtime config when missing.
 - `just frontend`: Start the Leptos frontend (via Trunk).
 - `just fmt`: Format Rust, Nix, Markdown, YAML, and TOML files.
 - `just check`: Run `cargo check` for the workspace.
 - `just clippy`: Run Clippy with warnings treated as errors.
 - `just deny`: Check Rust dependencies with `cargo-deny`.
 - `just doc`: Build documentation with warnings treated as errors and run ASCII/link checks.
-- `just test`: Run the workspace test suite with cached output.
-- `just frontend-build`: Build the frontend with Trunk.
-- `just verify`: Run the full verification suite before submitting a PR.
+- `just test`: Run the workspace test suite.
+- `just storage-test`: Run ignored storage integration tests against the
+  configured S3-compatible endpoint. Missing local storage skips by default; set
+  `BACKEND_TEST_REQUIRE_SERVICE=true` to fail instead.
+- `just frontend-build`: Build the frontend with Trunk using the existing
+  `frontend/public/config.json` runtime config.
+- `just verify-fast`: Run every check that does not need the local service graph.
+- `just verify`: Run the full verification suite (adds the service-backed storage,
+  backend-integration, and e2e tests) before submitting a PR.
 - `just regenerate-schema`: Introspect the backend and update the frontend GraphQL schema.
 - `just scan-hardcoded`: Scan the codebase for hardcoded secrets or values.
+
+## Production Deployment
+
+Production uses real PostgreSQL, SMTP, S3-compatible storage, runtime secrets,
+and a deployment-supplied frontend `/config.json`. See
+[Production Deployment](docs/deployment.md).
 
 ## Tech Stack
 
@@ -121,7 +156,7 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 |                         | [UnoCSS](https://unocss.dev/)                             |
 | Backend                 | [Axum](https://github.com/tokio-rs/axum)                  |
 |                         | [GraphQL](https://graphql.org)                            |
-| Storage                 | [MinIO](https://min.io)                                   |
+| Storage                 | [RustFS](https://rustfs.com/)                             |
 | Database                | [PostgreSQL](https://www.postgresql.org)                  |
 | Development Environment | [Nix package manager](https://nixos.org)                  |
 |                         | [nix-direnv](https://github.com/nix-community/nix-direnv) |
@@ -131,17 +166,23 @@ The project uses [Just](https://github.com/casey/just) as a task runner.
 
 ```
 memory-map/
-|-- .direnv/         # Direnv environment cache
-|-- backend/         # Axum and GraphQL backend
-|-- data/            # Database and storage volumes
-|-- devenv/          # Nix development environment
-|-- frontend/        # Leptos and UnoCSS frontend
-|-- shared/          # Shared utilities and types
-|-- .env.example     # Environment configuration template
-|-- justfile         # Development commands
-|-- Cargo.toml       # Rust workspace configuration
-|-- Cargo.lock       # Rust dependency lock file
-`-- README.md        # Project documentation
+|-- backend/             # Axum and GraphQL backend
+|-- data/                # Database and storage volumes
+|-- devenv/              # Nix development environment
+|-- docs/                # Long-form documentation
+|-- frontend/            # Leptos and UnoCSS frontend
+|-- screenshots/         # README image assets
+|-- scripts/             # Shared shell helpers for justfile recipes
+|-- shared/              # Shared utilities and types
+|-- .env.example         # Environment configuration template
+|-- AGENTS.md            # AI coding assistant guidance
+|-- Cargo.lock           # Rust dependency lock file
+|-- Cargo.toml           # Rust workspace configuration
+|-- config.example.toml  # Optional TOML configuration template
+|-- CONTRIBUTING.md      # Contributor documentation
+|-- justfile             # Development commands
+|-- LICENSE              # Project license
+`-- README.md            # Project documentation
 ```
 
 ## Contributing
@@ -160,6 +201,10 @@ This command will:
 - Generate documentation
 - Run tests
 - Build the frontend
+- Run the service-backed storage, backend-integration, and Playwright e2e suites
+  against the local Postgres + RustFS service graph
+
+For faster iteration that skips the service-backed suites, use `just verify-fast`.
 
 ## License
 
