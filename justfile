@@ -219,6 +219,10 @@ e2e: frontend-config frontend-e2e-typecheck
 	source scripts/e2e-env.sh
 	source scripts/service-graph.sh
 	mkdir -p "$E2E_LOG_DIR"
+	# Pre-create Playwright's output dirs so the trunk dev server can canonicalize
+	# them as watch-ignore paths at startup (see frontend/Trunk.toml). Without this
+	# the server fails to start on a fresh checkout.
+	mkdir -p frontend/test-results frontend/playwright-report
 
 	run_e2e() {
 		local backend_pid=""
