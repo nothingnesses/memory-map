@@ -65,6 +65,27 @@ memory_map_stop_pid() {
 	fi
 }
 
+# Stop whatever is still listening on a local TCP port. The e2e servers run
+# behind a `direnv exec`/bash wrapper, so the tracked pid is the wrapper and the
+# real server (backend, trunk) can survive on its port after the wrapper is
+# killed, blocking the next local run. This targets only the given port, so it
+# never touches unrelated processes. No-op if `ss` is unavailable (e.g. CI,
+# which has no wrapper and so does not orphan in the first place).
+memory_map_free_port() {
+	local port="${1:-}"
+	local pid
+
+	[[ -n "${port}" ]] || return 0
+	command -v ss >/dev/null 2>&1 || return 0
+
+	# Best-effort cleanup; the pipeline's intermediate exit codes are irrelevant.
+	# shellcheck disable=SC2312
+	for pid in $(ss -ltnp 2>/dev/null | grep ":${port} " |
+		grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u); do
+		kill "${pid}" 2>/dev/null || true
+	done
+}
+
 memory_map_with_process_compose() {
 	local port="$1"
 	local log_path="$2"

@@ -219,6 +219,10 @@ e2e: frontend-config frontend-e2e-typecheck
 	source scripts/e2e-env.sh
 	source scripts/service-graph.sh
 	mkdir -p "$E2E_LOG_DIR"
+	# Pre-create Playwright's output dirs so the trunk dev server can canonicalize
+	# them as watch-ignore paths at startup (see frontend/Trunk.toml). Without this
+	# the server fails to start on a fresh checkout.
+	mkdir -p frontend/test-results frontend/playwright-report
 
 	run_e2e() {
 		local backend_pid=""
@@ -230,11 +234,16 @@ e2e: frontend-config frontend-e2e-typecheck
 			trap - EXIT INT TERM
 			memory_map_stop_pid "${frontend_pid:-}"
 			memory_map_stop_pid "${backend_pid:-}"
+			# The servers run behind a `direnv exec`/bash wrapper, so the tracked
+			# pid is the wrapper and the real server can survive on its port. Free
+			# the ports directly so local re-runs are not blocked by an orphan.
+			memory_map_free_port "${E2E_FRONTEND_PORT}"
+			memory_map_free_port "${E2E_BACKEND_PORT}"
 			exit "$status"
 		}
 		trap cleanup_app_servers EXIT INT TERM
 
-		{{ direnv_prefix }} bash -c 'cd backend && exec cargo run --bin backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
+		{{ direnv_prefix }} bash -c 'cd backend && exec ../target/debug/backend' > "$E2E_LOG_DIR/backend.log" 2>&1 &
 		backend_pid=$!
 		if ! memory_map_wait_for_http "$E2E_BACKEND_URL/" 120 "GraphiQL"; then
 			echo "ERROR: backend did not become ready; see $E2E_LOG_DIR/backend.log." >&2
@@ -242,7 +251,7 @@ e2e: frontend-config frontend-e2e-typecheck
 			return 1
 		fi
 
-		{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address "$E2E_FRONTEND_HOST" --port "$E2E_FRONTEND_PORT" --no-autoreload --skip-version-check --offline' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
+		{{ direnv_prefix }} bash -c 'cd frontend && exec env -u NO_COLOR trunk serve --address "$E2E_FRONTEND_HOST" --port "$E2E_FRONTEND_PORT" --no-autoreload --skip-version-check --offline --no-sri' > "$E2E_LOG_DIR/frontend.log" 2>&1 &
 		frontend_pid=$!
 		if ! memory_map_wait_for_http "$E2E_FRONTEND_URL/" 120; then
 			echo "ERROR: frontend did not become ready; see $E2E_LOG_DIR/frontend.log." >&2

@@ -29,8 +29,20 @@ inject_scripts = true
 [watch]
 # Paths to watch. The `build.target`'s parent folder is watched by default.
 watch = []
-# Paths to ignore.
-ignore = ["node_modules", "style/uno.css"]
+# Paths to ignore. Besides build inputs, this excludes the Playwright output
+# directories: during `just e2e` the dev server watches `frontend/`, and
+# Playwright continuously writes traces, screenshots, and videos into
+# `test-results/` (and the HTML report into `playwright-report/`). Without these
+# ignores the watcher triggers a storm of rebuilds mid-test, starving the
+# browser's WASM compile/instantiate and intermittently leaving pages blank past
+# the test timeout. Trunk canonicalizes these paths at startup, so the `e2e`
+# recipe creates them first.
+ignore = [
+	"node_modules",
+	"style/uno.css",
+	"test-results",
+	"playwright-report",
+]
 
 [serve]
 # The address to serve on.
