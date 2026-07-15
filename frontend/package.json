@@ -3,12 +3,12 @@
 		"e2e:typecheck": "tsc --noEmit --project tsconfig.json"
 	},
 	"devDependencies": {
-		"@playwright/test": "1.59.1",
-		"@types/node": "^25.9.1",
-		"@unocss/cli": "66.7.0",
-		"@unocss/preset-wind4": "^66.7.0",
-		"typescript": "^6.0.3",
-		"unocss": "^66.7.0"
+		"@playwright/test": "1.61.1",
+		"@types/node": "^26.1.1",
+		"@unocss/cli": "66.7.5",
+		"@unocss/preset-wind4": "^66.7.5",
+		"typescript": "^7.0.2",
+		"unocss": "^66.7.5"
 	},
 	"dependencies": {
 		"leaflet": "^1.9.4"
